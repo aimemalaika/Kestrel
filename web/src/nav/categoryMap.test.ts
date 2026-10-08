@@ -52,7 +52,9 @@ describe('nav model', () => {
       nav.find((s) => s.section === sec)!.items.find((i) => i.label === label)!.target
     expect(find(ADMIN_NAV, 'Observe', 'Service Map')).toEqual({ route: '/servicemap' })
     expect(find(ADMIN_NAV, 'Operators', 'Installed Operators')).toEqual({ route: '/operators' })
-    expect(find(ADMIN_NAV, 'Administration', 'Cluster Settings')).toEqual({ route: '/cluster' })
+    expect(find(ADMIN_NAV, 'Administration', 'Cluster Settings')).toEqual({
+      route: '/cluster/settings',
+    })
     expect(find(ADMIN_NAV, 'Builds', 'ImageStreams')).toEqual({ resource: 'imagestreams' })
     expect(find(DEV_NAV, 'Developer', 'Topology')).toEqual({ route: '/topology' })
   })

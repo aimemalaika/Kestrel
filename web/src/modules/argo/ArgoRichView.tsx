@@ -13,12 +13,17 @@ interface ArgoResource {
 interface ArgoSpec {
   project?: string
   source?: { repoURL?: string; path?: string; targetRevision?: string }
-  destination?: { server?: string; namespace?: string }
+  destination?: { server?: string; name?: string; namespace?: string }
 }
 interface ArgoStatus {
   sync?: { status?: string }
   health?: { status?: string }
   resources?: ArgoResource[]
+}
+
+function clusterName(d?: { server?: string; name?: string }): string {
+  if (d?.server === 'https://kubernetes.default.svc') return 'in-cluster'
+  return d?.name ?? d?.server ?? '—'
 }
 
 /** Applications card, matching the mock GitOpsView card. */
@@ -54,15 +59,15 @@ export function ArgoAppCard({ object }: { object: K8sObject }) {
         </div>
         <div className="flex items-center gap-2">
           <Icon name="cluster" className="w-3.5 h-3.5 shrink-0" />
-          <span className="text-zinc-400">{spec.destination?.server ?? '—'}</span>
+          <span className="text-zinc-400">{clusterName(spec.destination)}</span>
         </div>
       </div>
       <div className="flex gap-1.5 mt-3 pt-3 border-t border-zinc-800">
-        <SecondaryBtn disabled>
+        <SecondaryBtn onClick={() => {}}>
           <Icon name="refresh" className="w-3.5 h-3.5" />
           Sync
         </SecondaryBtn>
-        <SecondaryBtn disabled>
+        <SecondaryBtn onClick={() => {}}>
           <Icon name="external" className="w-3.5 h-3.5" />
           Details
         </SecondaryBtn>

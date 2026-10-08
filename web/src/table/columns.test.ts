@@ -75,10 +75,41 @@ describe('per-kind rich columns', () => {
     expect(headers('Pod')).toEqual(
       expect.arrayContaining(['Ready', 'Restarts', 'CPU', 'Memory', 'Node', 'Age']),
     )
-    expect(headers('Deployment')).toEqual(
-      expect.arrayContaining(['Ready', 'Up-to-date', 'Available', 'Strategy', 'Image']),
+    expect(headers('Deployment')).toEqual([
+      'Name',
+      'Pods',
+      'Ready',
+      'Replicas',
+      'Strategy',
+      'Image',
+      'Age',
+    ])
+    expect(headers('Service')).toEqual(['Name', 'Type', 'ClusterIP', 'Ports', 'Age'])
+    expect(headers('ConfigMap')).toEqual(['Name', 'Keys', 'Age'])
+    expect(headers('Secret')).toEqual(['Name', 'Type', 'Age'])
+    expect(headers('ServiceAccount')).toEqual(['Name', 'Secrets', 'Image Pull Secrets', 'Age'])
+    expect(headers('Role')).toEqual(['Name', 'Type', 'Rules', 'Age'])
+    expect(headers('ClusterRole')).toEqual(['Name', 'Type', 'Rules', 'Age'])
+    expect(headers('RoleBinding')).toEqual(['Name', 'Role Ref', 'Subject', 'Age'])
+    expect(headers('StorageClass')).toEqual([
+      'Name',
+      'Provisioner',
+      'Reclaim Policy',
+      'Volume Binding',
+      'Default',
+      'Age',
+    ])
+    expect(headers('PersistentVolumeClaim')).toEqual([
+      'Name',
+      'Status',
+      'Capacity',
+      'Access Mode',
+      'StorageClass',
+      'Age',
+    ])
+    expect(headers('PersistentVolume')).toEqual(
+      expect.arrayContaining(['Status', 'Capacity', 'Access Mode', 'Claim', 'StorageClass']),
     )
-    expect(headers('Service')).toEqual(expect.arrayContaining(['Type', 'ClusterIP', 'Ports']))
     expect(headers('Route')).toEqual(
       expect.arrayContaining(['Host', 'Service', 'Port', 'TLS', 'Status']),
     )
@@ -122,6 +153,10 @@ describe('per-kind rich columns', () => {
       status: { readyReplicas: 2 },
     }
     expect(val('Deployment', 'Ready', d)).toBe('2/3')
+    expect(val('Deployment', 'Pods', d)).toBe('2/3')
+    expect(val('Deployment', 'Replicas', d)).toBe('3')
+    const kinds = columnSpecs('Deployment', { namespaceSelected: false }).map((c) => c.kind)
+    expect(kinds).toEqual(expect.arrayContaining(['podsquares', 'scale', 'readyfrac', 'strategy']))
   })
   it('derives service ports and route tls', () => {
     const svc: K8sObject = {
@@ -131,6 +166,11 @@ describe('per-kind rich columns', () => {
       spec: { type: 'ClusterIP', ports: [{ port: 80, protocol: 'TCP' }] },
     }
     expect(val('Service', 'Ports', svc)).toBe('80/TCP')
+    const svc2: K8sObject = {
+      ...svc,
+      spec: { ports: [{ port: 80, targetPort: 8080, protocol: 'TCP', nodePort: 30080 }] },
+    }
+    expect(val('Service', 'Ports', svc2)).toBe('80:8080:30080/TCP')
     const r: K8sObject = {
       apiVersion: 'route.openshift.io/v1',
       kind: 'Route',
@@ -138,5 +178,44 @@ describe('per-kind rich columns', () => {
       spec: { host: 'h', tls: {} },
     }
     expect(val('Route', 'TLS', r)).toBe('Enabled')
+    expect(val('Route', 'TLS', { ...r, spec: { host: 'h' } })).toBe('None')
+  })
+  it('derives route status, configmap keys, sc default, pv claim', () => {
+    const route = (conditions: unknown[]): K8sObject => ({
+      apiVersion: 'route.openshift.io/v1',
+      kind: 'Route',
+      metadata: { name: 'r' },
+      status: { ingress: [{ conditions }] },
+    })
+    const st = (o: K8sObject) =>
+      columnSpecs('Route', { namespaceSelected: true })
+        .find((c) => c.id === 'status')!
+        .value(o)
+    expect(st(route([{ type: 'Admitted', status: 'True' }]))).toBe('Accepted')
+    expect(st(route([{ type: 'Admitted', status: 'False' }]))).toBe('Rejected')
+    const cm: K8sObject = {
+      apiVersion: 'v1',
+      kind: 'ConfigMap',
+      metadata: { name: 'c' },
+      data: { a: '1', b: '2' },
+    }
+    expect(val('ConfigMap', 'Keys', cm)).toBe('2')
+    const sc: K8sObject = {
+      apiVersion: 'storage.k8s.io/v1',
+      kind: 'StorageClass',
+      metadata: {
+        name: 's',
+        annotations: { 'storageclass.kubernetes.io/is-default-class': 'true' },
+      },
+    }
+    expect(val('StorageClass', 'Default', sc)).toBe('true')
+    const pv: K8sObject = {
+      apiVersion: 'v1',
+      kind: 'PersistentVolume',
+      metadata: { name: 'pv' },
+      spec: { claimRef: { namespace: 'ns', name: 'c1' }, accessModes: ['ReadWriteOnce'] },
+    }
+    expect(val('PersistentVolume', 'Claim', pv)).toBe('ns/c1')
+    expect(val('PersistentVolume', 'Access Mode', pv)).toBe('ReadWriteOnce')
   })
 })

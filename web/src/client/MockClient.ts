@@ -27,6 +27,14 @@ const CATALOG: CatalogEntry[] = [
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'],
   },
   {
+    group: 'apps',
+    version: 'v1',
+    resource: 'replicasets',
+    kind: 'ReplicaSet',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
     group: 'core',
     version: 'v1',
     resource: 'namespaces',
@@ -362,16 +370,26 @@ function pipelineRun(
   completionTime: string,
   taskRuns: MockTask[],
   scan?: Record<string, number>,
+  o: { ns?: string; trigger?: 'Push' | 'Manual' | 'Schedule'; running?: boolean } = {},
 ): K8sObject {
+  const running = o.running === true
   return {
     apiVersion: 'tekton.dev/v1',
     kind: 'PipelineRun',
-    metadata: { name, namespace: 'default', uid: `pr/${name}`, creationTimestamp: startTime },
+    metadata: {
+      name,
+      namespace: o.ns ?? 'default',
+      uid: `pr/${name}`,
+      creationTimestamp: startTime,
+      ...(o.trigger ? { annotations: { 'tekton.dev/trigger': o.trigger } } : {}),
+    },
     spec: { pipelineRef: { name: 'build-and-push' } },
     status: {
-      conditions: [{ type: 'Succeeded', status: ok ? 'True' : 'False', reason }],
+      conditions: [
+        { type: 'Succeeded', status: running ? 'Unknown' : ok ? 'True' : 'False', reason },
+      ],
       startTime,
-      completionTime,
+      ...(running ? {} : { completionTime }),
       taskRuns,
       results: scan ? [{ name: 'image-SCAN_OUTPUT', value: JSON.stringify(scan) }] : [],
     },
@@ -438,12 +456,13 @@ function event(
   message: string,
   lastTimestamp: string,
   type: 'Normal' | 'Warning' = 'Normal',
+  involvedKind = 'Pod',
 ): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'Event',
     metadata: { name, namespace: ns, uid: `ev/${name}` },
-    involvedObject: { kind: 'Pod', name: involvedName, namespace: ns },
+    involvedObject: { kind: involvedKind, name: involvedName, namespace: ns },
     reason,
     message,
     lastTimestamp,
@@ -613,11 +632,16 @@ const NODE_SEEDS: NodeSeed[] = [
   },
 ]
 
-function ns(name: string): K8sObject {
+function ns(name: string, ageDays: number, displayName?: string): K8sObject {
   return {
     apiVersion: 'v1',
     kind: 'Namespace',
-    metadata: { name, uid: `ns/${name}`, creationTimestamp: new Date().toISOString() },
+    metadata: {
+      name,
+      uid: `ns/${name}`,
+      creationTimestamp: daysAgo(ageDays),
+      ...(displayName ? { annotations: { 'openshift.io/display-name': displayName } } : {}),
+    },
     status: { phase: 'Active' },
   }
 }
@@ -628,6 +652,7 @@ function gen(
   name: string,
   namespace: string | undefined,
   extra: Record<string, unknown> = {},
+  ageDays?: number,
 ): K8sObject {
   return {
     apiVersion,
@@ -636,14 +661,525 @@ function gen(
       name,
       ...(namespace ? { namespace } : {}),
       uid: `${kind}/${namespace ?? '-'}/${name}`,
-      creationTimestamp: '2026-09-15T00:00:00Z',
+      creationTimestamp: daysAgo(ageDays ?? hashAge(`${kind}/${name}`)),
     },
     ...extra,
   } as K8sObject
 }
 
+/** Seed helper with an explicit age: `aged(30, apiVersion, kind, name, ns, extra)`. */
+function aged(
+  ageDays: number,
+  apiVersion: string,
+  kind: string,
+  name: string,
+  namespace: string | undefined,
+  extra: Record<string, unknown> = {},
+  labels?: Record<string, string>,
+  annotations?: Record<string, string>,
+): K8sObject {
+  const o = gen(apiVersion, kind, name, namespace, extra, ageDays)
+  if (labels) o.metadata.labels = labels
+  if (annotations) (o.metadata as unknown as Record<string, unknown>).annotations = annotations
+  return o
+}
+
+/** Deterministic 1..90 day age for seeds that do not state one, so Ages vary. */
+function hashAge(key: string): number {
+  let h = 0
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) % 9973
+  return 1 + (h % 90)
+}
+
+// Deployment -> ReplicaSet -> Pod chains in `production` (for the topology graph).
+const PROD_WORKLOADS = [
+  { name: 'api-gateway', rs: 'api-gateway-6d9f7', replicas: 3, image: 'kestrel/api-gateway:2.4.1', ageDays: 12 }, // prettier-ignore
+  { name: 'auth-service', rs: 'auth-service-84b9c', replicas: 2, image: 'kestrel/auth-service:1.9.0', ageDays: 8 }, // prettier-ignore
+  { name: 'frontend-deploy', rs: 'frontend-5c6f', replicas: 4, image: 'kestrel/frontend:3.2.7', ageDays: 3 }, // prettier-ignore
+]
+
+const daysAgo = (d: number): string => new Date(Date.now() - d * 86400_000).toISOString()
+
+function deploySeed(
+  name: string,
+  ns: string,
+  desired: number,
+  ready: number,
+  strategy: 'RollingUpdate' | 'Recreate',
+  image: string,
+  ageDays: number,
+): K8sObject {
+  const d = gen('apps/v1', 'Deployment', name, ns, {
+    spec: {
+      replicas: desired,
+      selector: { matchLabels: { app: name } },
+      strategy: { type: strategy },
+      template: {
+        metadata: { labels: { app: name } },
+        spec: { containers: [{ name, image }] },
+      },
+    },
+    status: { replicas: desired, readyReplicas: ready, availableReplicas: ready },
+  })
+  d.metadata.creationTimestamp = daysAgo(ageDays)
+  return d
+}
+
+function prodWorkloadSeeds(): [string, K8sObject][] {
+  const out: [string, K8sObject][] = []
+  for (const w of PROD_WORKLOADS) {
+    const dep = deploySeed(w.name, 'production', w.replicas, w.replicas, 'RollingUpdate', w.image, w.ageDays) // prettier-ignore
+    const rs = gen('apps/v1', 'ReplicaSet', w.rs, 'production', {
+      spec: { replicas: w.replicas },
+      status: { replicas: w.replicas, readyReplicas: w.replicas },
+    })
+    rs.metadata.labels = { app: w.name }
+    ;(rs.metadata as unknown as Record<string, unknown>).ownerReferences = [
+      { apiVersion: 'apps/v1', kind: 'Deployment', name: w.name, uid: dep.metadata.uid },
+    ]
+    ;(dep.metadata as unknown as Record<string, unknown>).annotations = {
+      'kestrel.io/exposed': 'true',
+    }
+    out.push([`dep/production/${w.name}`, dep], [`rs/production/${w.rs}`, rs])
+  }
+  const sts = (name: string, ns: string, desired: number, ready: number): [string, K8sObject] => [
+    `sts/${ns}/${name}`,
+    gen('apps/v1', 'StatefulSet', name, ns, {
+      spec: { replicas: desired, serviceName: name },
+      status: { replicas: desired, readyReplicas: ready },
+    }),
+  ]
+  const dp = (
+    name: string,
+    ns: string,
+    desired: number,
+    ready: number,
+    strategy: 'RollingUpdate' | 'Recreate',
+    image: string,
+    ageDays: number,
+  ): [string, K8sObject] => [
+    `dep/${ns}/${name}`,
+    deploySeed(name, ns, desired, ready, strategy, image, ageDays),
+  ]
+  out.push(
+    sts('postgres', 'production', 1, 1),
+    dp('redis-cache', 'staging', 1, 1, 'Recreate', 'redis:7.2-alpine', 5),
+    dp('ml-pipeline', 'staging', 2, 0, 'RollingUpdate', 'kestrel/ml-pipeline:0.8.3', 1),
+    dp('notification-svc', 'staging', 1, 1, 'RollingUpdate', 'kestrel/notification-svc:1.3.2', 7),
+    dp('grafana', 'monitoring', 1, 1, 'Recreate', 'grafana/grafana:10.4.2', 60),
+    sts('prometheus', 'monitoring', 1, 1),
+  )
+  return out
+}
+
+function ownProdPod(p: K8sObject): K8sObject {
+  const w = PROD_WORKLOADS.find((x) => p.metadata.name.startsWith(`${x.rs}-`))
+  if (!w || p.metadata.namespace !== 'production') return p
+  p.metadata.labels = { app: w.name }
+  ;(p.metadata as unknown as Record<string, unknown>).ownerReferences = [
+    {
+      apiVersion: 'apps/v1',
+      kind: 'ReplicaSet',
+      name: w.rs,
+      uid: `ReplicaSet/production/${w.rs}`,
+    },
+  ]
+  return p
+}
+
 function quota(ns: string, hard: Record<string, string>, used: Record<string, string>): K8sObject {
   return gen('v1', 'ResourceQuota', `${ns}-quota`, ns, { spec: { hard }, status: { hard, used } })
+}
+
+const cfgData = (n: number, prefix = 'KEY'): Record<string, string> =>
+  Object.fromEntries(Array.from({ length: n }, (_, i) => [`${prefix}_${i + 1}`, `value-${i + 1}`]))
+
+const tcp = 'TCP'
+const rbacV1 = 'rbac.authorization.k8s.io/v1'
+const routeV1 = 'route.openshift.io/v1'
+
+function route(
+  ageDays: number,
+  name: string,
+  ns: string,
+  host: string,
+  svc: string,
+  targetPort: string | number,
+  termination: string | undefined,
+  admitted: boolean,
+): K8sObject {
+  return aged(ageDays, routeV1, 'Route', name, ns, {
+    spec: {
+      host,
+      to: { kind: 'Service', name: svc, weight: 100 },
+      port: { targetPort },
+      ...(termination ? { tls: { termination } } : {}),
+    },
+    status: {
+      ingress: [
+        {
+          host,
+          routerName: 'default',
+          conditions: [
+            {
+              type: 'Admitted',
+              status: admitted ? 'True' : 'False',
+              ...(admitted ? {} : { reason: 'HostAlreadyClaimed' }),
+            },
+          ],
+        },
+      ],
+    },
+  })
+}
+
+function coreSeeds(): K8sObject[] {
+  const svc = (
+    age: number,
+    name: string,
+    ns: string,
+    type: string,
+    clusterIP: string,
+    ports: Record<string, unknown>[],
+  ) => aged(age, 'v1', 'Service', name, ns, { spec: { type, clusterIP, ports, selector: { app: name } } }) // prettier-ignore
+  const pv = (
+    age: number,
+    name: string,
+    size: string,
+    mode: string,
+    sc: string,
+    reclaim: string,
+    phase: string,
+    claim?: [string, string],
+  ) =>
+    aged(age, 'v1', 'PersistentVolume', name, undefined, {
+      spec: {
+        capacity: { storage: size },
+        accessModes: [mode],
+        storageClassName: sc,
+        persistentVolumeReclaimPolicy: reclaim,
+        ...(claim ? { claimRef: { namespace: claim[0], name: claim[1] } } : {}),
+      },
+      status: { phase },
+    })
+  const pvc = (
+    age: number,
+    name: string,
+    ns: string,
+    size: string,
+    mode: string,
+    sc: string,
+    phase: string,
+    vol?: string,
+  ) =>
+    aged(age, 'v1', 'PersistentVolumeClaim', name, ns, {
+      spec: {
+        accessModes: [mode],
+        resources: { requests: { storage: size } },
+        storageClassName: sc,
+        ...(vol ? { volumeName: vol } : {}),
+      },
+      status: { phase, ...(phase === 'Bound' ? { capacity: { storage: size } } : {}) },
+    })
+  const sc = (
+    age: number,
+    name: string,
+    prov: string,
+    reclaim: string,
+    mode: string,
+    def = false,
+  ) =>
+    // prettier-ignore
+    aged(
+      age,
+      'storage.k8s.io/v1',
+      'StorageClass',
+      name,
+      undefined,
+      { provisioner: prov, reclaimPolicy: reclaim, volumeBindingMode: mode },
+      undefined,
+      def ? { 'storageclass.kubernetes.io/is-default-class': 'true' } : undefined,
+    )
+  const sa = (age: number, name: string, ns: string, secrets: string[], pull: string[]) =>
+    aged(age, 'v1', 'ServiceAccount', name, ns, {
+      secrets: secrets.map((n) => ({ name: n })),
+      imagePullSecrets: pull.map((n) => ({ name: n })),
+    })
+  const rule = (resources: string[], verbs: string[], apiGroups = ['']) => ({ apiGroups, resources, verbs }) // prettier-ignore
+  const binding = (
+    age: number,
+    name: string,
+    ns: string,
+    role: string,
+    subjects: [string, string][],
+  ) =>
+    // prettier-ignore
+    aged(age, rbacV1, 'RoleBinding', name, ns, {
+      roleRef: { kind: 'Role', name: role },
+      subjects: subjects.map(([kind, n]) => ({ kind, name: n })),
+    })
+  return [
+    // Services
+    svc(110, 'web', 'default', 'ClusterIP', '10.0.0.11', [{ port: 80, targetPort: 8080, protocol: tcp }]), // prettier-ignore
+    svc(40, 'cart', 'shop', 'LoadBalancer', '10.0.0.21', [
+      { name: 'https', port: 443, targetPort: 8443, protocol: tcp },
+      { name: 'http', port: 80, targetPort: 8080, protocol: tcp },
+      { name: 'metrics', port: 9090, targetPort: 9090, protocol: tcp },
+    ]),
+    svc(88, 'api-gateway', 'production', 'ClusterIP', '10.0.1.14', [{ port: 8080, targetPort: 8080, protocol: tcp }]), // prettier-ignore
+    svc(85, 'auth-service', 'production', 'NodePort', '10.0.1.33', [{ port: 9000, targetPort: 9000, nodePort: 30900, protocol: tcp }]), // prettier-ignore
+    svc(55, 'redis-cache', 'staging', 'ClusterIP', '10.0.2.8', [{ port: 6379, targetPort: 6379, protocol: tcp }]), // prettier-ignore
+    svc(58, 'notification-svc', 'staging', 'NodePort', '10.0.2.19', [{ port: 8081, targetPort: 8081, nodePort: 30881, protocol: tcp }]), // prettier-ignore
+    svc(72, 'grafana', 'monitoring', 'ClusterIP', '10.0.3.5', [{ port: 3000, targetPort: 3000, protocol: tcp }]), // prettier-ignore
+    svc(98, 'router-default', 'ingress', 'LoadBalancer', '10.0.4.2', [
+      { name: 'http', port: 80, targetPort: 80, protocol: tcp },
+      { name: 'https', port: 443, targetPort: 443, protocol: tcp },
+    ]),
+    // Routes (one Rejected, one without TLS)
+    route(40, 'shop-web', 'shop', 'shop.example.com', 'cart', 'https', 'edge', true),
+    route(85, 'api', 'production', 'api.example.com', 'api-gateway', 8080, 'reencrypt', true),
+    route(84, 'auth', 'production', 'auth.example.com', 'auth-service', 9000, 'passthrough', true),
+    route(50, 'notify', 'staging', 'notify.staging.example.com', 'notification-svc', 8081, undefined, true), // prettier-ignore
+    route(30, 'dashboards', 'monitoring', 'dash.example.com', 'grafana', 3000, 'edge', true),
+    route(2, 'legacy-web', 'default', 'shop.example.com', 'web', 8080, 'edge', false),
+    // ConfigMaps (1..20 keys)
+    aged(110, 'v1', 'ConfigMap', 'app-config', 'default', { data: { LOG_LEVEL: 'info' } }),
+    aged(40, 'v1', 'ConfigMap', 'payments-config', 'shop', { data: { REGION: 'eu', CURRENCY: 'EUR', RETRIES: '3' } }), // prettier-ignore
+    aged(80, 'v1', 'ConfigMap', 'gateway-routes', 'production', { data: cfgData(20, 'ROUTE') }),
+    aged(78, 'v1', 'ConfigMap', 'feature-flags', 'production', { data: cfgData(9, 'FLAG') }),
+    aged(30, 'v1', 'ConfigMap', 'staging-env', 'staging', { data: cfgData(5, 'ENV') }),
+    aged(70, 'v1', 'ConfigMap', 'dashboards-provisioning', 'monitoring', { data: cfgData(14, 'DASH') }), // prettier-ignore
+    // Secrets
+    aged(40, 'v1', 'Secret', 'db-credentials', 'shop', { type: 'Opaque', data: { password: '', username: '' } }), // prettier-ignore
+    aged(110, 'v1', 'Secret', 'registry-pull', 'default', { type: 'kubernetes.io/dockerconfigjson', data: { '.dockerconfigjson': '' } }), // prettier-ignore
+    aged(60, 'v1', 'Secret', 'api-tls', 'production', { type: 'kubernetes.io/tls', data: { 'tls.crt': '', 'tls.key': '' } }), // prettier-ignore
+    aged(55, 'v1', 'Secret', 'staging-registry', 'staging', { type: 'kubernetes.io/dockerconfigjson', data: { '.dockerconfigjson': '' } }), // prettier-ignore
+    aged(20, 'v1', 'Secret', 'grafana-admin', 'monitoring', { type: 'Opaque', data: { user: '', password: '', token: '' } }), // prettier-ignore
+    // Storage
+    pv(100, 'pv-data-1', '10Gi', 'ReadWriteOnce', 'fast', 'Retain', 'Bound', ['shop', 'data-search-0']), // prettier-ignore
+    pv(90, 'pv-pg-1', '50Gi', 'ReadWriteOnce', 'standard', 'Delete', 'Bound', ['production', 'data-postgres-0']), // prettier-ignore
+    pv(70, 'pv-prom-1', '100Gi', 'ReadWriteOnce', 'standard', 'Delete', 'Bound', ['monitoring', 'prometheus-data']), // prettier-ignore
+    pv(45, 'pv-shared-1', '200Gi', 'ReadWriteMany', 'bulk', 'Retain', 'Available'),
+    pv(150, 'pv-old-1', '5Gi', 'ReadWriteOnce', 'fast', 'Retain', 'Released', ['staging', 'cache-old']), // prettier-ignore
+    pvc(100, 'data-search-0', 'shop', '10Gi', 'ReadWriteOnce', 'fast', 'Bound', 'pv-data-1'),
+    pvc(90, 'data-postgres-0', 'production', '50Gi', 'ReadWriteOnce', 'standard', 'Bound', 'pv-pg-1'), // prettier-ignore
+    pvc(70, 'prometheus-data', 'monitoring', '100Gi', 'ReadWriteOnce', 'standard', 'Bound', 'pv-prom-1'), // prettier-ignore
+    pvc(12, 'media-uploads', 'production', '200Gi', 'ReadWriteMany', 'bulk', 'Pending'),
+    pvc(1, 'ml-scratch', 'staging', '20Gi', 'ReadWriteOnce', 'fast', 'Pending'),
+    sc(200, 'fast', 'kubernetes.io/no-provisioner', 'Delete', 'WaitForFirstConsumer'),
+    sc(200, 'standard', 'csi.example.com/block', 'Delete', 'Immediate', true),
+    sc(150, 'bulk', 'csi.example.com/file', 'Retain', 'Immediate'),
+    // Identity / RBAC
+    sa(110, 'default', 'default', ['default-token-x7k2p'], ['registry-pull']),
+    sa(40, 'deployer', 'shop', ['deployer-token-a1b2c'], []),
+    sa(90, 'default', 'production', ['default-token-q9w8e'], ['registry-pull']),
+    sa(85, 'api-gateway', 'production', ['api-gateway-token-m3n4b', 'api-tls'], ['registry-pull']),
+    sa(58, 'builder', 'staging', ['builder-token-z5x6c'], ['staging-registry']),
+    sa(70, 'prometheus', 'monitoring', ['prometheus-token-v7b8n'], []),
+    sa(72, 'grafana', 'monitoring', ['grafana-token-l1k2j', 'grafana-admin'], ['registry-pull']),
+    aged(110, rbacV1, 'Role', 'pod-reader', 'default', { rules: [rule(['pods'], ['get', 'list'])] }), // prettier-ignore
+    aged(85, rbacV1, 'Role', 'deployer', 'production', {
+      rules: [
+        rule(
+          ['deployments', 'replicasets'],
+          ['get', 'list', 'create', 'update', 'patch'],
+          ['apps'],
+        ),
+        rule(['pods', 'pods/log'], ['get', 'list', 'watch']),
+        rule(['configmaps', 'secrets'], ['get', 'list']),
+      ],
+    }),
+    aged(70, rbacV1, 'Role', 'metrics-reader', 'monitoring', {
+      rules: [rule(['pods', 'services', 'endpoints'], ['get', 'list', 'watch']), rule(['nodes/metrics'], ['get'])], // prettier-ignore
+    }),
+    aged(58, rbacV1, 'Role', 'namespace-admin', 'staging', {
+      rules: [
+        rule(['*'], ['*']),
+        rule(['deployments'], ['*'], ['apps']),
+        rule(['jobs'], ['*'], ['batch']),
+        rule(['routes'], ['*'], ['route.openshift.io']),
+        rule(['events'], ['get', 'list']),
+      ],
+    }),
+    binding(110, 'read-pods', 'default', 'pod-reader', [['ServiceAccount', 'default']]),
+    binding(85, 'deployers', 'production', 'deployer', [['ServiceAccount', 'api-gateway'], ['Group', 'developers']]), // prettier-ignore
+    binding(70, 'metrics-read', 'monitoring', 'metrics-reader', [['ServiceAccount', 'prometheus']]), // prettier-ignore
+    binding(58, 'staging-admins', 'staging', 'namespace-admin', [['User', 'alice'], ['Group', 'platform-admins'], ['ServiceAccount', 'builder']]), // prettier-ignore
+    // Quotas
+    quota('shop', { cpu: '4', memory: '8Gi', pods: '20', persistentvolumeclaims: '5' }, { cpu: '1.8', memory: '2300Mi', pods: '9', persistentvolumeclaims: '1' }), // prettier-ignore
+    quota('default', { cpu: '2', pods: '10' }, { cpu: '1900m', pods: '9' }),
+    quota('production', { cpu: '16', memory: '32Gi', pods: '40', persistentvolumeclaims: '10' }, { cpu: '9400m', memory: '19Gi', pods: '24', persistentvolumeclaims: '4' }), // prettier-ignore
+    quota('staging', { cpu: '8', memory: '16Gi', pods: '25', persistentvolumeclaims: '6' }, { cpu: '7600m', memory: '9Gi', pods: '18', persistentvolumeclaims: '2' }), // prettier-ignore
+  ]
+}
+
+function machineBuildSeeds(): K8sObject[] {
+  const osMachine = 'machine.openshift.io/v1beta1'
+  const bld = 'build.openshift.io/v1'
+  const ms = (age: number, name: string, zone: string, type: string, want: number, ready: number) =>
+    aged(
+      age,
+      osMachine,
+      'MachineSet',
+      name,
+      'cluster-machines',
+      {
+        spec: {
+          replicas: want,
+          template: {
+            spec: { providerSpec: { value: { placement: { availabilityZone: zone }, instanceType: type } } }, // prettier-ignore
+          },
+        },
+        status: { replicas: want, readyReplicas: ready, availableReplicas: ready },
+      },
+      { 'machine.example.io/zone': zone, 'machine.example.io/instance-type': type },
+    )
+  const build = (
+    age: number,
+    name: string,
+    ns: string,
+    bc: string,
+    phase: string,
+    strategy: string,
+    trigger: string,
+    commit: string,
+  ) =>
+    aged(
+      age,
+      bld,
+      'Build',
+      name,
+      ns,
+      {
+        spec: { strategy: { type: strategy }, triggeredBy: [{ message: trigger }], commit },
+        status: {
+          phase,
+          startTimestamp: daysAgo(age),
+          ...(phase === 'Running' || phase === 'New' ? {} : { completionTimestamp: daysAgo(age - 0.01) }), // prettier-ignore
+        },
+      },
+      { buildconfig: bc },
+    )
+  const bc = (
+    age: number,
+    name: string,
+    ns: string,
+    strategy: string,
+    source: string,
+    last: number,
+    lastStatus: string,
+  ) =>
+    // prettier-ignore
+    aged(age, bld, 'BuildConfig', name, ns, {
+      spec: { strategy: { type: strategy }, source: { type: source, git: { uri: `https://git.example.com/${ns}/${name}.git` } } }, // prettier-ignore
+      status: { lastVersion: last, lastBuildPhase: lastStatus },
+    })
+  return [
+    ms(60, 'worker-us-east-1b', 'us-east-1b', 'm5.xlarge', 2, 2),
+    ms(60, 'worker-us-east-1a', 'us-east-1a', 'm5.2xlarge', 1, 0),
+    ms(30, 'worker-us-east-1c', 'us-east-1c', 'c5.xlarge', 3, 3),
+    build(10, 'shop-web-1', 'shop', 'shop-web', 'Complete', 'Docker', 'Image change', 'a1b2c3d'),
+    build(0.2, 'shop-web-2', 'shop', 'shop-web', 'Running', 'Docker', 'Generic webhook', 'e4f5a6b'),
+    build(4, 'api-1', 'default', 'api', 'Failed', 'Source', 'Manual', 'c7d8e9f'),
+    build(6, 'api-2', 'default', 'api', 'Cancelled', 'Source', 'Manual', '0a1b2c3'),
+    build(
+      0.05,
+      'frontend-1',
+      'production',
+      'frontend',
+      'New',
+      'Docker',
+      'Config change',
+      '4d5e6f7',
+    ),
+    build(2, 'frontend-0', 'production', 'frontend', 'Complete', 'Docker', 'Push event', '8a9b0c1'),
+    bc(40, 'shop-web', 'shop', 'Docker', 'Git', 2, 'Running'),
+    bc(110, 'api', 'default', 'Source', 'Git', 2, 'Cancelled'),
+    bc(85, 'frontend', 'production', 'Docker', 'Git', 1, 'New'),
+    bc(58, 'ml-pipeline', 'staging', 'Custom', 'Binary', 7, 'Complete'),
+    bc(70, 'notifier', 'staging', 'Source', 'Git', 3, 'Failed'),
+  ]
+}
+
+function clusterSeeds(): K8sObject[] {
+  const cond = (type: string, status = 'True', message?: string) => ({
+    type,
+    status,
+    ...(message ? { message } : {}),
+  })
+  const op = (
+    age: number,
+    name: string,
+    version: string,
+    avail: boolean,
+    prog: boolean,
+    degraded: boolean,
+    message?: string,
+  ) =>
+    aged(age, 'config.openshift.io/v1', 'ClusterOperator', name, undefined, {
+      status: {
+        versions: [{ name: 'operator', version }],
+        conditions: [
+          cond('Available', avail ? 'True' : 'False'),
+          cond('Progressing', prog ? 'True' : 'False', prog ? message : undefined),
+          cond('Degraded', degraded ? 'True' : 'False', degraded ? message : undefined),
+        ],
+      },
+    })
+  const csv = (
+    age: number,
+    name: string,
+    ns: string,
+    display: string,
+    version: string,
+    phase: string,
+    channel: string,
+    kinds: string[],
+  ) =>
+    aged(age, 'operators.coreos.com/v1alpha1', 'ClusterServiceVersion', name, ns, {
+      spec: {
+        displayName: display,
+        version,
+        provider: { name: 'Example Org' },
+        channel,
+        customresourcedefinitions: { owned: kinds.map((kind) => ({ kind, name: `${kind.toLowerCase()}s.example.com`, version: 'v1' })) }, // prettier-ignore
+      },
+      status: { phase, channel, reason: phase === 'Succeeded' ? 'InstallSucceeded' : 'InstallWaiting' }, // prettier-ignore
+    })
+  return [
+    op(120, 'dns', 'v1.29.3', true, false, false),
+    op(120, 'ingress', 'v1.29.3', true, true, false, 'Rolling out router deployment 2 of 3'),
+    op(
+      120,
+      'storage',
+      'v1.29.2',
+      false,
+      false,
+      true,
+      'Storage driver pods are not ready on 1 node',
+    ),
+    op(120, 'authentication', 'v1.29.3', true, false, false),
+    op(120, 'network', 'v1.29.3', true, false, false),
+    op(120, 'monitoring', 'v1.29.3', true, true, false, 'Updating metrics stack to the latest version'), // prettier-ignore
+    op(120, 'kube-apiserver', 'v1.29.3', true, false, false),
+    op(120, 'etcd', 'v1.29.3', true, false, false),
+    op(120, 'image-registry', 'v1.29.1', true, false, true, 'Registry storage backend is unreachable'), // prettier-ignore
+    op(120, 'node-tuning', 'v1.29.3', true, false, false),
+    aged(120, 'config.openshift.io/v1', 'ClusterVersion', 'version', undefined, {
+      spec: { channel: 'stable', clusterID: '00000000-0000-0000-0000-000000000001' },
+      status: {
+        desired: { version: 'v1.29.3' },
+        availableUpdates: [{ version: 'v1.29.5' }, { version: 'v1.30.0' }],
+        conditions: [cond('Available'), cond('Progressing', 'False')],
+        history: [{ state: 'Completed', version: 'v1.29.3', startedTime: daysAgo(30) }],
+      },
+    }),
+    csv(50, 'metrics-operator.v1.4.0', 'shop', 'Metrics Operator', '1.4.0', 'Succeeded', 'stable', ['MetricsConfig', 'Scraper']), // prettier-ignore
+    csv(20, 'backup-operator.v0.9.2', 'default', 'Backup Operator', '0.9.2', 'Installing', 'beta', ['BackupPolicy']), // prettier-ignore
+    csv(90, 'cert-operator.v2.1.0', 'production', 'Certificate Manager', '2.1.0', 'Succeeded', 'stable', ['Certificate', 'Issuer', 'ClusterIssuer']), // prettier-ignore
+    csv(65, 'db-operator.v3.0.1', 'production', 'Database Operator', '3.0.1', 'Failed', 'stable', ['DatabaseCluster', 'DatabaseBackup']), // prettier-ignore
+    csv(30, 'pipeline-operator.v1.12.0', 'staging', 'Pipeline Operator', '1.12.0', 'Succeeded', 'latest', ['Pipeline', 'Task', 'PipelineRun', 'TaskRun']), // prettier-ignore
+  ]
 }
 
 function moreSeeds(): K8sObject[] {
@@ -803,34 +1339,7 @@ function moreSeeds(): K8sObject[] {
       spec: { providerID: 'cloud:///us-east-1a/i-0c3' },
       status: { phase: 'Provisioning' },
     }),
-    gen(osMachine, 'MachineSet', 'worker-us-east-1b', 'cluster-machines', {
-      spec: { replicas: 2 },
-      status: { replicas: 2, readyReplicas: 2, availableReplicas: 2 },
-    }),
-    gen(osMachine, 'MachineSet', 'worker-us-east-1a', 'cluster-machines', {
-      spec: { replicas: 1 },
-      status: { replicas: 1, readyReplicas: 0, availableReplicas: 0 },
-    }),
-    gen('build.openshift.io/v1', 'Build', 'shop-web-1', 'shop', {
-      spec: { strategy: { type: 'Docker' } },
-      status: { phase: 'Complete', startTimestamp: ts(1), completionTimestamp: ts(2) },
-    }),
-    gen('build.openshift.io/v1', 'Build', 'shop-web-2', 'shop', {
-      spec: { strategy: { type: 'Docker' } },
-      status: { phase: 'Running', startTimestamp: ts(5) },
-    }),
-    gen('build.openshift.io/v1', 'Build', 'api-1', 'default', {
-      spec: { strategy: { type: 'Source' } },
-      status: { phase: 'Failed', startTimestamp: ts(3), completionTimestamp: ts(4) },
-    }),
-    gen('build.openshift.io/v1', 'BuildConfig', 'shop-web', 'shop', {
-      spec: { strategy: { type: 'Docker' }, source: { type: 'Git' } },
-      status: { lastVersion: 2 },
-    }),
-    gen('build.openshift.io/v1', 'BuildConfig', 'api', 'default', {
-      spec: { strategy: { type: 'Source' }, source: { type: 'Git' } },
-      status: { lastVersion: 1 },
-    }),
+    ...machineBuildSeeds(),
     gen('image.openshift.io/v1', 'ImageStream', 'shop-web', 'shop', {
       status: {
         dockerImageRepository: 'registry.example.com/shop/shop-web',
@@ -843,111 +1352,12 @@ function moreSeeds(): K8sObject[] {
         tags: [{ tag: 'latest' }],
       },
     }),
-    gen('config.openshift.io/v1', 'ClusterOperator', 'dns', undefined, {
-      status: {
-        versions: [{ name: 'operator', version: '4.15.0' }],
-        conditions: [cond('Available'), cond('Progressing', 'False'), cond('Degraded', 'False')],
-      },
-    }),
-    gen('config.openshift.io/v1', 'ClusterOperator', 'ingress', undefined, {
-      status: {
-        versions: [{ name: 'operator', version: '4.15.0' }],
-        conditions: [cond('Available'), cond('Progressing', 'True'), cond('Degraded', 'False')],
-      },
-    }),
-    gen('config.openshift.io/v1', 'ClusterOperator', 'storage', undefined, {
-      status: {
-        versions: [{ name: 'operator', version: '4.14.9' }],
-        conditions: [cond('Available', 'False'), cond('Progressing', 'False'), cond('Degraded')],
-      },
-    }),
-    gen('config.openshift.io/v1', 'ClusterVersion', 'version', undefined, {
-      spec: { channel: 'stable-4.15', clusterID: '00000000-0000-0000-0000-000000000001' },
-      status: {
-        desired: { version: '4.15.0' },
-        conditions: [cond('Available'), cond('Progressing', 'False')],
-        history: [{ state: 'Completed', version: '4.15.0', startedTime: ts(0) }],
-      },
-    }),
-    gen(
-      'operators.coreos.com/v1alpha1',
-      'ClusterServiceVersion',
-      'metrics-operator.v1.4.0',
-      'shop',
-      {
-        spec: {
-          displayName: 'Metrics Operator',
-          version: '1.4.0',
-          provider: { name: 'Example Org' },
-        },
-        status: { phase: 'Succeeded', reason: 'InstallSucceeded' },
-      },
-    ),
-    gen(
-      'operators.coreos.com/v1alpha1',
-      'ClusterServiceVersion',
-      'backup-operator.v0.9.2',
-      'default',
-      {
-        spec: {
-          displayName: 'Backup Operator',
-          version: '0.9.2',
-          provider: { name: 'Example Org' },
-        },
-        status: { phase: 'Installing', reason: 'InstallWaiting' },
-      },
-    ),
+    ...clusterSeeds(),
   ]
 }
 
 function genSeeds(): [string, K8sObject][] {
-  const objs: K8sObject[] = [
-    gen('v1', 'Service', 'web', 'default', {
-      spec: { type: 'ClusterIP', clusterIP: '10.0.0.11', ports: [{ port: 80, protocol: 'TCP' }] },
-    }),
-    gen('v1', 'Service', 'cart', 'shop', {
-      spec: {
-        type: 'LoadBalancer',
-        clusterIP: '10.0.0.21',
-        ports: [{ port: 443, protocol: 'TCP' }],
-      },
-    }),
-    gen('v1', 'ConfigMap', 'app-config', 'default', { data: { LOG_LEVEL: 'info' } }),
-    gen('v1', 'ConfigMap', 'payments-config', 'shop', { data: { REGION: 'eu' } }),
-    gen('v1', 'Secret', 'db-credentials', 'shop', { type: 'Opaque', data: { password: '' } }),
-    gen('v1', 'Secret', 'registry-pull', 'default', { type: 'kubernetes.io/dockerconfigjson' }),
-    gen('v1', 'PersistentVolume', 'pv-data-1', undefined, {
-      spec: { capacity: { storage: '10Gi' }, storageClassName: 'fast' },
-      status: { phase: 'Bound' },
-    }),
-    gen('v1', 'PersistentVolumeClaim', 'data-search-0', 'shop', {
-      spec: { storageClassName: 'fast', volumeName: 'pv-data-1' },
-      status: { phase: 'Bound', capacity: { storage: '10Gi' } },
-    }),
-    gen('storage.k8s.io/v1', 'StorageClass', 'fast', undefined, {
-      provisioner: 'kubernetes.io/no-provisioner',
-      reclaimPolicy: 'Delete',
-    }),
-    gen('v1', 'ServiceAccount', 'default', 'default', {}),
-    gen('v1', 'ServiceAccount', 'deployer', 'shop', {}),
-    gen('rbac.authorization.k8s.io/v1', 'Role', 'pod-reader', 'default', {
-      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }],
-    }),
-    gen('rbac.authorization.k8s.io/v1', 'RoleBinding', 'read-pods', 'default', {
-      roleRef: { kind: 'Role', name: 'pod-reader' },
-      subjects: [{ kind: 'ServiceAccount', name: 'default' }],
-    }),
-    gen('route.openshift.io/v1', 'Route', 'shop-web', 'shop', {
-      spec: { host: 'shop.example.com', to: { kind: 'Service', name: 'cart' }, tls: {} },
-    }),
-    quota(
-      'shop',
-      { cpu: '4', memory: '8Gi', pods: '20' },
-      { cpu: '1.8', memory: '2300Mi', pods: '9' },
-    ),
-    quota('default', { cpu: '2', pods: '10' }, { cpu: '1900m', pods: '9' }),
-    ...moreSeeds(),
-  ]
+  const objs: K8sObject[] = [...coreSeeds(), ...moreSeeds()]
   return objs.map((o) => [`gen/${o.kind}/${o.metadata.namespace ?? '-'}/${o.metadata.name}`, o])
 }
 
@@ -965,13 +1375,16 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     ],
     ['default/web-2', pod('web-2', 'default', 'Pending', { ageDays: 0 })],
     ...POD_SEEDS.map(
-      ([n, pns, ph, o]) => [`${pns}/${n}`, pod(n, pns, ph, o)] as [string, K8sObject],
+      ([n, pns, ph, o]) => [`${pns}/${n}`, ownProdPod(pod(n, pns, ph, o))] as [string, K8sObject],
     ),
-    ['ns/default', ns('default')],
-    ['ns/kube-system', ns('kube-system')],
-    ['ns/shop', ns('shop')],
-    ['ns/production', ns('production')],
-    ['ns/staging', ns('staging')],
+    ...prodWorkloadSeeds(),
+    ['ns/default', ns('default', 120, 'Default')],
+    ['ns/kube-system', ns('kube-system', 120, 'Kube System')],
+    ['ns/shop', ns('shop', 45, 'Shop Storefront')],
+    ['ns/production', ns('production', 90, 'Production')],
+    ['ns/staging', ns('staging', 60, 'Staging')],
+    ['ns/monitoring', ns('monitoring', 75, 'Monitoring Stack')],
+    ['ns/ingress', ns('ingress', 100, 'Ingress Controllers')],
     ...genSeeds(),
     [
       'pr/build-101',
@@ -1027,6 +1440,61 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
           { name: 'scan', succeeded: true, steps: [{ name: 'trivy', status: 'Completed' }] },
         ],
         { critical: 0, high: 0, medium: 1, low: 4 },
+      ),
+    ],
+    [
+      'pr/deploy-prod-201',
+      pipelineRun(
+        'deploy-prod-201',
+        true,
+        'Succeeded',
+        '2026-10-07T14:00:00Z',
+        '2026-10-07T14:09:00Z',
+        [
+          { name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] },
+          { name: 'deploy', succeeded: true, steps: [{ name: 'rollout', status: 'Completed' }] },
+        ],
+        undefined,
+        { ns: 'production', trigger: 'Push' },
+      ),
+    ],
+    [
+      'pr/deploy-prod-202',
+      pipelineRun(
+        'deploy-prod-202',
+        true,
+        'Running',
+        '2026-10-08T10:30:00Z',
+        '',
+        [{ name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] }],
+        undefined,
+        { ns: 'production', trigger: 'Manual', running: true },
+      ),
+    ],
+    [
+      'pr/smoke-stg-77',
+      pipelineRun(
+        'smoke-stg-77',
+        false,
+        'Cancelled',
+        '2026-10-08T07:00:00Z',
+        '2026-10-08T07:01:00Z',
+        [{ name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] }],
+        undefined,
+        { ns: 'staging', trigger: 'Manual' },
+      ),
+    ],
+    [
+      'pr/build-stg-78',
+      pipelineRun(
+        'build-stg-78',
+        true,
+        'Succeeded',
+        '2026-10-08T06:00:00Z',
+        '2026-10-08T06:06:00Z',
+        [{ name: 'build', succeeded: true, steps: [{ name: 'compile', status: 'Completed' }] }],
+        { critical: 0, high: 1, medium: 2, low: 6 },
+        { ns: 'staging', trigger: 'Push' },
       ),
     ],
     [
@@ -1145,6 +1613,12 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         '2026-10-08T09:50:00Z',
       ),
     ],
+    ['ev/node-notready', event('node-notready', 'default', 'worker-03', 'NodeNotReady', 'Node worker-03 status is now NodeNotReady', '2026-10-08T09:55:00Z', 'Warning', 'Node')], // prettier-ignore
+    ['ev/node-ready', event('node-ready', 'default', 'worker-01', 'NodeReady', 'Node worker-01 status is now NodeReady', '2026-10-08T08:00:00Z', 'Normal', 'Node')], // prettier-ignore
+    ['ev/dep-scaled', event('dep-scaled', 'production', 'api-gateway', 'ScalingReplicaSet', 'Scaled up replica set api-gateway-6d9f7 to 3', '2026-10-08T09:20:00Z', 'Normal', 'Deployment')], // prettier-ignore
+    ['ev/dep-failed', event('dep-failed', 'staging', 'ml-pipeline', 'ProgressDeadlineExceeded', 'Deployment does not have minimum availability', '2026-10-08T09:45:00Z', 'Warning', 'Deployment')], // prettier-ignore
+    ['ev/prod-probe', event('prod-probe', 'production', 'frontend-5c6f-abcde', 'Unhealthy', 'Readiness probe failed: HTTP 503', '2026-10-08T09:35:00Z', 'Warning')], // prettier-ignore
+    ['ev/stg-crash', event('stg-crash', 'staging', 'ml-pipeline-9b7c-vf3yt', 'BackOff', 'Back-off restarting failed container', '2026-10-08T09:58:00Z', 'Warning')], // prettier-ignore
     [
       'ev/web-1.1',
       event(

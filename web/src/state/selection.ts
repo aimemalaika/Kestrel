@@ -14,5 +14,7 @@ export function useSelection(): Selection {
     full && p.group && p.version && p.resource
       ? { group: p.group, version: p.version, resource: p.resource }
       : undefined
-  return { namespace: p.namespace, gvr }
+  // `_all` is the All-Namespaces sentinel → no namespace scope (streams show every namespace).
+  const namespace = p.namespace === '_all' ? undefined : p.namespace
+  return { namespace, gvr }
 }

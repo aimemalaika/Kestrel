@@ -316,3 +316,74 @@ describe('MockClient completeness catalog', () => {
     }
   })
 })
+
+describe('MockClient populated seeds', () => {
+  type Obj = {
+    metadata: { name: string; namespace?: string; creationTimestamp: string }
+    [k: string]: unknown
+  }
+  const list = (group: string, resource: string, version = 'v1'): Obj[] => {
+    const out: Obj[] = []
+    const stop = createMockClient({ tickMs: 100000 }).watch(
+      { group, version, resource },
+      {},
+      (e) => {
+        if (isDeltaEnvelope(e)) out.push(e.object as unknown as Obj)
+      },
+    )
+    stop()
+    return out
+  }
+  const at = (o: unknown, path: string): unknown =>
+    path.split('.').reduce<unknown>((a, k) => (a as Record<string, unknown> | undefined)?.[k], o)
+
+  it('varies creation timestamps across seeds', () => {
+    const services = list('core', 'services')
+    expect(services.length).toBeGreaterThanOrEqual(8)
+    expect(new Set(services.map((s) => s.metadata.creationTimestamp)).size).toBeGreaterThan(3)
+  })
+  it('routes carry admission status with at least one rejected', () => {
+    const routes = list('route.openshift.io', 'routes')
+    expect(routes.length).toBeGreaterThanOrEqual(6)
+    const admitted = routes.map(
+      (r) =>
+        (at(r, 'status.ingress') as { conditions: { status: string }[] }[])[0].conditions[0].status,
+    )
+    expect(admitted).toContain('False')
+    expect(admitted).toContain('True')
+  })
+  it('has a default StorageClass', () => {
+    const scs = list('storage.k8s.io', 'storageclasses')
+    expect(
+      scs.filter(
+        (s) =>
+          at(s, 'metadata.annotations')?.['storageclass.kubernetes.io/is-default-class' as never],
+      ),
+    ).toHaveLength(1)
+  })
+  it('has a Degraded ClusterOperator and available updates', () => {
+    const ops = list('config.openshift.io', 'clusteroperators')
+    const degraded = ops.filter((o) =>
+      (at(o, 'status.conditions') as { type: string; status: string }[]).some(
+        (c) => c.type === 'Degraded' && c.status === 'True',
+      ),
+    )
+    expect(degraded.length).toBeGreaterThanOrEqual(1)
+    expect(ops.length).toBeGreaterThanOrEqual(10)
+    const cv = list('config.openshift.io', 'clusterversions')[0]
+    expect((at(cv, 'status.availableUpdates') as unknown[]).length).toBeGreaterThan(0)
+  })
+  it('pipeline runs cover running and cancelled states in several namespaces', () => {
+    const runs = list('tekton.dev', 'pipelineruns')
+    const reasons = runs.map((r) => (at(r, 'status.conditions') as { reason: string }[])[0].reason)
+    expect(reasons).toContain('Running')
+    expect(reasons).toContain('Cancelled')
+    expect(new Set(runs.map((r) => r.metadata.namespace)).size).toBeGreaterThanOrEqual(3)
+  })
+  it('namespaces have display names and quotas cover production/staging', () => {
+    const nss = list('core', 'namespaces')
+    expect(nss.every((n) => at(n, 'metadata.annotations'))).toBe(true)
+    const q = list('core', 'resourcequotas').map((x) => x.metadata.namespace)
+    expect(q).toEqual(expect.arrayContaining(['production', 'staging']))
+  })
+})

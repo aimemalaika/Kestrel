@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useResourceStream } from '../table/useResourceStream'
 import { Age } from '../table/Age'
 import { getPath } from '../table/columns'
@@ -126,7 +127,7 @@ function OperatorsTab({ rows }: { rows: K8sObject[] }) {
               </TD>
               <TD>
                 <span className="text-xs text-zinc-500">
-                  <Age creationTimestamp={op.metadata.creationTimestamp} />
+                  <Age creationTimestamp={a?.lastTransitionTime ?? op.metadata.creationTimestamp} />
                 </span>
               </TD>
               <TD>
@@ -165,10 +166,10 @@ function VersionTab({ rows }: { rows: K8sObject[] }) {
         ?.version) ||
     str('status.desired.version')
   const updates = getPath(cv, 'status.availableUpdates')
-  const next =
-    Array.isArray(updates) && updates.length > 0
-      ? (updates[0] as { version?: string }).version
-      : undefined
+  const available = Array.isArray(updates)
+    ? (updates as { version?: string }[]).map((u) => u.version).filter((v): v is string => !!v)
+    : []
+  const next = available[available.length - 1]
   return (
     <div className="space-y-4">
       <Card>
@@ -182,13 +183,17 @@ function VersionTab({ rows }: { rows: K8sObject[] }) {
               { label: 'Cluster ID', value: str('spec.clusterID') },
               { label: 'Available', value: isTrue(condOf(cv, 'Available')) ? 'True' : 'False' },
               { label: 'Progressing', value: isTrue(condOf(cv, 'Progressing')) ? 'True' : 'False' },
+              { label: 'Infrastructure', value: 'Kestrel Cloud (AWS)' },
+              { label: 'SDN Plugin', value: 'OVN-Kubernetes' },
             ]}
           />
           {next && (
             <div className="bg-amber-500/10 border border-amber-500/25 rounded-lg p-3 flex items-start gap-3">
               <Icon name="alert" className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-amber-300">Update Available: {next}</p>
+                <p className="text-sm font-semibold text-amber-300">
+                  Update Available: {available.join(', ')}
+                </p>
                 <p className="text-xs text-zinc-400 mt-0.5">
                   Includes security patches and new features.
                 </p>
@@ -210,14 +215,31 @@ function VersionTab({ rows }: { rows: K8sObject[] }) {
 function MachineSetsTab({ rows }: { rows: K8sObject[] }) {
   const sets = [...rows].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))
   return (
-    <Table aria-label="Machine sets" headers={['Name', 'Desired', 'Ready', 'Available', 'Age']}>
+    <Table
+      aria-label="Machine sets"
+      headers={['Name', 'Zone', 'Instance Type', 'Desired', 'Ready', 'Available', 'Age']}
+    >
       {sets.map((ms) => {
         const desired = num(ms, 'spec.replicas')
         const ready = num(ms, 'status.readyReplicas')
+        const labels = ms.metadata.labels ?? {}
+        const pv = 'spec.template.spec.providerSpec.value'
+        const zoneV =
+          labels['machine.example.io/zone'] ?? getPath(ms, `${pv}.placement.availabilityZone`)
+        const typeV =
+          labels['machine.example.io/instance-type'] ?? getPath(ms, `${pv}.instanceType`)
+        const zone = typeof zoneV === 'string' && zoneV ? zoneV : '-'
+        const itype = typeof typeV === 'string' && typeV ? typeV : '-'
         return (
           <TR key={ms.metadata.uid ?? ms.metadata.name}>
             <TD>
               <Mono>{ms.metadata.name}</Mono>
+            </TD>
+            <TD>
+              <span className="text-xs text-zinc-300">{zone}</span>
+            </TD>
+            <TD>
+              <Mono>{itype}</Mono>
             </TD>
             <TD>
               <span className="text-xs text-zinc-300">{desired}</span>
@@ -248,19 +270,32 @@ const SETTINGS = [
   { label: 'Cluster Name', value: 'kestrel-cluster' },
   { label: 'Console URL', value: 'https://console.kestrel-cluster.example.com' },
   { label: 'API URL', value: 'https://api.kestrel-cluster.example.com:6443' },
-  { label: 'Authentication', value: 'OIDC, htpasswd' },
+  { label: 'Authentication', value: 'OIDC' },
   { label: 'Registry', value: 'image-registry.kestrel.svc:5000' },
   { label: 'Monitoring', value: 'Kestrel Metrics (Prometheus-compatible)' },
 ]
 
 export function ClusterView() {
-  const [tab, setTab] = useState(TABS[0])
+  // Settings is URL-driven (/cluster/settings) so it stays in sync with the sidebar;
+  // Operators/Version/Machine Sets are local sub-tabs under /cluster.
+  const navigate = useNavigate()
+  const onSettingsRoute = useLocation().pathname.endsWith('/cluster/settings')
+  const [subTab, setSubTab] = useState<string>(TABS[0])
+  const tab = onSettingsRoute ? 'Cluster Settings' : subTab
+  const onTab = (t: string) => {
+    if (t === 'Cluster Settings') {
+      navigate('/cluster/settings')
+      return
+    }
+    setSubTab(t)
+    if (onSettingsRoute) navigate('/cluster') // leaving Settings for another tab
+  }
   const ops = useResourceStream(OPERATORS, undefined)
   const versions = useResourceStream(VERSIONS, undefined)
   const sets = useResourceStream(MACHINESETS, undefined)
   return (
     <div>
-      <ViewHeader title="Cluster" tabs={TABS} activeTab={tab} onTab={setTab} />
+      <ViewHeader title="Cluster" tabs={TABS} activeTab={tab} onTab={onTab} />
       {tab === 'Cluster Operators' && <OperatorsTab rows={ops.rows} />}
       {tab === 'Cluster Version' && <VersionTab rows={versions.rows} />}
       {tab === 'Machine Sets' && <MachineSetsTab rows={sets.rows} />}

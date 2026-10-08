@@ -121,7 +121,7 @@ export const ADMIN_NAV: NavSection[] = [
       { label: 'ConfigMaps', icon: 'configmap', target: res('configmaps') },
       { label: 'Secrets', icon: 'secret', target: res('secrets') },
       { label: 'Cluster Operators', icon: 'cluster', target: route('/cluster') },
-      { label: 'Cluster Settings', icon: 'settings', target: route('/cluster') },
+      { label: 'Cluster Settings', icon: 'settings', target: route('/cluster/settings') },
       { label: 'CRDs', icon: 'crd', target: res('customresourcedefinitions') },
       { label: 'API Explorer', icon: 'api', target: route('/api-explorer') },
     ],

@@ -19,8 +19,19 @@ describe('Overview', () => {
     expect(screen.getByText('1 NotReady')).toBeInTheDocument()
   })
 
-  it('shows metrics as placeholders (not yet wired to a metrics source)', () => {
+  it('shows sample metrics, status values and firing alerts', () => {
     render(<Overview />)
-    expect(screen.getAllByText('Metrics pending').length).toBeGreaterThan(0)
+    expect(screen.getByText('v1.29.3')).toBeInTheDocument()
+    expect(screen.getByText('58 MB/s')).toBeInTheDocument()
+    expect(screen.getByText('NodeNotReady')).toBeInTheDocument()
+  })
+
+  it('has a View all events button and derived Routes/Alerts sublabels', async () => {
+    render(<Overview />)
+    expect(screen.getByRole('button', { name: 'View all' })).toBeInTheDocument()
+    expect(screen.getByText(/\d+ critical, \d+ warning/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText(/^[1-9]\d* admitted$/)).toBeInTheDocument()
+    })
   })
 })

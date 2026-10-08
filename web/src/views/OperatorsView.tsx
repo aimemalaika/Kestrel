@@ -3,6 +3,9 @@ import { useResourceStream } from '../table/useResourceStream'
 import { ageString, getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
 import { Card, StatusBadge, ViewHeader, Icon, FilterBar, EmptyState } from '../ui'
+import { OperatorHubCatalog } from './OperatorHubView'
+
+const TABS = ['Installed', 'OperatorHub']
 
 const CSV = {
   group: 'operators.coreos.com',
@@ -25,7 +28,7 @@ function apiKinds(o: K8sObject): string[] {
   return [...fromOwned, ...fromDirect]
 }
 
-export function OperatorsView() {
+function InstalledOperators() {
   const { rows, status } = useResourceStream(CSV, undefined)
   const [q, setQ] = useState('')
   const needle = q.toLowerCase()
@@ -35,6 +38,7 @@ export function OperatorsView() {
       name: text(o, 'spec.displayName') ?? o.metadata.name,
       provider: text(o, 'spec.provider.name') ?? text(o, 'spec.provider') ?? '—',
       version: text(o, 'spec.version') ?? text(o, 'version') ?? '—',
+      channel: text(o, 'spec.channel') ?? text(o, 'status.channel'),
       phase: text(o, 'status.phase') ?? 'Unknown',
       namespace: o.metadata.namespace ?? '—',
       apis: apiKinds(o),
@@ -44,7 +48,6 @@ export function OperatorsView() {
 
   return (
     <div>
-      <ViewHeader title="Installed Operators" count={rows.length} />
       <FilterBar query={q} onQuery={setQ} />
       {status === 'loading' && rows.length === 0 ? (
         <EmptyState title="Loading operators…" />
@@ -85,12 +88,39 @@ export function OperatorsView() {
               )}
               <div className="flex items-center justify-between text-[10px] text-zinc-500">
                 <span>{op.namespace}</span>
+                {op.channel && <span>Channel: {op.channel}</span>}
                 <span>Installed {op.age}</span>
               </div>
             </Card>
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+export function OperatorsView({ initialTab = 'Installed' }: { initialTab?: string }) {
+  const [tab, setTab] = useState(TABS.includes(initialTab) ? initialTab : 'Installed')
+  return (
+    <div>
+      <ViewHeader
+        title="Operators"
+        tabs={TABS}
+        activeTab={tab}
+        onTab={setTab}
+        action={
+          tab === 'Installed' ? (
+            <button
+              type="button"
+              onClick={() => setTab('OperatorHub')}
+              className="text-xs px-3 py-1.5 rounded-lg bg-brand/15 text-brand-fg border border-brand/30 hover:bg-brand/25 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
+            >
+              Browse
+            </button>
+          ) : undefined
+        }
+      />
+      {tab === 'Installed' ? <InstalledOperators /> : <OperatorHubCatalog />}
     </div>
   )
 }

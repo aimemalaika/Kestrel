@@ -1,177 +1,152 @@
 import type { K8sObject } from '../contract/types'
+import type { WorkloadEdge } from '../modules/topology/topologyEdges'
 
-export type TopoKind = 'Service' | 'Deployment' | 'ReplicaSet' | 'Pod'
-export type Health = 'healthy' | 'degraded' | 'down' | 'unknown'
+export type WorkloadType = 'Deployment' | 'StatefulSet' | 'DaemonSet'
+export type Health = 'healthy' | 'degraded' | 'down'
 
-export interface TopoNode {
+export interface Workload {
   id: string
-  kind: TopoKind
   name: string
   namespace: string
+  type: WorkloadType
+  ready: number
+  desired: number
   health: Health
-  col: number
+  exposed: boolean
+}
+export interface PlacedNode extends Workload {
   x: number
   y: number
-  detail: { label: string; value: string }[]
 }
-export interface TopoEdge {
+export interface NsBox {
+  namespace: string
+  label: string
+  color: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+export interface PlacedEdge {
   from: string
   to: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
 }
 export interface Topology {
-  nodes: TopoNode[]
-  edges: TopoEdge[]
+  nodes: PlacedNode[]
+  boxes: NsBox[]
+  edges: PlacedEdge[]
   width: number
   height: number
 }
 
-export const NODE_W = 160
-export const NODE_H = 44
-const COL_GAP = 60
-const ROW_GAP = 14
-const PAD = 16
-const KIND_COL: Record<TopoKind, number> = { Service: 0, Deployment: 1, ReplicaSet: 2, Pod: 3 }
+export const NS_COLORS: Record<string, string> = {
+  production: '#34d399',
+  staging: '#38bdf8',
+  monitoring: '#a78bfa',
+}
+const FALLBACK_COLORS = ['#fbbf24', '#f472b6', '#2dd4bf', '#fb923c']
+const NS_ORDER = ['production', 'staging', 'monitoring']
 
-const nodeId = (kind: TopoKind, o: K8sObject) =>
-  `${kind}/${o.metadata.namespace ?? ''}/${o.metadata.name}`
+const CELL_W = 150
+const CELL_H = 150
+const BOX_PAD = 20
+const BOX_HEAD = 32
+const BOX_GAP = 40
+const MARGIN = 20
 
-function phase(p: K8sObject): string | undefined {
-  return (p as unknown as { status?: { phase?: string } }).status?.phase
+type Spec = { replicas?: number }
+type Status = {
+  readyReplicas?: number
+  numberReady?: number
+  desiredNumberScheduled?: number
 }
 
-function podHealth(p: K8sObject): Health {
-  const ph = phase(p)
-  if (!ph) return 'unknown'
-  if (ph === 'Running' || ph === 'Succeeded') return 'healthy'
-  if (ph === 'Failed') return 'down'
+export function healthOf(ready: number, desired: number): Health {
+  if (desired > 0 && ready >= desired) return 'healthy'
+  if (ready <= 0) return 'down'
   return 'degraded'
 }
 
-function rollup(hs: Health[]): Health {
-  if (hs.length === 0) return 'unknown'
-  const known = hs.filter((h) => h !== 'unknown')
-  if (known.length === 0) return 'unknown'
-  if (known.every((h) => h === 'healthy')) return 'healthy'
-  if (known.every((h) => h === 'down')) return 'down'
-  return 'degraded'
+export function toWorkload(o: K8sObject, type: WorkloadType): Workload {
+  const spec = ((o as unknown as { spec?: Spec }).spec ?? {}) as Spec
+  const st = ((o as unknown as { status?: Status }).status ?? {}) as Status
+  const desired = type === 'DaemonSet' ? (st.desiredNumberScheduled ?? 0) : (spec.replicas ?? 0)
+  const ready = type === 'DaemonSet' ? (st.numberReady ?? 0) : (st.readyReplicas ?? 0)
+  const ns = o.metadata.namespace ?? ''
+  const ann = (o.metadata as { annotations?: Record<string, string> }).annotations ?? {}
+  return {
+    id: `${ns}/${o.metadata.name}`,
+    name: o.metadata.name,
+    namespace: ns,
+    type,
+    ready,
+    desired,
+    health: healthOf(ready, desired),
+    exposed: ann['kestrel.io/exposed'] === 'true',
+  }
 }
 
-function owners(o: K8sObject): { kind: string; name: string }[] {
-  const r = (o.metadata as { ownerReferences?: { kind: string; name: string }[] }).ownerReferences
-  return Array.isArray(r) ? r : []
+export function nsColor(ns: string, index: number): string {
+  return NS_COLORS[ns] ?? FALLBACK_COLORS[index % FALLBACK_COLORS.length]
 }
 
-function labelsOf(o: K8sObject): Record<string, string> {
-  return (o.metadata as { labels?: Record<string, string> }).labels ?? {}
+function nsRank(ns: string): number {
+  const i = NS_ORDER.indexOf(ns)
+  return i < 0 ? NS_ORDER.length : i
 }
 
-export function buildTopology(input: {
-  deployments: K8sObject[]
-  replicasets: K8sObject[]
-  pods: K8sObject[]
-  services: K8sObject[]
-}): Topology {
-  const { deployments, replicasets, pods, services } = input
-  const nodes: TopoNode[] = []
-  const edges: TopoEdge[] = []
-  const byId = new Map<string, TopoNode>()
-  const add = (kind: TopoKind, o: K8sObject, health: Health, detail: TopoNode['detail']) => {
-    const n: TopoNode = {
-      id: nodeId(kind, o),
-      kind,
-      name: o.metadata.name,
-      namespace: o.metadata.namespace ?? '',
-      health,
-      col: KIND_COL[kind],
-      x: 0,
-      y: 0,
-      detail,
-    }
-    nodes.push(n)
-    byId.set(n.id, n)
-    return n
-  }
+export function layoutTopology(workloads: Workload[], edges: WorkloadEdge[]): Topology {
+  const groups = new Map<string, Workload[]>()
+  for (const w of workloads) groups.set(w.namespace, [...(groups.get(w.namespace) ?? []), w])
+  const names = [...groups.keys()].sort((a, b) => nsRank(a) - nsRank(b) || a.localeCompare(b))
 
-  const podNodes = pods.map((p) =>
-    add('Pod', p, podHealth(p), [{ label: 'Phase', value: phase(p) ?? '—' }]),
-  )
-  const podByNode = new Map<K8sObject, TopoNode>(pods.map((p, i) => [p, podNodes[i]]))
-
-  // Parent links: pod -> ReplicaSet, ReplicaSet -> Deployment (ownerReferences).
-  const rsNodes = replicasets.map((r) => add('ReplicaSet', r, 'unknown', []))
-  const depNodes = deployments.map((d) => add('Deployment', d, 'unknown', []))
-  const kids = new Map<string, TopoNode[]>()
-  const link = (parent: TopoNode, child: TopoNode) => {
-    edges.push({ from: parent.id, to: child.id })
-    kids.set(parent.id, [...(kids.get(parent.id) ?? []), child])
-  }
-  const findOwner = (o: K8sObject, kind: TopoKind): TopoNode | undefined => {
-    const ref = owners(o).find((x) => x.kind === kind)
-    return ref ? byId.get(`${kind}/${o.metadata.namespace ?? ''}/${ref.name}`) : undefined
-  }
-  pods.forEach((p) => {
-    const rs = findOwner(p, 'ReplicaSet')
-    if (rs) link(rs, podByNode.get(p)!)
-  })
-  replicasets.forEach((r, i) => {
-    const d = findOwner(r, 'Deployment')
-    if (d) link(d, rsNodes[i])
-  })
-  // Roll health up (pods -> replicasets -> deployments).
-  for (const rs of rsNodes) {
-    const c = kids.get(rs.id) ?? []
-    rs.health = rollup(c.map((x) => x.health))
-    rs.detail = [
-      {
-        label: 'Pods',
-        value: `${c.filter((x) => x.health === 'healthy').length} / ${c.length} healthy`,
-      },
-    ]
-  }
-  for (const d of depNodes) {
-    const c = kids.get(d.id) ?? []
-    d.health = rollup(c.map((x) => x.health))
-    d.detail = [{ label: 'ReplicaSets', value: String(c.length) }]
-  }
-
-  // Services: edge to each Deployment (or owning root) whose pods match the selector.
-  const rootOf = (n: TopoNode): TopoNode => {
-    const parent = edges.find((e) => e.to === n.id)
-    return parent ? rootOf(byId.get(parent.from)!) : n
-  }
-  for (const s of services) {
-    const sel = (s as unknown as { spec?: { selector?: Record<string, string> } }).spec?.selector
-    const entries = Object.entries(sel ?? {})
-    const sn = add('Service', s, 'unknown', [
-      { label: 'Selector', value: entries.map(([k, v]) => `${k}=${v}`).join(', ') || '—' },
-    ])
-    if (entries.length === 0) continue
-    const targets = new Set<string>()
-    pods.forEach((p) => {
-      const l = labelsOf(p)
-      if (p.metadata.namespace === s.metadata.namespace && entries.every(([k, v]) => l[k] === v))
-        targets.add(rootOf(podByNode.get(p)!).id)
+  const nodes: PlacedNode[] = []
+  const boxes: NsBox[] = []
+  let cursor = MARGIN
+  let maxH = 0
+  names.forEach((ns, i) => {
+    const items = [...groups.get(ns)!].sort((a, b) => a.name.localeCompare(b.name))
+    const cols = Math.min(items.length, items.length > 4 ? 3 : 2)
+    const rows = Math.ceil(items.length / cols)
+    const w = BOX_PAD * 2 + cols * CELL_W
+    const h = BOX_HEAD + BOX_PAD + rows * CELL_H
+    boxes.push({
+      namespace: ns,
+      label: ns,
+      color: nsColor(ns, i),
+      x: cursor,
+      y: MARGIN,
+      w,
+      h,
     })
-    targets.forEach((t) => edges.push({ from: sn.id, to: t }))
-    sn.health = rollup([...targets].map((t) => byId.get(t)!.health))
-  }
-
-  // Layered layout: column by kind, rows in stable name order; children sit near parents.
-  const cols: TopoNode[][] = [[], [], [], []]
-  nodes.forEach((n) => cols[n.col].push(n))
-  cols.forEach((c) => c.sort((a, b) => a.name.localeCompare(b.name)))
-  let maxRows = 0
-  cols.forEach((c, ci) => {
-    c.forEach((n, ri) => {
-      n.x = PAD + ci * (NODE_W + COL_GAP)
-      n.y = PAD + ri * (NODE_H + ROW_GAP)
+    items.forEach((it, k) => {
+      nodes.push({
+        ...it,
+        x: cursor + BOX_PAD + (k % cols) * CELL_W + CELL_W / 2,
+        y: MARGIN + BOX_HEAD + Math.floor(k / cols) * CELL_H + 50,
+      })
     })
-    maxRows = Math.max(maxRows, c.length)
+    cursor += w + BOX_GAP
+    maxH = Math.max(maxH, h)
   })
+
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const placed: PlacedEdge[] = []
+  for (const e of edges) {
+    const a = byId.get(e.from)
+    const b = byId.get(e.to)
+    if (!a || !b) continue
+    placed.push({ from: e.from, to: e.to, x1: a.x, y1: a.y, x2: b.x, y2: b.y })
+  }
   return {
     nodes,
-    edges,
-    width: PAD * 2 + cols.length * NODE_W + (cols.length - 1) * COL_GAP,
-    height: PAD * 2 + Math.max(1, maxRows) * NODE_H + Math.max(0, maxRows - 1) * ROW_GAP,
+    boxes,
+    edges: placed,
+    width: Math.max(cursor - BOX_GAP + MARGIN, 2 * MARGIN),
+    height: maxH + 2 * MARGIN,
   }
 }

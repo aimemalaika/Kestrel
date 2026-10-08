@@ -105,7 +105,9 @@ function Usage({ name, value }: { name: string; value?: number }) {
     <div>
       <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
         <span>{name}</span>
-        {value === undefined && <span>n/a</span>}
+        <span className="tabular-nums">
+          {value === undefined ? 'n/a' : `${Math.round(value)}%`}
+        </span>
       </div>
       {value !== undefined && <MiniBar value={value} className="w-full" />}
     </div>

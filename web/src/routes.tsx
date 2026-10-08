@@ -49,6 +49,7 @@ export function AppRoutes() {
         <Route path="pipelines" element={<PipelinesView />} />
         <Route path="alerts" element={<AlertsView />} />
         <Route path="cluster" element={<ClusterView />} />
+        <Route path="cluster/settings" element={<ClusterView />} />
         <Route path="topology" element={<TopologyView />} />
         <Route path="dashboards" element={<DashboardsView />} />
         <Route path="metrics" element={<MetricsView />} />

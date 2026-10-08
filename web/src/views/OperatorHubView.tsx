@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, ViewHeader, Icon, FilterBar, EmptyState } from '../ui'
+import { OperatorsView } from './OperatorsView'
+import { Card, Icon, FilterBar, EmptyState } from '../ui'
 
 interface CatalogItem {
   name: string
@@ -63,6 +64,10 @@ const CATALOG: CatalogItem[] = [
 ]
 
 export function OperatorHubView() {
+  return <OperatorsView initialTab="OperatorHub" />
+}
+
+export function OperatorHubCatalog() {
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('All')
   const needle = q.toLowerCase()
@@ -74,7 +79,6 @@ export function OperatorHubView() {
 
   return (
     <div className="space-y-4">
-      <ViewHeader title="OperatorHub" count={items.length} />
       <FilterBar query={q} onQuery={setQ} />
       <div className="flex gap-2 flex-wrap" role="group" aria-label="Category">
         {CATEGORIES.map((c) => (

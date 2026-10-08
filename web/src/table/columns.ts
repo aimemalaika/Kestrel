@@ -1,6 +1,21 @@
 import type { K8sObject } from '../contract/types'
 
-export type CellKind = 'text' | 'status' | 'usage' | 'restarts' | 'mono'
+export type CellKind =
+  | 'text'
+  | 'status'
+  | 'restarts'
+  | 'mono'
+  | 'podsquares'
+  | 'scale'
+  | 'readyfrac'
+  | 'strategy'
+  | 'svctype'
+  | 'tls'
+  | 'routehost'
+  | 'keys'
+  | 'rolekind'
+  | 'rolemono'
+  | 'check'
 
 export interface ColumnHint {
   header: string
@@ -48,6 +63,10 @@ function deployReady(o: K8sObject): string {
   return `${num(getPath(o, 'status.readyReplicas'))}/${num(getPath(o, 'spec.replicas') ?? getPath(o, 'status.replicas'))}`
 }
 
+function deployDesired(o: K8sObject): string {
+  return String(num(getPath(o, 'spec.replicas') ?? getPath(o, 'status.replicas')))
+}
+
 function dash(v: unknown): string | undefined {
   return v === undefined || v === null || v === '' ? undefined : String(v)
 }
@@ -55,8 +74,85 @@ function dash(v: unknown): string | undefined {
 function svcPorts(o: K8sObject): string | undefined {
   const ports = arr(getPath(o, 'spec.ports'))
   if (!ports.length) return undefined
-  return ports.map((p) => `${p.port}/${p.protocol ?? 'TCP'}`).join(', ')
+  return ports
+    .map((p) => {
+      const target = p.targetPort !== undefined && p.targetPort !== null ? `:${p.targetPort}` : ''
+      const node = p.nodePort ? `:${p.nodePort}` : ''
+      return `${p.port}${target}${node}/${p.protocol ?? 'TCP'}`
+    })
+    .join(', ')
 }
+
+function routeStatus(o: K8sObject): string | undefined {
+  const ingress = arr(getPath(o, 'status.ingress'))
+  if (!ingress.length) return undefined
+  const conds = ingress.flatMap((i) => arr(i.conditions)).filter((c) => c.type === 'Admitted')
+  if (conds.some((c) => c.status === 'False')) return 'Rejected'
+  return 'Accepted'
+}
+
+const count = (path: string) => (o: K8sObject) => {
+  const v = getPath(o, path)
+  return String(Array.isArray(v) ? v.length : 0)
+}
+
+const first = (path: string) => (o: K8sObject) => {
+  const v = getPath(o, path)
+  return Array.isArray(v) ? dash(v[0]) : undefined
+}
+
+function pvClaim(o: K8sObject): string | undefined {
+  const ref = getPath(o, 'spec.claimRef') as Rec | undefined
+  if (!ref || !ref.name) return undefined
+  return ref.namespace ? `${ref.namespace}/${ref.name}` : String(ref.name)
+}
+
+export const DEFAULT_SC_ANNOTATION = 'storageclass.kubernetes.io/is-default-class'
+export function isDefaultStorageClass(o: K8sObject): boolean {
+  const a = o.metadata.annotations as Record<string, string> | undefined
+  return a?.[DEFAULT_SC_ANNOTATION] === 'true'
+}
+
+/** Kinds that have no meaningful status: they get no Status column. */
+const NO_STATUS_KINDS = new Set([
+  'Deployment',
+  'ConfigMap',
+  'Secret',
+  'ServiceAccount',
+  'Role',
+  'ClusterRole',
+  'RoleBinding',
+  'ClusterRoleBinding',
+  'Service',
+  'StorageClass',
+])
+
+/** Kinds whose Status column sits right after Name/Namespace. */
+const STATUS_FIRST_KINDS = new Set(['PersistentVolumeClaim', 'PersistentVolume'])
+
+export function hasStatusColumn(kind: string): boolean {
+  return !NO_STATUS_KINDS.has(kind)
+}
+
+const ROLE_HINTS: ColumnHint[] = [
+  {
+    header: 'Type',
+    path: 'roleKind',
+    cell: 'rolekind',
+    derive: (o) => (o.kind === 'ClusterRole' ? 'ClusterRole' : 'Role'),
+  },
+  { header: 'Rules', path: 'rules', numeric: true, derive: count('rules') },
+]
+
+const BINDING_HINTS: ColumnHint[] = [
+  { header: 'Role Ref', path: 'roleRef.name', cell: 'rolemono' },
+  {
+    header: 'Subject',
+    path: 'subject',
+    cell: 'mono',
+    derive: (o) => dash(arr(getPath(o, 'subjects'))[0]?.name),
+  },
+]
 
 export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   Pod: [
@@ -68,10 +164,16 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
     { header: 'Node', path: 'spec.nodeName' },
   ],
   Deployment: [
-    { header: 'Ready', path: 'ready', numeric: true, derive: deployReady },
-    { header: 'Up-to-date', path: 'status.updatedReplicas', numeric: true },
-    { header: 'Available', path: 'status.availableReplicas', numeric: true },
-    { header: 'Strategy', path: 'spec.strategy.type' },
+    { header: 'Pods', path: 'pods', cell: 'podsquares', derive: deployReady },
+    { header: 'Ready', path: 'ready', numeric: true, cell: 'readyfrac', derive: deployReady },
+    {
+      header: 'Replicas',
+      path: 'spec.replicas',
+      numeric: true,
+      cell: 'scale',
+      derive: deployDesired,
+    },
+    { header: 'Strategy', path: 'spec.strategy.type', cell: 'strategy' },
     {
       header: 'Image',
       path: 'image',
@@ -80,33 +182,73 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
     },
   ],
   Service: [
-    { header: 'Type', path: 'spec.type' },
+    { header: 'Type', path: 'spec.type', cell: 'svctype' },
     { header: 'ClusterIP', path: 'spec.clusterIP', cell: 'mono' },
-    { header: 'Ports', path: 'ports', derive: svcPorts },
+    { header: 'Ports', path: 'ports', cell: 'mono', derive: svcPorts },
   ],
   Route: [
-    { header: 'Host', path: 'spec.host', cell: 'mono' },
+    { header: 'Host', path: 'spec.host', cell: 'routehost' },
     { header: 'Service', path: 'spec.to.name' },
     { header: 'Port', path: 'spec.port.targetPort' },
     {
       header: 'TLS',
       path: 'spec.tls',
+      cell: 'tls',
       derive: (o) => {
         const t = getPath(o, 'spec.tls')
-        if (!t) return undefined
+        if (!t) return 'None'
         return dash((t as Rec).termination) ?? 'Enabled'
       },
     },
   ],
+  ConfigMap: [
+    {
+      header: 'Keys',
+      path: 'data',
+      cell: 'keys',
+      derive: (o) => {
+        const d = getPath(o, 'data')
+        return String(d && typeof d === 'object' ? Object.keys(d).length : 0)
+      },
+    },
+  ],
+  Secret: [{ header: 'Type', path: 'type', cell: 'mono' }],
+  ServiceAccount: [
+    { header: 'Secrets', path: 'secrets', numeric: true, derive: count('secrets') },
+    {
+      header: 'Image Pull Secrets',
+      path: 'imagePullSecrets',
+      numeric: true,
+      derive: count('imagePullSecrets'),
+    },
+  ],
+  Role: ROLE_HINTS,
+  ClusterRole: ROLE_HINTS,
+  RoleBinding: BINDING_HINTS,
+  ClusterRoleBinding: BINDING_HINTS,
   PersistentVolumeClaim: [
     { header: 'Capacity', path: 'status.capacity.storage' },
+    { header: 'Access Mode', path: 'spec.accessModes', derive: first('spec.accessModes') },
     { header: 'StorageClass', path: 'spec.storageClassName' },
   ],
   PersistentVolume: [
     { header: 'Capacity', path: 'spec.capacity.storage' },
+    { header: 'Access Mode', path: 'spec.accessModes', derive: first('spec.accessModes') },
     { header: 'Reclaim', path: 'spec.persistentVolumeReclaimPolicy' },
+    { header: 'Claim', path: 'spec.claimRef', cell: 'mono', derive: pvClaim },
+    { header: 'StorageClass', path: 'spec.storageClassName' },
   ],
-  StorageClass: [{ header: 'Provisioner', path: 'provisioner' }],
+  StorageClass: [
+    { header: 'Provisioner', path: 'provisioner', cell: 'mono' },
+    { header: 'Reclaim Policy', path: 'reclaimPolicy' },
+    { header: 'Volume Binding', path: 'volumeBindingMode' },
+    {
+      header: 'Default',
+      path: 'default',
+      cell: 'check',
+      derive: (o) => (isDefaultStorageClass(o) ? 'true' : 'false'),
+    },
+  ],
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -162,7 +304,7 @@ export function scanSummary(object: K8sObject): ScanCounts | undefined {
 export interface ColumnSpec {
   id: string
   header: string
-  kind: 'text' | 'age' | 'status' | 'scan' | 'usage' | 'restarts' | 'mono'
+  kind: CellKind | 'age' | 'scan'
   align?: 'right'
   value: (o: K8sObject) => string
 }
@@ -179,6 +321,15 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       value: (o) => str(o.metadata.namespace),
     })
   }
+  const statusCol: ColumnSpec = {
+    id: 'status',
+    header: 'Status',
+    kind: 'status',
+    value: (o) =>
+      str(getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+  }
+  const statusEarly = hasStatusColumn(kind) && STATUS_FIRST_KINDS.has(kind)
+  if (statusEarly) cols.push(statusCol)
   for (const h of COLUMN_HINTS[kind] ?? []) {
     cols.push({
       id: h.path,
@@ -196,16 +347,7 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       value: (o) => JSON.stringify(scanSummary(o) ?? {}),
     })
   }
-  cols.push({
-    id: 'status',
-    header: 'Status',
-    kind: 'status',
-    value: (o) =>
-      str(
-        getPath(o, 'status.phase') ??
-          (kind === 'Route' && arr(getPath(o, 'status.ingress'))[0] ? 'Admitted' : undefined),
-      ),
-  })
+  if (hasStatusColumn(kind) && !statusEarly) cols.push(statusCol)
   cols.push({
     id: 'age',
     header: 'Age',

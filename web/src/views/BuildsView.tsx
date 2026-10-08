@@ -3,7 +3,18 @@ import { useResourceStream } from '../table/useResourceStream'
 import { Age } from '../table/Age'
 import { getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
-import { EmptyState, Icon, Mono, StatusBadge, Table, TD, TR, ViewHeader } from '../ui'
+import {
+  EmptyState,
+  FilterBar,
+  Icon,
+  Mono,
+  PrimaryBtn,
+  StatusBadge,
+  Table,
+  TD,
+  TR,
+  ViewHeader,
+} from '../ui'
 
 const BUILDS = { group: 'build.openshift.io', version: 'v1', resource: 'builds' }
 const BUILD_CONFIGS = { group: 'build.openshift.io', version: 'v1', resource: 'buildconfigs' }
@@ -53,25 +64,44 @@ function TriggerChip({ trigger }: { trigger: string }) {
   )
 }
 
+const iconBtn =
+  'text-zinc-500 hover:text-zinc-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 rounded'
+
 const cell = 'text-xs text-zinc-400'
 
 export function BuildsView() {
   const [tab, setTab] = useState('Builds')
+  const [q, setQ] = useState('')
   const builds = useResourceStream(BUILDS, undefined).rows
   const configs = useResourceStream(BUILD_CONFIGS, undefined).rows
   const streams = useResourceStream(IMAGE_STREAMS, undefined).rows
 
-  const sorted = [...builds].sort(
-    (a, b) =>
-      (STATUS_ORDER[str(a, 'status.phase')] ?? 9) - (STATUS_ORDER[str(b, 'status.phase')] ?? 9) ||
-      a.metadata.name.localeCompare(b.metadata.name),
-  )
+  const sorted = [...builds]
+    .filter((b) => b.metadata.name.toLowerCase().includes(q.toLowerCase()))
+    .sort(
+      (a, b) =>
+        (STATUS_ORDER[str(a, 'status.phase')] ?? 9) - (STATUS_ORDER[str(b, 'status.phase')] ?? 9) ||
+        a.metadata.name.localeCompare(b.metadata.name),
+    )
   const count =
     tab === 'Builds' ? sorted.length : tab === 'BuildConfigs' ? configs.length : streams.length
 
   return (
     <div>
-      <ViewHeader title="Builds" count={count} tabs={TABS} activeTab={tab} onTab={setTab} />
+      <ViewHeader
+        title="Builds"
+        count={count}
+        tabs={TABS}
+        activeTab={tab}
+        onTab={setTab}
+        action={
+          <PrimaryBtn>
+            <Icon name="run" className="w-3.5 h-3.5" />
+            Start Build
+          </PrimaryBtn>
+        }
+      />
+      {tab === 'Builds' && <FilterBar query={q} onQuery={setQ} />}
       {tab === 'Builds' && (
         <Table
           aria-label="Builds"
@@ -84,6 +114,7 @@ export function BuildsView() {
             'Commit',
             'Duration',
             'Age',
+            '',
           ]}
         >
           {sorted.map((b) => (
@@ -116,6 +147,21 @@ export function BuildsView() {
                   <Age creationTimestamp={b.metadata.creationTimestamp} />
                 </span>
               </TD>
+              <TD>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    className={iconBtn}
+                    title="View logs"
+                    aria-label="View logs"
+                  >
+                    <Icon name="logs" className="w-3.5 h-3.5" />
+                  </button>
+                  <button type="button" className={iconBtn} title="Rebuild" aria-label="Rebuild">
+                    <Icon name="refresh" className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </TD>
             </TR>
           ))}
         </Table>
@@ -123,7 +169,16 @@ export function BuildsView() {
       {tab === 'BuildConfigs' && (
         <Table
           aria-label="BuildConfigs"
-          headers={['Name', 'Namespace', 'Build Strategy', 'Source', 'Last Version', 'Age']}
+          headers={[
+            'Name',
+            'Namespace',
+            'Build Strategy',
+            'Source',
+            'Last Build',
+            'Last Status',
+            'Age',
+            '',
+          ]}
         >
           {configs.map((c) => (
             <TR key={`${c.metadata.namespace}/${c.metadata.name}`}>
@@ -141,13 +196,42 @@ export function BuildsView() {
               </TD>
               <TD>
                 <span className="text-xs font-mono text-zinc-500">
-                  {str(c, 'status.lastVersion') ? `#${str(c, 'status.lastVersion')}` : '—'}
+                  {str(c, 'status.lastVersion')
+                    ? `${c.metadata.name}-${str(c, 'status.lastVersion')}`
+                    : '—'}
                 </span>
+              </TD>
+              <TD>
+                {str(c, 'status.lastBuildPhase') ? (
+                  <StatusBadge status={str(c, 'status.lastBuildPhase')} />
+                ) : (
+                  <span className="text-xs text-zinc-600">—</span>
+                )}
               </TD>
               <TD>
                 <span className="text-xs text-zinc-500">
                   <Age creationTimestamp={c.metadata.creationTimestamp} />
                 </span>
+              </TD>
+              <TD>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    className={iconBtn}
+                    title="Run build"
+                    aria-label="Run build"
+                  >
+                    <Icon name="run" className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className={iconBtn}
+                    title="More actions"
+                    aria-label="More actions"
+                  >
+                    <Icon name="dots" className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </TD>
             </TR>
           ))}

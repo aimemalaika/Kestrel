@@ -3,10 +3,10 @@ import { render, screen } from '@testing-library/react'
 import { DashboardsView } from './DashboardsView'
 
 describe('DashboardsView', () => {
-  it('renders placeholder panels with pending notice', () => {
+  it('renders sample panels with sample notice', () => {
     render(<DashboardsView />)
     expect(screen.getByText('Dashboard')).toBeInTheDocument()
-    expect(screen.getByText(/Metrics pending — not wired to a metrics source/)).toBeInTheDocument()
+    expect(screen.getByText(/Sample data — no metrics source connected/)).toBeInTheDocument()
     expect(screen.getByText('Cluster CPU')).toBeInTheDocument()
     expect(screen.getByText('Pod count')).toBeInTheDocument()
   })

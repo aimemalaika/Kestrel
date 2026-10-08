@@ -9,7 +9,7 @@ describe('ProjectsView', () => {
     expect(screen.getByText('Projects')).toBeInTheDocument()
     const shop = within(screen.getByTestId('project-shop'))
     expect(shop.getByText('Pods')).toBeInTheDocument()
-    expect(shop.getByText('1.8')).toBeInTheDocument()
+    expect(shop.getByText('28%')).toBeInTheDocument()
     expect(screen.getByTestId('project-default')).toBeInTheDocument()
   })
 })

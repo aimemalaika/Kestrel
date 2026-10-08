@@ -28,13 +28,11 @@ export function NamespacePicker() {
       <span className="sr-only">Namespace</span>
       <select
         aria-label="Namespace"
-        value={namespace ?? ''}
+        value={namespace ?? '_all'}
         onChange={(e) => navigate(`/ns/${e.target.value}`)}
         className="text-xs bg-zinc-800/70 border border-zinc-700/70 rounded-lg px-2.5 py-1.5 text-zinc-300 focus:outline-none focus:border-brand"
       >
-        <option value="" disabled>
-          Select namespace…
-        </option>
+        <option value="_all">All Namespaces</option>
         {namespaces.map((n) => (
           <option key={n} value={n}>
             {n}

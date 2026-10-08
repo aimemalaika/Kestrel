@@ -76,3 +76,19 @@ describe('ResourceTable status chips', () => {
     expect(chips[0]).toHaveAttribute('aria-pressed', 'false')
   })
 })
+
+describe('ResourceTable deployments', () => {
+  it('renders pod squares, a local scale control, and a Create button', async () => {
+    renderAt('/ns/production/apps/v1/deployments')
+    await screen.findByText('api-gateway')
+    expect(screen.getByRole('button', { name: /create deployment/i })).toBeInTheDocument()
+    expect(screen.getAllByTestId('pod-squares').length).toBeGreaterThan(0)
+    const up = screen.getByLabelText('Scale up api-gateway')
+    const row = up.closest('tr') as HTMLElement
+    expect(row.querySelectorAll('[data-ready="true"]').length).toBe(3)
+    fireEvent.click(up)
+    expect(row.querySelector('[data-testid="replica-count"]')?.textContent).toBe('4')
+    fireEvent.click(screen.getByLabelText('Scale down api-gateway'))
+    expect(row.querySelector('[data-testid="replica-count"]')?.textContent).toBe('3')
+  })
+})

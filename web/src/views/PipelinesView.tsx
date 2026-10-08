@@ -3,7 +3,7 @@ import { useResourceStream } from '../table/useResourceStream'
 import { Age } from '../table/Age'
 import { getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
-import { Card, FilterBar, Icon, Mono, StageViz, StatusBadge, ViewHeader } from '../ui'
+import { Card, FilterBar, Icon, Mono, PrimaryBtn, StageViz, StatusBadge, ViewHeader } from '../ui'
 
 const PIPELINES = { group: 'tekton.dev', version: 'v1', resource: 'pipelines' }
 const PIPELINERUNS = { group: 'tekton.dev', version: 'v1', resource: 'pipelineruns' }
@@ -93,7 +93,11 @@ export function PipelinesView() {
 
   const runs = [...runsStream.rows]
     .map((r) => ({ run: r, status: runStatus(r) }))
-    .filter((x) => x.run.metadata.name.includes(q) && (status === 'All' || x.status === status))
+    .filter(
+      (x) =>
+        x.run.metadata.name.toLowerCase().includes(q.toLowerCase()) &&
+        (status === 'All' || x.status === status),
+    )
     .sort((a, b) =>
       (b.run.metadata.creationTimestamp ?? '').localeCompare(
         a.run.metadata.creationTimestamp ?? '',
@@ -102,7 +106,16 @@ export function PipelinesView() {
 
   return (
     <div>
-      <ViewHeader title="Pipeline Runs" count={runs.length} />
+      <ViewHeader
+        title="Pipeline Runs"
+        count={runs.length}
+        action={
+          <PrimaryBtn>
+            <Icon name="run" className="w-3.5 h-3.5" />
+            Start Pipeline
+          </PrimaryBtn>
+        }
+      />
       <FilterBar
         query={q}
         onQuery={setQ}
@@ -117,7 +130,7 @@ export function PipelinesView() {
       )}
       <div className="space-y-3">
         {runs.map(({ run, status: st }) => {
-          const pipelineName = getPath(run, 'spec.pipelineRef.name')
+          const trigger = run.metadata.annotations?.['tekton.dev/trigger']
           return (
             <div key={run.metadata.uid ?? run.metadata.name} data-testid="pipeline-run">
               <Card className="p-4">
@@ -133,7 +146,7 @@ export function PipelinesView() {
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-                      {typeof pipelineName === 'string' && <span>Pipeline: {pipelineName}</span>}
+                      {trigger && <span>Trigger: {trigger}</span>}
                       <span>Duration: {duration(run)}</span>
                       <span>
                         <Age creationTimestamp={run.metadata.creationTimestamp} /> ago

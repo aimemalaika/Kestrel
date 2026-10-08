@@ -11,4 +11,12 @@ describe('OperatorHubView', () => {
     expect(screen.getByText('Model Serving')).toBeInTheDocument()
     expect(screen.queryByText('Stream Broker')).not.toBeInTheDocument()
   })
+
+  it('lands on the OperatorHub tab', () => {
+    render(<OperatorHubView />)
+    expect(screen.getByRole('button', { name: 'OperatorHub' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
 })

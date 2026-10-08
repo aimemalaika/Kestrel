@@ -91,7 +91,3 @@ export const ALERT_RULES: AlertRule[] = ALERTS.map((a) => ({
 export function firingAlerts(): Alert[] {
   return ALERTS.filter((a) => a.state === 'Firing')
 }
-
-export function firingCount(): number {
-  return firingAlerts().length
-}
