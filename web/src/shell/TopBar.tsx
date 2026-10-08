@@ -4,6 +4,7 @@ import { NamespacePicker } from './NamespacePicker'
 import { Icon } from '../ui'
 import { useAuth } from '../auth/AuthProvider'
 import { useSelection } from '../state/selection'
+import type { Perspective } from '../nav/categoryMap'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -34,6 +35,44 @@ function UserMenu() {
   const { identity, signOut } = useAuth()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const items = () =>
+    Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])
+  const close = (restoreFocus: boolean) => {
+    setOpen(false)
+    if (restoreFocus) triggerRef.current?.focus()
+  }
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      close(true)
+      return
+    }
+    const list = items()
+    if (list.length === 0) return
+    const i = list.indexOf(document.activeElement as HTMLElement)
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      list[(i + 1) % list.length].focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      list[(i - 1 + list.length) % list.length].focus()
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      list[0].focus()
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      list[list.length - 1].focus()
+    } else if (e.key === 'Tab') {
+      // Tab leaves the menu: close it and let focus move on naturally from the trigger.
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+  }
+  useEffect(() => {
+    if (open) items()[0]?.focus()
+  }, [open])
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
@@ -46,12 +85,13 @@ function UserMenu() {
   return (
     <div ref={ref} className="relative" data-testid="identity-badge">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="User menu"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors border border-transparent hover:border-zinc-700"
+        className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors border border-transparent hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
       >
         <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center text-white text-[10px] font-bold">
           {identity.user.charAt(0).toUpperCase()}
@@ -61,7 +101,9 @@ function UserMenu() {
       </button>
       {open && (
         <div
+          ref={menuRef}
           role="menu"
+          onKeyDown={onMenuKey}
           className="absolute right-0 top-full mt-1 w-48 bg-header border border-zinc-700 rounded-lg shadow-xl z-50 py-1"
         >
           <div className="px-3 py-2 border-b border-zinc-800">
@@ -71,8 +113,9 @@ function UserMenu() {
           <button
             type="button"
             role="menuitem"
+            tabIndex={-1}
             onClick={signOut}
-            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
           >
             Sign out
           </button>
@@ -82,7 +125,120 @@ function UserMenu() {
   )
 }
 
-export function TopBar() {
+const FOCUS = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60'
+
+function PerspectiveToggle({
+  perspective,
+  onChange,
+}: {
+  perspective: Perspective
+  onChange: (p: Perspective) => void
+}) {
+  const opts: [Perspective, string][] = [
+    ['admin', 'Admin'],
+    ['developer', 'Developer'],
+  ]
+  return (
+    <div
+      role="group"
+      aria-label="Perspective"
+      className="flex items-center bg-zinc-800/70 border border-zinc-700/70 rounded-lg p-0.5 gap-0.5 mr-2"
+    >
+      {opts.map(([p, label]) => (
+        <button
+          key={p}
+          type="button"
+          aria-pressed={perspective === p}
+          onClick={() => onChange(p)}
+          className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${FOCUS} ${
+            perspective === p ? 'bg-brand text-white shadow' : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// No notification source yet: the list is empty and the badge hides at zero.
+const NOTIFICATIONS: { id: string; title: string; detail: string }[] = []
+
+function NotificationBell() {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+  const count = NOTIFICATIONS.length
+  return (
+    <div
+      ref={ref}
+      className="relative"
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && open) {
+          setOpen(false)
+          triggerRef.current?.focus()
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label="Notifications"
+        aria-expanded={open}
+        aria-controls="notification-panel"
+        onClick={() => setOpen((o) => !o)}
+        className={`relative p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors border border-transparent ${FOCUS}`}
+      >
+        <Icon name="bell" className="w-4 h-4" />
+        {count > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-brand text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+            {count}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          id="notification-panel"
+          role="dialog"
+          aria-label="Notifications"
+          className="absolute right-0 top-full mt-2 w-80 bg-header border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden"
+        >
+          <div className="px-4 py-3 border-b border-zinc-800">
+            <span className="text-sm font-semibold text-zinc-200">Notifications</span>
+          </div>
+          {count === 0 ? (
+            <p className="px-4 py-6 text-center text-xs text-zinc-500">No notifications</p>
+          ) : (
+            <div className="divide-y divide-zinc-800/60 max-h-72 overflow-y-auto">
+              {NOTIFICATIONS.map((n) => (
+                <div key={n.id} className="px-4 py-2.5">
+                  <p className="text-xs font-medium text-zinc-200">{n.title}</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">{n.detail}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TopBar({
+  perspective,
+  onPerspectiveChange,
+}: {
+  perspective: Perspective
+  onPerspectiveChange: (p: Perspective) => void
+}) {
   const crumbs = useCrumbs()
   return (
     <header className="flex items-center h-12 px-4 bg-header border-b border-zinc-800 shrink-0 z-40 gap-3">
@@ -94,6 +250,8 @@ export function TopBar() {
         </div>
         <span className="text-sm font-bold text-white hidden sm:block">Kestrel</span>
       </div>
+
+      <PerspectiveToggle perspective={perspective} onChange={onPerspectiveChange} />
 
       <div className="hidden md:block">
         <NamespacePicker />
@@ -117,7 +275,7 @@ export function TopBar() {
         type="button"
         aria-label="Search"
         onClick={openCommandPalette}
-        className="flex items-center gap-2 bg-zinc-800/70 border border-zinc-700/70 rounded-lg px-3 py-1.5 w-48 lg:w-64 text-left"
+        className={`flex items-center gap-2 max-w-full bg-zinc-800/70 border border-zinc-700/70 rounded-lg px-3 py-1.5 w-48 lg:w-64 text-left ${FOCUS}`}
       >
         <Icon name="search" className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
         <span className="flex-1 text-xs text-zinc-600">Search resources...</span>
@@ -126,10 +284,38 @@ export function TopBar() {
         </kbd>
       </button>
 
-      <div className="hidden md:flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-        <span className="text-xs text-emerald-400 font-medium">Healthy</span>
+      <div
+        data-testid="cluster-pill"
+        className="hidden md:flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1"
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="text-xs text-emerald-400 font-medium">kestrel-cluster</span>
+        <span className="text-[10px] text-emerald-600">v1</span>
       </div>
+
+      <button
+        type="button"
+        aria-label="Terminal"
+        aria-disabled="true"
+        tabIndex={-1}
+        title="Terminal (not available yet)"
+        className={`p-1.5 rounded-lg border border-transparent text-zinc-600 cursor-default ${FOCUS}`}
+      >
+        <Icon name="terminal" className="w-4 h-4" />
+      </button>
+
+      <NotificationBell />
+
+      <button
+        type="button"
+        aria-label="Help"
+        aria-disabled="true"
+        tabIndex={-1}
+        title="Help (not available yet)"
+        className={`rounded-lg text-zinc-400 text-xs font-bold border border-zinc-700/50 w-7 h-7 flex items-center justify-center cursor-default ${FOCUS}`}
+      >
+        ?
+      </button>
 
       <UserMenu />
     </header>

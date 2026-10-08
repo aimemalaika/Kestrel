@@ -14,7 +14,7 @@ describe('Overview', () => {
     expect(screen.getByText('Namespace Resources')).toBeInTheDocument()
     expect(screen.getByText('Active Alerts')).toBeInTheDocument()
     await waitFor(() => {
-      expect(screen.getByText('1 / 2 nodes ready')).toBeInTheDocument()
+      expect(screen.getByText('5 / 6 nodes ready')).toBeInTheDocument()
     })
     expect(screen.getByText('1 NotReady')).toBeInTheDocument()
   })

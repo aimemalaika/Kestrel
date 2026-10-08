@@ -51,6 +51,9 @@ export function EventsView() {
       {status === 'ready' && events.length === 0 && (
         <p className="text-xs text-zinc-500 mb-3">No events.</p>
       )}
+      {status === 'ready' && events.length > 0 && filtered.length === 0 && (
+        <p className="text-xs text-zinc-500 mb-3">No matching events.</p>
+      )}
       <div className="space-y-2" role="list" aria-label="Events">
         {filtered.map((ev) => (
           <div
@@ -81,9 +84,11 @@ export function EventsView() {
                     ) : null}
                   </div>
                 </div>
-                <span data-testid="event-age" className="text-[10px] text-zinc-600 shrink-0">
-                  {ageString(String(ev.e.lastTimestamp ?? ''))} ago
-                </span>
+                {ev.e.lastTimestamp ? (
+                  <span data-testid="event-age" className="text-[10px] text-zinc-600 shrink-0">
+                    {ageString(String(ev.e.lastTimestamp))} ago
+                  </span>
+                ) : null}
               </div>
             </Card>
           </div>

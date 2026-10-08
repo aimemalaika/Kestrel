@@ -1,39 +1,43 @@
 import { describe, it, expect } from 'vitest'
-import { sectionFor, bucketCatalog } from './categoryMap'
-import type { CatalogEntry } from '../contract/types'
+import { ADMIN_NAV, DEV_NAV, navFor } from './categoryMap'
 
-const entry = (group: string, kind: string, resource: string): CatalogEntry => ({
-  group,
-  version: 'v1',
-  resource,
-  kind,
-  namespaced: true,
-  verbs: ['list', 'watch'],
-})
-
-describe('sectionFor', () => {
-  it('maps known kinds to their section', () => {
-    expect(sectionFor({ group: 'apps', kind: 'Deployment' })).toBe('Workloads')
-    expect(sectionFor({ group: 'core', kind: 'ConfigMap' })).toBe('Config')
-    expect(sectionFor({ group: 'core', kind: 'Service' })).toBe('Network')
-    expect(sectionFor({ group: 'core', kind: 'PersistentVolumeClaim' })).toBe('Storage')
-    expect(sectionFor({ group: 'rbac.authorization.k8s.io', kind: 'Role' })).toBe('Access Control')
-    expect(sectionFor({ group: 'core', kind: 'Node' })).toBe('Cluster')
-  })
-
-  it('buckets unmapped kinds under Custom Resources', () => {
-    expect(sectionFor({ group: 'tekton.dev', kind: 'PipelineRun' })).toBe('Custom Resources')
-  })
-})
-
-describe('bucketCatalog', () => {
-  it('groups entries by section in SECTION_ORDER, omitting empty sections', () => {
-    const buckets = bucketCatalog([
-      entry('apps', 'Deployment', 'deployments'),
-      entry('core', 'ConfigMap', 'configmaps'),
-      entry('tekton.dev', 'PipelineRun', 'pipelineruns'),
+describe('nav model', () => {
+  it('admin sections mirror the mock order', () => {
+    expect(ADMIN_NAV.map((s) => s.section)).toEqual([
+      'Home',
+      'Operators',
+      'Workloads',
+      'Networking',
+      'Storage',
+      'Builds',
+      'Pipelines',
+      'Observe',
+      'Compute',
+      'User Management',
+      'Administration',
     ])
-    expect(buckets.map((b) => b.section)).toEqual(['Workloads', 'Config', 'Custom Resources'])
-    expect(buckets[0].items).toHaveLength(1)
+  })
+
+  it('developer sections mirror the mock order', () => {
+    expect(DEV_NAV.map((s) => s.section)).toEqual([
+      'Developer',
+      'Builds',
+      'Workloads',
+      'Networking',
+      'Observe',
+      'Configuration',
+    ])
+  })
+
+  it('navFor picks the set by perspective', () => {
+    expect(navFor('admin')).toBe(ADMIN_NAV)
+    expect(navFor('developer')).toBe(DEV_NAV)
+  })
+
+  it('has unique labels per section', () => {
+    for (const s of [...ADMIN_NAV, ...DEV_NAV]) {
+      const labels = s.items.map((i) => i.label)
+      expect(new Set(labels).size).toBe(labels.length)
+    }
   })
 })

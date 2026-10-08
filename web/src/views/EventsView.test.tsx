@@ -16,6 +16,14 @@ describe('EventsView', () => {
     expect(secs).toEqual([...secs].sort((a, b) => a - b))
   })
 
+  it('shows a no-matching hint when filters exclude every event', async () => {
+    render(<EventsView />)
+    await screen.findByText('Container exceeded memory limit')
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz-no-such-event' } })
+    expect(screen.queryAllByTestId('event-type')).toHaveLength(0)
+    expect(screen.getByText('No matching events.')).toBeInTheDocument()
+  })
+
   it('filters by type chip and search', async () => {
     render(<EventsView />)
     await screen.findByText('Container exceeded memory limit')

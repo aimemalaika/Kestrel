@@ -55,6 +55,18 @@ function str(n: K8sObject, path: string): string {
   return v == null || v === '' ? '—' : String(v)
 }
 
+// Metrics: status.usage.{cpu,memory} as integer-percent strings. Absent => undefined.
+function pct(n: K8sObject, k: 'cpu' | 'memory'): number | undefined {
+  const raw = getPath(n, `status.usage.${k}`)
+  const v = Number(raw)
+  return raw == null || raw === '' || Number.isNaN(v) ? undefined : v
+}
+
+function podCount(n: K8sObject): string {
+  const u = getPath(n, 'status.usage.pods')
+  return u != null ? String(u) : str(n, 'status.allocatable.pods')
+}
+
 interface NodeInfo {
   node: K8sObject
   name: string
@@ -65,6 +77,8 @@ interface NodeInfo {
   taints: Taint[]
   instanceType: string
   zone: string
+  cpu?: number
+  memory?: number
 }
 
 function info(n: K8sObject): NodeInfo {
@@ -80,19 +94,29 @@ function info(n: K8sObject): NodeInfo {
     taints: taints(n),
     instanceType: label(n, 'node.kubernetes.io/instance-type') ?? '—',
     zone: label(n, 'topology.kubernetes.io/zone') ?? '—',
+    cpu: pct(n, 'cpu'),
+    memory: pct(n, 'memory'),
   }
 }
 
-// No metrics source yet: render the MiniBar visual at 0 with an n/a label.
-function Usage({ name }: { name: string }) {
+// Without a metrics source render an explicit n/a (no 0% bar that reads as real data).
+function Usage({ name, value }: { name: string; value?: number }) {
   return (
     <div>
       <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
         <span>{name}</span>
-        <span>n/a</span>
+        {value === undefined && <span>n/a</span>}
       </div>
-      <MiniBar value={0} className="w-full" />
+      {value !== undefined && <MiniBar value={value} className="w-full" />}
     </div>
+  )
+}
+
+function Cell({ value }: { value?: number }) {
+  return value === undefined ? (
+    <span className="text-xs text-zinc-500">n/a</span>
+  ) : (
+    <MiniBar value={value} className="w-20" />
   )
 }
 
@@ -127,7 +151,7 @@ export function NodesView() {
                   type="button"
                   aria-pressed={view === v}
                   onClick={() => setView(v)}
-                  className={`px-3 py-1 text-xs transition-colors ${view === v ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                  className={`px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset ${view === v ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
                 >
                   {v === 'cards' ? 'Cards' : 'Table'}
                 </button>
@@ -164,8 +188,8 @@ export function NodesView() {
                   </div>
                 </div>
                 <div className="space-y-2 mt-3">
-                  <Usage name="CPU" />
-                  <Usage name="Memory" />
+                  <Usage name="CPU" value={i.cpu} />
+                  <Usage name="Memory" value={i.memory} />
                 </div>
                 <div className="mt-3 space-y-1 text-[10px] text-zinc-500">
                   <p>
@@ -200,9 +224,7 @@ export function NodesView() {
                   </p>
                 </div>
                 <div className="flex items-center justify-between mt-4 pt-3 border-t border-zinc-800">
-                  <span className="text-[10px] text-zinc-500">
-                    {str(i.node, 'status.allocatable.pods')} pods
-                  </span>
+                  <span className="text-[10px] text-zinc-500">{podCount(i.node)} pods</span>
                   <span className="text-[10px] text-zinc-600">
                     {str(i.node, 'status.nodeInfo.osImage')}
                   </span>
@@ -274,15 +296,13 @@ export function NodesView() {
                 <span className="text-xs text-zinc-400">{res(i.node, 'allocatable')}</span>
               </TD>
               <TD>
-                <MiniBar value={0} className="w-20" />
+                <Cell value={i.cpu} />
               </TD>
               <TD>
-                <MiniBar value={0} className="w-20" />
+                <Cell value={i.memory} />
               </TD>
               <TD>
-                <span className="text-xs tabular-nums text-zinc-300">
-                  {str(i.node, 'status.allocatable.pods')}
-                </span>
+                <span className="text-xs tabular-nums text-zinc-300">{podCount(i.node)}</span>
               </TD>
               <TD>
                 <span className="text-xs text-zinc-400">{i.zone}</span>

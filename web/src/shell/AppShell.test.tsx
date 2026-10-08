@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppShell } from './AppShell'
 import { AuthProvider } from '../auth/AuthProvider'
@@ -32,7 +32,31 @@ describe('AppShell', () => {
       expect(screen.getByText('Kestrel')).toBeInTheDocument()
       expect(screen.queryByText('OKD')).toBeNull()
       expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Overview')
-      expect(await screen.findByRole('link', { name: /pods/i })).toBeInTheDocument()
+      expect(await screen.findByRole('link', { name: 'Pods' })).toBeInTheDocument()
+    })
+
+    it('perspective toggle switches the sidebar sections', () => {
+      renderShell()
+      const toggle = within(screen.getByRole('group', { name: 'Perspective' }))
+      expect(screen.getByRole('button', { name: /^Operators/ })).toBeInTheDocument()
+      expect(toggle.getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-pressed', 'true')
+      fireEvent.click(toggle.getByRole('button', { name: 'Developer' }))
+      expect(toggle.getByRole('button', { name: 'Developer' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(screen.queryByRole('button', { name: /^Operators/ })).toBeNull()
+      expect(screen.getByRole('link', { name: 'Helm Releases' })).toBeInTheDocument()
+      fireEvent.click(toggle.getByRole('button', { name: 'Admin' }))
+      expect(screen.getByRole('button', { name: /^Operators/ })).toBeInTheDocument()
+    })
+
+    it('header has cluster pill, notifications dropdown and help', () => {
+      renderShell()
+      expect(screen.getByTestId('cluster-pill')).toHaveTextContent('kestrel-cluster')
+      expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+      expect(screen.getByText('No notifications')).toBeInTheDocument()
     })
 
     it('collapses the sidebar to an icon rail', () => {
@@ -49,6 +73,19 @@ describe('AppShell', () => {
       expect(screen.getByText('operator')).toBeInTheDocument()
       fireEvent.click(screen.getByRole('menuitem', { name: 'Sign out' }))
       expect(screen.queryByTestId('sidebar')).toBeNull()
+    })
+
+    it('user menu: focuses item on open, Escape closes and restores trigger focus', () => {
+      renderShell()
+      const trigger = screen.getByRole('button', { name: 'User menu' })
+      fireEvent.click(trigger)
+      const item = screen.getByRole('menuitem', { name: 'Sign out' })
+      expect(item).toHaveFocus()
+      fireEvent.keyDown(item, { key: 'ArrowDown' })
+      expect(item).toHaveFocus() // single item wraps to itself
+      fireEvent.keyDown(item, { key: 'Escape' })
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(trigger).toHaveFocus()
     })
 
     it('header search opens the command palette', () => {
