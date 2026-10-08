@@ -27,8 +27,9 @@ function taints(n: K8sObject): Taint[] {
   return Array.isArray(t) ? (t as Taint[]) : []
 }
 
-export function formatTaint(t: Taint): string {
-  return `${t.key}=${t.value ?? ''}:${t.effect}`
+function formatTaint(t: Taint): string {
+  // kubectl shows key:effect when a taint has no value (no dangling '=').
+  return t.value ? `${t.key}=${t.value}:${t.effect}` : `${t.key}:${t.effect}`
 }
 
 function res(n: K8sObject, group: 'capacity' | 'allocatable'): string {
@@ -109,9 +110,7 @@ export function NodesView() {
                         ))}
                   </td>
                   <td style={td}>
-                    {ts.length === 0
-                      ? '—'
-                      : ts.map((t) => <div key={formatTaint(t)}>{formatTaint(t)}</div>)}
+                    {ts.length === 0 ? '—' : ts.map((t, i) => <div key={i}>{formatTaint(t)}</div>)}
                   </td>
                   <td style={td}>{res(n, 'capacity')}</td>
                   <td style={td}>{res(n, 'allocatable')}</td>

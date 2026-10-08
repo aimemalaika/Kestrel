@@ -61,7 +61,16 @@ const CHARTS: Record<string, Chart[]> = {
 export function createMockHelm(): HelmClient {
   return {
     async listReleases() {
-      return RELEASES.map(({ values: _v, notes: _n, manifestSummary: _m, ...r }) => ({ ...r }))
+      return RELEASES.map((r) => ({
+        name: r.name,
+        namespace: r.namespace,
+        revision: r.revision,
+        status: r.status,
+        chart: r.chart,
+        chartVersion: r.chartVersion,
+        appVersion: r.appVersion,
+        updated: r.updated,
+      }))
     },
     async getRelease(ns, name) {
       const r = RELEASES.find((x) => x.namespace === ns && x.name === name)

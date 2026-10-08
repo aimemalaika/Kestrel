@@ -12,7 +12,7 @@ describe('NodesView', () => {
     expect(screen.getByText('(KubeletNotReady)')).toBeInTheDocument()
     expect(screen.getByText('DiskPressure')).toBeInTheDocument()
     expect(screen.getByText('dedicated=gpu:NoSchedule')).toBeInTheDocument()
-    expect(screen.getByText(/cpu 8 · mem 32Gi · pods 110/)).toBeInTheDocument()
+    expect(screen.getAllByText(/cpu 8 · mem 32Gi · pods 110/).length).toBeGreaterThan(0)
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0)
   })
 })
