@@ -1,5 +1,5 @@
-import { StreamDebugView } from './debug/StreamDebugView'
+import { AppRoutes } from './routes'
 
 export function App() {
-  return <StreamDebugView />
+  return <AppRoutes />
 }
