@@ -18,6 +18,14 @@ const CATALOG: CatalogEntry[] = [
     namespaced: true,
     verbs: ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete'],
   },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'namespaces',
+    kind: 'Namespace',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
 ]
 
 function pod(name: string, ns: string, phase: string): K8sObject {
@@ -34,11 +42,23 @@ function pod(name: string, ns: string, phase: string): K8sObject {
   }
 }
 
+function ns(name: string): K8sObject {
+  return {
+    apiVersion: 'v1',
+    kind: 'Namespace',
+    metadata: { name, uid: `ns/${name}`, creationTimestamp: new Date().toISOString() },
+    status: { phase: 'Active' },
+  }
+}
+
 export function createMockClient(opts: { tickMs?: number } = {}): Client {
   const tickMs = opts.tickMs ?? 2000
   const store = new Map<string, K8sObject>([
     ['default/web-1', pod('web-1', 'default', 'Running')],
     ['default/web-2', pod('web-2', 'default', 'Pending')],
+    ['ns/default', ns('default')],
+    ['ns/kube-system', ns('kube-system')],
+    ['ns/shop', ns('shop')],
   ])
   let counter = 0
 
@@ -65,11 +85,15 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
       const id = setInterval(() => onLine(`log line ${++counter}`), tickMs)
       return () => clearInterval(id)
     },
-    watch(_gvr: GVR, _opts: WatchOptions, onEvent: (e: WatchEnvelope) => void): Unsubscribe {
-      for (const object of store.values()) onEvent({ type: 'added', object })
+    watch(gvr: GVR, _opts: WatchOptions, onEvent: (e: WatchEnvelope) => void): Unsubscribe {
+      const wantKind = CATALOG.find(
+        (c) => c.group === gvr.group && c.version === gvr.version && c.resource === gvr.resource,
+      )?.kind
+      const matches = (o: K8sObject) => !wantKind || o.kind === wantKind
+      for (const object of store.values()) if (matches(object)) onEvent({ type: 'added', object })
       const id = setInterval(() => {
         const o = store.get('default/web-2')
-        if (!o) return
+        if (!o || !matches(o)) return
         const next: K8sObject = {
           ...o,
           status: { phase: o.status?.phase === 'Running' ? 'Pending' : 'Running' },

@@ -54,3 +54,22 @@ describe('MockClient', () => {
     expect(res.allowed).toBe(true)
   })
 })
+
+describe('MockClient namespaces', () => {
+  it('lists namespaces in the catalog', async () => {
+    const c = createMockClient()
+    const cat = await c.catalog()
+    expect(cat.some((e) => e.resource === 'namespaces' && e.group === 'core')).toBe(true)
+  })
+
+  it('bursts namespace objects on watch', () => {
+    const c = createMockClient({ tickMs: 100000 })
+    const names: string[] = []
+    const stop = c.watch({ group: 'core', version: 'v1', resource: 'namespaces' }, {}, (e) => {
+      if ('object' in e && e.object.kind === 'Namespace') names.push(e.object.metadata.name)
+    })
+    expect(names).toContain('default')
+    expect(names.length).toBeGreaterThanOrEqual(2)
+    stop()
+  })
+})
