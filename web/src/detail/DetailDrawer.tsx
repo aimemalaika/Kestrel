@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useResourceObject } from './useResourceObject'
 import { DetailPanel } from './DetailPanel'
@@ -19,6 +19,9 @@ export function DetailDrawer() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('detail')
   const [editing, setEditing] = useState(false)
+  useEffect(() => {
+    setEditing(false)
+  }, [name, tab])
   const gvr = group && version && resource ? { group, version, resource } : undefined
   const { object, status } = useResourceObject(gvr, namespace, name)
   const isPod = object?.kind === 'Pod'
@@ -55,8 +58,10 @@ export function DetailDrawer() {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        <strong style={{ color: 'var(--text)' }}>{name}</strong>
-        {objRef && <DeleteButton target={objRef} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <strong style={{ color: 'var(--text)' }}>{name}</strong>
+          {objRef && <DeleteButton target={objRef} />}
+        </div>
         <button
           type="button"
           onClick={() => navigate('..')}
@@ -121,7 +126,18 @@ export function DetailDrawer() {
             )}
             {tab === 'yaml' && (
               <>
-                <button type="button" onClick={() => setEditing((v) => !v)}>
+                <button
+                  type="button"
+                  onClick={() => setEditing((v) => !v)}
+                  style={{
+                    padding: '4px var(--space-3)',
+                    borderRadius: 'var(--r-badge)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface)',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                  }}
+                >
                   {editing ? 'View' : 'Edit'}
                 </button>
                 {editing && objRef ? (
