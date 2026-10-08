@@ -26,6 +26,14 @@ const CATALOG: CatalogEntry[] = [
     namespaced: false,
     verbs: ['get', 'list', 'watch'],
   },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'events',
+    kind: 'Event',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
 ]
 
 function pod(name: string, ns: string, phase: string): K8sObject {
@@ -39,6 +47,26 @@ function pod(name: string, ns: string, phase: string): K8sObject {
       creationTimestamp: new Date().toISOString(),
     },
     status: { phase },
+  }
+}
+
+function event(
+  name: string,
+  ns: string,
+  involvedName: string,
+  reason: string,
+  message: string,
+  lastTimestamp: string,
+): K8sObject {
+  return {
+    apiVersion: 'v1',
+    kind: 'Event',
+    metadata: { name, namespace: ns, uid: `ev/${name}` },
+    involvedObject: { kind: 'Pod', name: involvedName, namespace: ns },
+    reason,
+    message,
+    lastTimestamp,
+    type: 'Normal',
   }
 }
 
@@ -59,6 +87,39 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     ['ns/default', ns('default')],
     ['ns/kube-system', ns('kube-system')],
     ['ns/shop', ns('shop')],
+    [
+      'ev/web-1.1',
+      event(
+        'web-1.1',
+        'default',
+        'web-1',
+        'Scheduled',
+        'Successfully assigned',
+        '2020-01-01T00:00:00Z',
+      ),
+    ],
+    [
+      'ev/web-1.2',
+      event(
+        'web-1.2',
+        'default',
+        'web-1',
+        'Pulled',
+        'Container image pulled',
+        '2020-01-01T00:01:00Z',
+      ),
+    ],
+    [
+      'ev/web-2.1',
+      event(
+        'web-2.1',
+        'default',
+        'web-2',
+        'Scheduled',
+        'Successfully assigned',
+        '2020-01-01T00:00:30Z',
+      ),
+    ],
   ])
   let counter = 0
 

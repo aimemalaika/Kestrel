@@ -73,3 +73,18 @@ describe('MockClient namespaces', () => {
     stop()
   })
 })
+
+describe('MockClient events', () => {
+  it('bursts Event objects with involvedObject on watch', () => {
+    const c = createMockClient({ tickMs: 100000 })
+    const evs: string[] = []
+    const stop = c.watch({ group: 'core', version: 'v1', resource: 'events' }, {}, (e) => {
+      if ('object' in e && e.object.kind === 'Event') {
+        const io = e.object.involvedObject as { name?: string } | undefined
+        if (io?.name) evs.push(io.name)
+      }
+    })
+    expect(evs.filter((n) => n === 'web-1').length).toBeGreaterThanOrEqual(2)
+    stop()
+  })
+})
