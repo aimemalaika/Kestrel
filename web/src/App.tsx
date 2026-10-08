@@ -1,3 +1,5 @@
+import { StreamDebugView } from './debug/StreamDebugView'
+
 export function App() {
-  return <h1>Kestrel</h1>
+  return <StreamDebugView />
 }
