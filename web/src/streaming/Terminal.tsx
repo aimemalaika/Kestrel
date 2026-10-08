@@ -36,3 +36,5 @@ export function Terminal({ pod }: { pod: ResourceRef }) {
     <div ref={hostRef} data-testid="terminal-host" style={{ height: '100%', minHeight: 320 }} />
   )
 }
+
+export default Terminal

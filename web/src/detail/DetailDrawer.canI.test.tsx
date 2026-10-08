@@ -1,20 +1,27 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../toast/ToastProvider'
 import { AppRoutes } from '../routes'
+import { AuthProvider } from '../auth/AuthProvider'
+import { setIdentity, IDENTITY_PRESETS } from '../auth/identity'
 
 function renderAt(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <ToastProvider>
-        <AppRoutes />
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
+      </AuthProvider>
     </MemoryRouter>,
   )
 }
 
 describe('DetailDrawer can-i gating', () => {
+  beforeEach(() => setIdentity(IDENTITY_PRESETS[0]))
+  afterEach(() => setIdentity(null))
+
   it('enables Delete for an allowed (default) object', async () => {
     renderAt('/ns/default/core/v1/pods/web-1')
     const del = await screen.findByRole('button', { name: /delete web-1/i })

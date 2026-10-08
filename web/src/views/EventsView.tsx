@@ -25,6 +25,9 @@ export function EventsView() {
   return (
     <div style={{ padding: 'var(--space-6)' }}>
       <h2 style={{ marginTop: 0 }}>Events</h2>
+      {status === 'error' && (
+        <p style={{ color: 'var(--text-muted)' }}>Stream interrupted — resyncing…</p>
+      )}
       {status === 'ready' && events.length === 0 && (
         <p style={{ color: 'var(--text-muted)' }}>No events.</p>
       )}
@@ -36,7 +39,7 @@ export function EventsView() {
           overflowX: 'auto',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table aria-label="Events" style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
               {['Type', 'Reason', 'Object', 'Message', 'Age'].map((h) => (
@@ -55,8 +58,7 @@ export function EventsView() {
               return (
                 <tr key={e.metadata.uid ?? `${e.metadata.namespace}/${e.metadata.name}`}>
                   <td style={td}>
-                    <StatusPill value={type === 'Warning' ? 'Pending' : 'Running'} />{' '}
-                    <span>{type}</span>
+                    <StatusPill value={type} /> <span>{type}</span>
                   </td>
                   <td style={td}>{String(e.reason ?? '—')}</td>
                   <td style={td}>

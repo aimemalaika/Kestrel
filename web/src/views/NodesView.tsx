@@ -52,6 +52,9 @@ export function NodesView() {
   return (
     <div style={{ padding: 'var(--space-6)' }}>
       <h2 style={{ marginTop: 0 }}>Nodes</h2>
+      {status === 'error' && (
+        <p style={{ color: 'var(--text-muted)' }}>Stream interrupted — resyncing…</p>
+      )}
       {status === 'ready' && nodes.length === 0 && (
         <p style={{ color: 'var(--text-muted)' }}>No nodes.</p>
       )}
@@ -63,7 +66,7 @@ export function NodesView() {
           overflowX: 'auto',
         }}
       >
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table aria-label="Nodes" style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
               {[
@@ -94,7 +97,7 @@ export function NodesView() {
                 <tr key={n.metadata.uid ?? n.metadata.name}>
                   <td style={td}>{n.metadata.name}</td>
                   <td style={td}>
-                    <StatusPill value={isReady ? 'Running' : 'Failed'} />{' '}
+                    <StatusPill value={isReady ? 'True' : 'False'} />{' '}
                     <span>{isReady ? 'Ready' : 'NotReady'}</span>
                     {!isReady && ready?.reason && (
                       <span style={{ color: 'var(--text-muted)' }}> ({ready.reason})</span>

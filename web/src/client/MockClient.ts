@@ -1,3 +1,4 @@
+import { getIdentity } from '../auth/identity'
 import type { CatalogEntry, GVR, K8sObject, WatchEnvelope } from '../contract/types'
 import type {
   Client,
@@ -458,9 +459,19 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     async delete(ref: ResourceRef) {
       store.delete(`${ref.namespace}/${ref.name}`)
     },
-    canI: async (req) => ({
-      allowed: !(req.verb === 'delete' && req.namespace === 'kube-system'),
-    }),
+    canI: async (req) => {
+      if (getIdentity()?.role === 'viewer') {
+        return {
+          allowed: !(
+            req.verb === 'create' ||
+            req.verb === 'update' ||
+            req.verb === 'delete' ||
+            req.verb === 'patch'
+          ),
+        }
+      }
+      return { allowed: !(req.verb === 'delete' && req.namespace === 'kube-system') }
+    },
     logs(_ref: ResourceRef, onLine: (line: string) => void): Unsubscribe {
       const id = setInterval(() => onLine(`log line ${++counter}`), tickMs)
       return () => clearInterval(id)

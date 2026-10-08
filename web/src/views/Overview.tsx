@@ -58,10 +58,15 @@ function Sub({
 }
 
 export function Overview() {
-  const pods = useResourceStream(PODS, undefined).rows
-  const deployments = useResourceStream(DEPLOYMENTS, undefined).rows
-  const nodes = useResourceStream(NODES, undefined).rows
-  const namespaces = useResourceStream(NAMESPACES, undefined).rows
+  const podsS = useResourceStream(PODS, undefined)
+  const deploymentsS = useResourceStream(DEPLOYMENTS, undefined)
+  const nodesS = useResourceStream(NODES, undefined)
+  const namespacesS = useResourceStream(NAMESPACES, undefined)
+  const pods = podsS.rows
+  const deployments = deploymentsS.rows
+  const nodes = nodesS.rows
+  const namespaces = namespacesS.rows
+  const errored = [podsS, deploymentsS, nodesS, namespacesS].some((s) => s.status === 'error')
 
   const podsRunning = pods.filter((p) => getPath(p, 'status.phase') === 'Running').length
   const nodesReady = nodes.filter(nodeReady).length
@@ -69,6 +74,7 @@ export function Overview() {
   return (
     <div style={{ padding: 'var(--space-6)' }}>
       <h2 style={{ marginTop: 0 }}>Overview</h2>
+      {errored && <p style={{ color: 'var(--text-muted)' }}>Stream interrupted — resyncing…</p>}
       <div
         style={{
           display: 'grid',
@@ -99,6 +105,14 @@ export function Overview() {
         </Card>
         <Card title="Namespaces" testId="card-namespaces">
           <Count n={namespaces.length} />
+        </Card>
+        <Card title="Metrics" testId="card-metrics">
+          <div
+            title="Metrics pending — metrics-server wiring is not yet in place"
+            style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 'var(--space-2)' }}
+          >
+            Metrics pending
+          </div>
         </Card>
       </div>
     </div>
