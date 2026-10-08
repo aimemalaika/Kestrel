@@ -1,5 +1,13 @@
-import { useMemo } from 'react'
-import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table'
+import { useMemo, useState } from 'react'
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  getFilteredRowModel,
+  flexRender,
+  type ColumnDef,
+  type SortingState,
+} from '@tanstack/react-table'
 import type { K8sObject } from '../contract/types'
 import { useSelection } from '../state/selection'
 import { useResourceStream } from './useResourceStream'
@@ -31,11 +39,19 @@ export function ResourceTable() {
     }))
   }, [kind, namespace])
 
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [globalFilter, setGlobalFilter] = useState('')
+
   const table = useReactTable({
     data: rows,
     columns,
     getRowId: (o) => o.metadata.uid ?? `${o.metadata.namespace ?? ''}/${o.metadata.name}`,
+    state: { sorting, globalFilter },
+    onSortingChange: setSorting,
+    onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
   })
 
   if (!gvr) return <Hint>Select a resource type from the sidebar.</Hint>
@@ -45,6 +61,20 @@ export function ResourceTable() {
 
   return (
     <div style={{ padding: 'var(--space-6)' }}>
+      <input
+        placeholder="Search…"
+        value={globalFilter}
+        onChange={(e) => setGlobalFilter(e.target.value)}
+        style={{
+          marginBottom: 'var(--space-4)',
+          padding: '6px var(--space-3)',
+          borderRadius: 'var(--r-badge)',
+          border: '1px solid var(--border)',
+          background: 'var(--surface)',
+          color: 'var(--text)',
+          minWidth: 240,
+        }}
+      />
       <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--surface)' }}>
         <thead>
           {table.getHeaderGroups().map((hg) => (
@@ -61,7 +91,24 @@ export function ResourceTable() {
                     textTransform: 'uppercase',
                   }}
                 >
-                  {flexRender(h.column.columnDef.header, h.getContext())}
+                  <button
+                    type="button"
+                    onClick={h.column.getToggleSortingHandler()}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      color: 'inherit',
+                      textTransform: 'inherit',
+                    }}
+                  >
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                    {({ asc: ' ▲', desc: ' ▼' } as Record<string, string>)[
+                      h.column.getIsSorted() as string
+                    ] ?? ''}
+                  </button>
                 </th>
               ))}
             </tr>
