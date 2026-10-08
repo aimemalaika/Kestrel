@@ -37,6 +37,13 @@ export function DetailDrawer() {
     : isPipelineRun
       ? ['detail', 'yaml', 'events', 'run']
       : ['detail', 'yaml', 'events']
+  // If the selected tab isn't available for the current object (e.g. after
+  // navigating from a Pod/PipelineRun to another kind), fall back to detail so
+  // the body never renders blank.
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTab('detail')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.join(','), tab])
 
   return (
     <div
