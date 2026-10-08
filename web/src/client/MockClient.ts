@@ -154,6 +154,198 @@ const CATALOG: CatalogEntry[] = [
     namespaced: true,
     verbs: ['get', 'list', 'watch'],
   },
+  {
+    group: 'apps',
+    version: 'v1',
+    resource: 'statefulsets',
+    kind: 'StatefulSet',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'apps',
+    version: 'v1',
+    resource: 'daemonsets',
+    kind: 'DaemonSet',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'batch',
+    version: 'v1',
+    resource: 'jobs',
+    kind: 'Job',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'batch',
+    version: 'v1',
+    resource: 'cronjobs',
+    kind: 'CronJob',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'networking.k8s.io',
+    version: 'v1',
+    resource: 'ingresses',
+    kind: 'Ingress',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'networking.k8s.io',
+    version: 'v1',
+    resource: 'networkpolicies',
+    kind: 'NetworkPolicy',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'snapshot.storage.k8s.io',
+    version: 'v1',
+    resource: 'volumesnapshots',
+    kind: 'VolumeSnapshot',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'tekton.dev',
+    version: 'v1',
+    resource: 'tasks',
+    kind: 'Task',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'tekton.dev',
+    version: 'v1',
+    resource: 'taskruns',
+    kind: 'TaskRun',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'tekton.dev',
+    version: 'v1',
+    resource: 'pipelines',
+    kind: 'Pipeline',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'rbac.authorization.k8s.io',
+    version: 'v1',
+    resource: 'clusterroles',
+    kind: 'ClusterRole',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'rbac.authorization.k8s.io',
+    version: 'v1',
+    resource: 'clusterrolebindings',
+    kind: 'ClusterRoleBinding',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'apiextensions.k8s.io',
+    version: 'v1',
+    resource: 'customresourcedefinitions',
+    kind: 'CustomResourceDefinition',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'user.openshift.io',
+    version: 'v1',
+    resource: 'users',
+    kind: 'User',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'user.openshift.io',
+    version: 'v1',
+    resource: 'groups',
+    kind: 'Group',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'limitranges',
+    kind: 'LimitRange',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'machine.openshift.io',
+    version: 'v1beta1',
+    resource: 'machines',
+    kind: 'Machine',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'machine.openshift.io',
+    version: 'v1beta1',
+    resource: 'machinesets',
+    kind: 'MachineSet',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'build.openshift.io',
+    version: 'v1',
+    resource: 'builds',
+    kind: 'Build',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'build.openshift.io',
+    version: 'v1',
+    resource: 'buildconfigs',
+    kind: 'BuildConfig',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'image.openshift.io',
+    version: 'v1',
+    resource: 'imagestreams',
+    kind: 'ImageStream',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'config.openshift.io',
+    version: 'v1',
+    resource: 'clusteroperators',
+    kind: 'ClusterOperator',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'config.openshift.io',
+    version: 'v1',
+    resource: 'clusterversions',
+    kind: 'ClusterVersion',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operators.coreos.com',
+    version: 'v1alpha1',
+    resource: 'clusterserviceversions',
+    kind: 'ClusterServiceVersion',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
 ]
 
 interface MockTask {
@@ -186,20 +378,57 @@ function pipelineRun(
   }
 }
 
-function pod(name: string, ns: string, phase: string): K8sObject {
+interface PodOpts {
+  cpu?: string // raw quantity, e.g. "124m"
+  memory?: string // raw quantity, e.g. "256Mi"
+  node?: string
+  containers?: number
+  ready?: number
+  restarts?: number
+  ageDays?: number
+}
+
+function pod(name: string, ns: string, phase: string, o: PodOpts = {}): K8sObject {
+  const total = o.containers ?? 1
+  const readyCount = o.ready ?? (phase === 'Running' ? total : 0)
+  const restarts = o.restarts ?? 0
+  const containerStatuses = Array.from({ length: total }, (_, i) => ({
+    name: `c${i + 1}`,
+    ready: i < readyCount,
+    restartCount: i === 0 ? restarts : 0,
+  }))
+  const created = new Date(Date.now() - (o.ageDays ?? 0) * 86400_000).toISOString()
+  // Sample metrics at status.usage as RAW quantities (cpu millicores, memory Mi/Gi),
+  // shown verbatim. A real backend without metrics-server omits status.usage → "n/a".
+  const hasMetrics = o.cpu !== undefined
   return {
     apiVersion: 'v1',
     kind: 'Pod',
-    metadata: {
-      name,
-      namespace: ns,
-      uid: `${ns}/${name}`,
-      creationTimestamp: new Date().toISOString(),
+    metadata: { name, namespace: ns, uid: `${ns}/${name}`, creationTimestamp: created },
+    spec: { containers: containerStatuses.map((c) => ({ name: c.name })), nodeName: o.node },
+    status: {
+      phase,
+      containerStatuses,
+      ...(hasMetrics ? { usage: { cpu: o.cpu, memory: o.memory } } : {}),
     },
-    spec: { containers: [{ name: 'app' }] },
-    status: { phase },
   }
 }
+
+// Realistic pod fleet (production/staging) so the Pods list matches the design.
+const POD_SEEDS: Array<[string, string, string, PodOpts]> = [
+  ['api-gateway-6d9f7-xk2lp', 'production', 'Running', { cpu: '124m', memory: '256Mi', node: 'worker-01', ageDays: 12 }], // prettier-ignore
+  ['api-gateway-6d9f7-mn9qr', 'production', 'Running', { cpu: '118m', memory: '249Mi', node: 'worker-02', ageDays: 12 }], // prettier-ignore
+  ['api-gateway-6d9f7-prtv2', 'production', 'Running', { cpu: '131m', memory: '261Mi', node: 'worker-01', ageDays: 12, restarts: 1 }], // prettier-ignore
+  ['auth-service-84b9c-mn7qr', 'production', 'Running', { cpu: '85m', memory: '192Mi', node: 'worker-02', ageDays: 8, restarts: 1 }], // prettier-ignore
+  ['auth-service-84b9c-xp3lm', 'production', 'Running', { cpu: '91m', memory: '198Mi', node: 'worker-03', ageDays: 8 }], // prettier-ignore
+  ['frontend-5c6f-p9wjt', 'production', 'Running', { cpu: '210m', memory: '384Mi', node: 'worker-01', ageDays: 3, containers: 2, ready: 2 }], // prettier-ignore
+  ['frontend-5c6f-k8mnx', 'production', 'Running', { cpu: '198m', memory: '371Mi', node: 'worker-02', ageDays: 3, containers: 2, ready: 2 }], // prettier-ignore
+  ['postgres-0', 'production', 'Running', { cpu: '451m', memory: '1.2Gi', node: 'worker-03', ageDays: 45 }], // prettier-ignore
+  ['redis-cache-79d4b-lkm2x', 'staging', 'Running', { cpu: '62m', memory: '128Mi', node: 'worker-02', ageDays: 5, restarts: 2 }], // prettier-ignore
+  ['worker-job-1749203-8xnqp', 'staging', 'Completed', { cpu: '0m', memory: '0Mi', node: 'worker-01', ageDays: 0 }], // prettier-ignore
+  ['ml-pipeline-9b7c-vf3yt', 'staging', 'CrashLoopBackOff', { cpu: '340m', memory: '768Mi', node: 'worker-03', ageDays: 1, restarts: 17 }], // prettier-ignore
+  ['ml-pipeline-9b7c-qwmkp', 'staging', 'Pending', { cpu: '0m', memory: '0Mi', ageDays: 0 }], // prettier-ignore
+]
 
 function event(
   name: string,
@@ -417,6 +646,260 @@ function quota(ns: string, hard: Record<string, string>, used: Record<string, st
   return gen('v1', 'ResourceQuota', `${ns}-quota`, ns, { spec: { hard }, status: { hard, used } })
 }
 
+function moreSeeds(): K8sObject[] {
+  const ts = (n: number) => new Date(Date.UTC(2026, 8, 15, 0, 0, 0) + n * 3600_000).toISOString()
+  const cond = (type: string, status = 'True') => ({ type, status })
+  const rbac = 'rbac.authorization.k8s.io/v1'
+  const tkn = 'tekton.dev/v1'
+  const osMachine = 'machine.openshift.io/v1beta1'
+  return [
+    gen('apps/v1', 'StatefulSet', 'search', 'shop', {
+      spec: { replicas: 3, serviceName: 'search' },
+      status: { replicas: 3, readyReplicas: 3 },
+    }),
+    gen('apps/v1', 'StatefulSet', 'cache', 'default', {
+      spec: { replicas: 2, serviceName: 'cache' },
+      status: { replicas: 2, readyReplicas: 1 },
+    }),
+    gen('apps/v1', 'DaemonSet', 'log-agent', 'kube-system', {
+      status: { desiredNumberScheduled: 6, currentNumberScheduled: 6, numberReady: 5 },
+    }),
+    gen('apps/v1', 'DaemonSet', 'node-monitor', 'kube-system', {
+      status: { desiredNumberScheduled: 6, currentNumberScheduled: 6, numberReady: 6 },
+    }),
+    gen('batch/v1', 'Job', 'db-migrate', 'shop', {
+      spec: { completions: 1, parallelism: 1 },
+      status: { succeeded: 1, active: 0, failed: 0, completionTime: ts(2) },
+    }),
+    gen('batch/v1', 'Job', 'report-gen', 'default', {
+      spec: { completions: 3, parallelism: 1 },
+      status: { succeeded: 1, active: 1, failed: 0 },
+    }),
+    gen('batch/v1', 'Job', 'cleanup', 'default', {
+      spec: { completions: 1 },
+      status: { succeeded: 0, active: 0, failed: 2 },
+    }),
+    gen('batch/v1', 'CronJob', 'nightly-backup', 'shop', {
+      spec: { schedule: '0 2 * * *', suspend: false },
+      status: { lastScheduleTime: ts(20), active: [] },
+    }),
+    gen('batch/v1', 'CronJob', 'hourly-sync', 'default', {
+      spec: { schedule: '0 * * * *', suspend: true },
+      status: { lastScheduleTime: ts(10) },
+    }),
+    gen('networking.k8s.io/v1', 'Ingress', 'shop-ingress', 'shop', {
+      spec: {
+        ingressClassName: 'default',
+        rules: [{ host: 'shop.example.com', http: { paths: [{ path: '/', pathType: 'Prefix' }] } }],
+      },
+      status: { loadBalancer: { ingress: [{ ip: '203.0.113.10' }] } },
+    }),
+    gen('networking.k8s.io/v1', 'Ingress', 'web-ingress', 'default', {
+      spec: { rules: [{ host: 'www.example.com' }] },
+      status: { loadBalancer: {} },
+    }),
+    gen('networking.k8s.io/v1', 'NetworkPolicy', 'deny-all', 'shop', {
+      spec: { podSelector: {}, policyTypes: ['Ingress'] },
+    }),
+    gen('networking.k8s.io/v1', 'NetworkPolicy', 'allow-web', 'default', {
+      spec: { podSelector: { matchLabels: { app: 'web' } }, policyTypes: ['Ingress', 'Egress'] },
+    }),
+    gen('snapshot.storage.k8s.io/v1', 'VolumeSnapshot', 'search-snap-1', 'shop', {
+      spec: { source: { persistentVolumeClaimName: 'data-search-0' } },
+      status: { readyToUse: true, restoreSize: '10Gi' },
+    }),
+    gen('snapshot.storage.k8s.io/v1', 'VolumeSnapshot', 'search-snap-2', 'shop', {
+      spec: { source: { persistentVolumeClaimName: 'data-search-0' } },
+      status: { readyToUse: false },
+    }),
+    gen(tkn, 'Task', 'git-clone', 'shop', {
+      spec: { steps: [{ name: 'clone' }], params: [{ name: 'url' }] },
+    }),
+    gen(tkn, 'Task', 'build-image', 'shop', {
+      spec: { steps: [{ name: 'build' }, { name: 'push' }] },
+    }),
+    gen(tkn, 'TaskRun', 'git-clone-run-1', 'shop', {
+      spec: { taskRef: { name: 'git-clone' } },
+      status: {
+        startTime: ts(1),
+        completionTime: ts(2),
+        conditions: [{ type: 'Succeeded', status: 'True', reason: 'Succeeded' }],
+      },
+    }),
+    gen(tkn, 'TaskRun', 'build-image-run-1', 'shop', {
+      spec: { taskRef: { name: 'build-image' } },
+      status: {
+        startTime: ts(3),
+        conditions: [{ type: 'Succeeded', status: 'Unknown', reason: 'Running' }],
+      },
+    }),
+    gen(tkn, 'Pipeline', 'build-and-deploy', 'shop', {
+      spec: { tasks: [{ name: 'clone' }, { name: 'build' }, { name: 'deploy' }] },
+    }),
+    gen(tkn, 'Pipeline', 'lint-and-test', 'default', {
+      spec: { tasks: [{ name: 'lint' }, { name: 'test' }] },
+    }),
+    gen(rbac, 'ClusterRole', 'cluster-reader', undefined, {
+      rules: [{ apiGroups: ['*'], resources: ['*'], verbs: ['get', 'list', 'watch'] }],
+    }),
+    gen(rbac, 'ClusterRole', 'cluster-admin', undefined, {
+      rules: [{ apiGroups: ['*'], resources: ['*'], verbs: ['*'] }],
+    }),
+    gen(rbac, 'ClusterRoleBinding', 'admins-binding', undefined, {
+      roleRef: { kind: 'ClusterRole', name: 'cluster-admin' },
+      subjects: [{ kind: 'Group', name: 'platform-admins' }],
+    }),
+    gen(rbac, 'ClusterRoleBinding', 'readers-binding', undefined, {
+      roleRef: { kind: 'ClusterRole', name: 'cluster-reader' },
+      subjects: [{ kind: 'User', name: 'alice' }],
+    }),
+    gen('apiextensions.k8s.io/v1', 'CustomResourceDefinition', 'widgets.example.com', undefined, {
+      spec: {
+        group: 'example.com',
+        scope: 'Namespaced',
+        names: { kind: 'Widget', plural: 'widgets' },
+        versions: [{ name: 'v1', served: true, storage: true }],
+      },
+      status: { conditions: [cond('Established')] },
+    }),
+    gen('apiextensions.k8s.io/v1', 'CustomResourceDefinition', 'gadgets.example.com', undefined, {
+      spec: {
+        group: 'example.com',
+        scope: 'Cluster',
+        names: { kind: 'Gadget', plural: 'gadgets' },
+        versions: [{ name: 'v1beta1', served: true, storage: true }],
+      },
+      status: { conditions: [cond('Established')] },
+    }),
+    gen('user.openshift.io/v1', 'User', 'alice', undefined, {
+      fullName: 'Alice Example',
+      identities: ['local:alice'],
+      groups: ['platform-admins'],
+    }),
+    gen('user.openshift.io/v1', 'User', 'bob', undefined, {
+      fullName: 'Bob Example',
+      identities: ['local:bob'],
+      groups: [],
+    }),
+    gen('user.openshift.io/v1', 'Group', 'platform-admins', undefined, { users: ['alice'] }),
+    gen('user.openshift.io/v1', 'Group', 'developers', undefined, { users: ['alice', 'bob'] }),
+    gen('v1', 'LimitRange', 'shop-limits', 'shop', {
+      spec: {
+        limits: [{ type: 'Container', default: { cpu: '500m', memory: '512Mi' } }],
+      },
+    }),
+    gen('v1', 'LimitRange', 'default-limits', 'default', {
+      spec: { limits: [{ type: 'Container', default: { cpu: '250m', memory: '256Mi' } }] },
+    }),
+    gen(osMachine, 'Machine', 'worker-01-machine', 'cluster-machines', {
+      spec: { providerID: 'cloud:///us-east-1b/i-0a1' },
+      status: { phase: 'Running', nodeRef: { name: 'worker-01' } },
+    }),
+    gen(osMachine, 'Machine', 'worker-02-machine', 'cluster-machines', {
+      spec: { providerID: 'cloud:///us-east-1c/i-0b2' },
+      status: { phase: 'Running', nodeRef: { name: 'worker-02' } },
+    }),
+    gen(osMachine, 'Machine', 'worker-03-machine', 'cluster-machines', {
+      spec: { providerID: 'cloud:///us-east-1a/i-0c3' },
+      status: { phase: 'Provisioning' },
+    }),
+    gen(osMachine, 'MachineSet', 'worker-us-east-1b', 'cluster-machines', {
+      spec: { replicas: 2 },
+      status: { replicas: 2, readyReplicas: 2, availableReplicas: 2 },
+    }),
+    gen(osMachine, 'MachineSet', 'worker-us-east-1a', 'cluster-machines', {
+      spec: { replicas: 1 },
+      status: { replicas: 1, readyReplicas: 0, availableReplicas: 0 },
+    }),
+    gen('build.openshift.io/v1', 'Build', 'shop-web-1', 'shop', {
+      spec: { strategy: { type: 'Docker' } },
+      status: { phase: 'Complete', startTimestamp: ts(1), completionTimestamp: ts(2) },
+    }),
+    gen('build.openshift.io/v1', 'Build', 'shop-web-2', 'shop', {
+      spec: { strategy: { type: 'Docker' } },
+      status: { phase: 'Running', startTimestamp: ts(5) },
+    }),
+    gen('build.openshift.io/v1', 'Build', 'api-1', 'default', {
+      spec: { strategy: { type: 'Source' } },
+      status: { phase: 'Failed', startTimestamp: ts(3), completionTimestamp: ts(4) },
+    }),
+    gen('build.openshift.io/v1', 'BuildConfig', 'shop-web', 'shop', {
+      spec: { strategy: { type: 'Docker' }, source: { type: 'Git' } },
+      status: { lastVersion: 2 },
+    }),
+    gen('build.openshift.io/v1', 'BuildConfig', 'api', 'default', {
+      spec: { strategy: { type: 'Source' }, source: { type: 'Git' } },
+      status: { lastVersion: 1 },
+    }),
+    gen('image.openshift.io/v1', 'ImageStream', 'shop-web', 'shop', {
+      status: {
+        dockerImageRepository: 'registry.example.com/shop/shop-web',
+        tags: [{ tag: 'latest' }, { tag: 'v1' }],
+      },
+    }),
+    gen('image.openshift.io/v1', 'ImageStream', 'api', 'default', {
+      status: {
+        dockerImageRepository: 'registry.example.com/default/api',
+        tags: [{ tag: 'latest' }],
+      },
+    }),
+    gen('config.openshift.io/v1', 'ClusterOperator', 'dns', undefined, {
+      status: {
+        versions: [{ name: 'operator', version: '4.15.0' }],
+        conditions: [cond('Available'), cond('Progressing', 'False'), cond('Degraded', 'False')],
+      },
+    }),
+    gen('config.openshift.io/v1', 'ClusterOperator', 'ingress', undefined, {
+      status: {
+        versions: [{ name: 'operator', version: '4.15.0' }],
+        conditions: [cond('Available'), cond('Progressing', 'True'), cond('Degraded', 'False')],
+      },
+    }),
+    gen('config.openshift.io/v1', 'ClusterOperator', 'storage', undefined, {
+      status: {
+        versions: [{ name: 'operator', version: '4.14.9' }],
+        conditions: [cond('Available', 'False'), cond('Progressing', 'False'), cond('Degraded')],
+      },
+    }),
+    gen('config.openshift.io/v1', 'ClusterVersion', 'version', undefined, {
+      spec: { channel: 'stable-4.15', clusterID: '00000000-0000-0000-0000-000000000001' },
+      status: {
+        desired: { version: '4.15.0' },
+        conditions: [cond('Available'), cond('Progressing', 'False')],
+        history: [{ state: 'Completed', version: '4.15.0', startedTime: ts(0) }],
+      },
+    }),
+    gen(
+      'operators.coreos.com/v1alpha1',
+      'ClusterServiceVersion',
+      'metrics-operator.v1.4.0',
+      'shop',
+      {
+        spec: {
+          displayName: 'Metrics Operator',
+          version: '1.4.0',
+          provider: { name: 'Example Org' },
+        },
+        status: { phase: 'Succeeded', reason: 'InstallSucceeded' },
+      },
+    ),
+    gen(
+      'operators.coreos.com/v1alpha1',
+      'ClusterServiceVersion',
+      'backup-operator.v0.9.2',
+      'default',
+      {
+        spec: {
+          displayName: 'Backup Operator',
+          version: '0.9.2',
+          provider: { name: 'Example Org' },
+        },
+        status: { phase: 'Installing', reason: 'InstallWaiting' },
+      },
+    ),
+  ]
+}
+
 function genSeeds(): [string, K8sObject][] {
   const objs: K8sObject[] = [
     gen('v1', 'Service', 'web', 'default', {
@@ -463,6 +946,7 @@ function genSeeds(): [string, K8sObject][] {
       { cpu: '1.8', memory: '2300Mi', pods: '9' },
     ),
     quota('default', { cpu: '2', pods: '10' }, { cpu: '1900m', pods: '9' }),
+    ...moreSeeds(),
   ]
   return objs.map((o) => [`gen/${o.kind}/${o.metadata.namespace ?? '-'}/${o.metadata.name}`, o])
 }
@@ -470,11 +954,24 @@ function genSeeds(): [string, K8sObject][] {
 export function createMockClient(opts: { tickMs?: number } = {}): Client {
   const tickMs = opts.tickMs ?? 2000
   const store = new Map<string, K8sObject>([
-    ['default/web-1', pod('web-1', 'default', 'Running')],
-    ['default/web-2', pod('web-2', 'default', 'Pending')],
+    [
+      'default/web-1',
+      pod('web-1', 'default', 'Running', {
+        cpu: '34m',
+        memory: '96Mi',
+        node: 'worker-01',
+        ageDays: 20,
+      }),
+    ],
+    ['default/web-2', pod('web-2', 'default', 'Pending', { ageDays: 0 })],
+    ...POD_SEEDS.map(
+      ([n, pns, ph, o]) => [`${pns}/${n}`, pod(n, pns, ph, o)] as [string, K8sObject],
+    ),
     ['ns/default', ns('default')],
     ['ns/kube-system', ns('kube-system')],
     ['ns/shop', ns('shop')],
+    ['ns/production', ns('production')],
+    ['ns/staging', ns('staging')],
     ...genSeeds(),
     [
       'pr/build-101',

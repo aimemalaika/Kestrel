@@ -215,6 +215,19 @@ describe('MockClient U7 seeds', () => {
       nodes.every((n) => Number(n.status.usage.cpu) >= 0 && Number(n.status.usage.memory) >= 0),
     ).toBe(true)
   })
+
+  it('pods carry status.usage as raw cpu/memory quantities', () => {
+    const pods = collect({ group: 'core', version: 'v1', resource: 'pods' }).map(
+      (e) =>
+        (e as unknown as { object: { status: { usage?: { cpu: string; memory: string } } } })
+          .object,
+    )
+    const withUsage = pods.filter((p) => p.status.usage)
+    expect(withUsage.length).toBeGreaterThan(0)
+    // Raw quantities (millicores / Mi-Gi), shown verbatim — not bare percents.
+    expect(withUsage.every((p) => /\d/.test(p.status.usage!.cpu))).toBe(true)
+    expect(withUsage.some((p) => /Mi|Gi/.test(p.status.usage!.memory))).toBe(true)
+  })
 })
 
 describe('MockClient canI identity', () => {
@@ -268,6 +281,38 @@ describe('MockClient generic resources (R9)', () => {
       const stop = c.watch({ group, version: 'v1', resource }, {}, (e) => evs.push(e))
       stop()
       expect(evs.length, resource).toBeGreaterThanOrEqual(1)
+    }
+  })
+})
+
+describe('MockClient completeness catalog', () => {
+  const kinds: [string, string, string, boolean][] = [
+    ['statefulsets', 'apps', 'v1', true],
+    ['jobs', 'batch', 'v1', true],
+    ['ingresses', 'networking.k8s.io', 'v1', true],
+    ['taskruns', 'tekton.dev', 'v1', true],
+    ['clusterroles', 'rbac.authorization.k8s.io', 'v1', false],
+    ['customresourcedefinitions', 'apiextensions.k8s.io', 'v1', false],
+    ['machinesets', 'machine.openshift.io', 'v1beta1', true],
+    ['clusteroperators', 'config.openshift.io', 'v1', false],
+    ['clusterserviceversions', 'operators.coreos.com', 'v1alpha1', true],
+  ]
+  it('catalog includes the new resources with correct scope', async () => {
+    const cat = await createMockClient().catalog()
+    for (const [resource, group, , namespaced] of kinds) {
+      const e = cat.find((c) => c.resource === resource)
+      expect(e, resource).toBeDefined()
+      expect(e!.group).toBe(group)
+      expect(e!.namespaced).toBe(namespaced)
+    }
+  })
+  it('watch bursts seeds for the new GVRs', () => {
+    const c = createMockClient({ tickMs: 1000 })
+    for (const [resource, group, version] of kinds) {
+      const evs: WatchEnvelope[] = []
+      const stop = c.watch({ group, version, resource }, {}, (e) => evs.push(e))
+      stop()
+      expect(evs.length, resource).toBeGreaterThanOrEqual(2)
     }
   })
 })

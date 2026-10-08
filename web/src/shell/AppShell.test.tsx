@@ -56,7 +56,8 @@ describe('AppShell', () => {
       expect(screen.getByTestId('cluster-pill')).toHaveTextContent('kestrel-cluster')
       expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
-      expect(screen.getByText('No notifications')).toBeInTheDocument()
+      expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeInTheDocument()
+      expect(screen.queryByText('No notifications')).toBeNull()
     })
 
     it('collapses the sidebar to an icon rail', () => {

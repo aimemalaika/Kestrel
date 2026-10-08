@@ -68,3 +68,75 @@ describe('scanSummary / scan column', () => {
     expect(ids('Pod')).not.toContain('scan')
   })
 })
+
+describe('per-kind rich columns', () => {
+  const headers = (k: string) => columnSpecs(k, { namespaceSelected: true }).map((c) => c.header)
+  it('declares per-kind column sets', () => {
+    expect(headers('Pod')).toEqual(
+      expect.arrayContaining(['Ready', 'Restarts', 'CPU', 'Memory', 'Node', 'Age']),
+    )
+    expect(headers('Deployment')).toEqual(
+      expect.arrayContaining(['Ready', 'Up-to-date', 'Available', 'Strategy', 'Image']),
+    )
+    expect(headers('Service')).toEqual(expect.arrayContaining(['Type', 'ClusterIP', 'Ports']))
+    expect(headers('Route')).toEqual(
+      expect.arrayContaining(['Host', 'Service', 'Port', 'TLS', 'Status']),
+    )
+    expect(headers('PersistentVolumeClaim')).toEqual(
+      expect.arrayContaining(['Status', 'Capacity', 'StorageClass']),
+    )
+    expect(headers('PersistentVolume')).toEqual(
+      expect.arrayContaining(['Capacity', 'Reclaim', 'Status']),
+    )
+    expect(headers('StorageClass')).toContain('Provisioner')
+  })
+  const val = (k: string, h: string, o: K8sObject) =>
+    columnSpecs(k, { namespaceSelected: true })
+      .find((c) => c.header === h)!
+      .value(o)
+  it('pod without status.usage shows n/a; with usage shows percent', () => {
+    expect(val('Pod', 'CPU', pod)).toBe('n/a')
+    const withU = { ...pod, status: { phase: 'Running', usage: { cpu: '34', memory: '52' } } }
+    expect(val('Pod', 'CPU', withU)).toBe('34')
+    expect(val('Pod', 'Memory', withU)).toBe('52')
+  })
+  it('derives pod ready/restarts and deployment ready', () => {
+    const p: K8sObject = {
+      ...pod,
+      spec: { containers: [{ name: 'a' }, { name: 'b' }] },
+      status: {
+        phase: 'Running',
+        containerStatuses: [
+          { ready: true, restartCount: 2 },
+          { ready: false, restartCount: 4 },
+        ],
+      },
+    }
+    expect(val('Pod', 'Ready', p)).toBe('1/2')
+    expect(val('Pod', 'Restarts', p)).toBe('6')
+    const d: K8sObject = {
+      apiVersion: 'apps/v1',
+      kind: 'Deployment',
+      metadata: { name: 'd' },
+      spec: { replicas: 3 },
+      status: { readyReplicas: 2 },
+    }
+    expect(val('Deployment', 'Ready', d)).toBe('2/3')
+  })
+  it('derives service ports and route tls', () => {
+    const svc: K8sObject = {
+      apiVersion: 'v1',
+      kind: 'Service',
+      metadata: { name: 's' },
+      spec: { type: 'ClusterIP', ports: [{ port: 80, protocol: 'TCP' }] },
+    }
+    expect(val('Service', 'Ports', svc)).toBe('80/TCP')
+    const r: K8sObject = {
+      apiVersion: 'route.openshift.io/v1',
+      kind: 'Route',
+      metadata: { name: 'r' },
+      spec: { host: 'h', tls: {} },
+    }
+    expect(val('Route', 'TLS', r)).toBe('Enabled')
+  })
+})

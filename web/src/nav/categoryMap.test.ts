@@ -40,4 +40,20 @@ describe('nav model', () => {
       expect(new Set(labels).size).toBe(labels.length)
     }
   })
+
+  it('every item has a target (none are permanently dimmed)', () => {
+    for (const s of [...ADMIN_NAV, ...DEV_NAV]) {
+      for (const i of s.items) expect(i.target, `${s.section}/${i.label}`).toBeDefined()
+    }
+  })
+
+  it('maps known routes and the Service Map under Observe', () => {
+    const find = (nav: typeof ADMIN_NAV, sec: string, label: string) =>
+      nav.find((s) => s.section === sec)!.items.find((i) => i.label === label)!.target
+    expect(find(ADMIN_NAV, 'Observe', 'Service Map')).toEqual({ route: '/servicemap' })
+    expect(find(ADMIN_NAV, 'Operators', 'Installed Operators')).toEqual({ route: '/operators' })
+    expect(find(ADMIN_NAV, 'Administration', 'Cluster Settings')).toEqual({ route: '/cluster' })
+    expect(find(ADMIN_NAV, 'Builds', 'ImageStreams')).toEqual({ resource: 'imagestreams' })
+    expect(find(DEV_NAV, 'Developer', 'Topology')).toEqual({ route: '/topology' })
+  })
 })

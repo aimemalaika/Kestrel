@@ -21,6 +21,26 @@ import { StatusPill } from './StatusPill'
 import { ScanCell } from './ScanCell'
 import { Age } from './Age'
 
+function UsageCell({ value }: { value: string }) {
+  const pct = Number(value)
+  if (value === 'n/a' || Number.isNaN(pct)) return <span className="text-zinc-500">n/a</span>
+  const bar = pct > 85 ? 'bg-red-500' : pct > 65 ? 'bg-amber-500' : 'bg-emerald-500'
+  return (
+    <span className="inline-flex items-center gap-2 tabular-nums text-zinc-300">
+      <span aria-hidden="true" className="w-12 h-1.5 rounded bg-zinc-800 overflow-hidden">
+        <span className={`block h-full ${bar}`} style={{ width: `${Math.min(100, pct)}%` }} />
+      </span>
+      {pct}%
+    </span>
+  )
+}
+
+function RestartsCell({ value }: { value: string }) {
+  const n = Number(value)
+  const tone = n > 5 ? 'text-red-400' : n > 0 ? 'text-amber-400' : 'text-zinc-300'
+  return <span className={`tabular-nums ${tone}`}>{value}</span>
+}
+
 const cellAlign = (a?: 'right') => (a === 'right' ? 'text-right tabular-nums' : '')
 
 const pageBtn =
@@ -61,6 +81,10 @@ export function ResourceTable({
         if (s.kind === 'status') return <StatusPill value={v} />
         if (s.kind === 'age') return <Age creationTimestamp={v === '—' ? undefined : v} />
         if (s.kind === 'scan') return <ScanCell value={v} />
+        if (s.kind === 'usage') return <UsageCell value={v} />
+        if (s.kind === 'restarts') return <RestartsCell value={v} />
+        if (s.kind === 'mono')
+          return v === '—' ? <span className="text-zinc-500">—</span> : <Mono>{v}</Mono>
         return s.kind === 'text' && s.id !== 'name' ? <span className="text-zinc-300">{v}</span> : v
       },
     }))
