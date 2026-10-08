@@ -4,6 +4,11 @@ import { ResourceView } from './views/ResourceView'
 import { EmptyState } from './views/EmptyState'
 import { DetailDrawer } from './detail/DetailDrawer'
 import { RegistryBrowser } from './modules/registry/RegistryBrowser'
+import { HelmBrowser } from './modules/helm/HelmBrowser'
+import { ArgoRichView } from './modules/argo/ArgoRichView'
+import { Overview } from './views/Overview'
+import { NodesView } from './views/NodesView'
+import { EventsView } from './views/EventsView'
 import { StreamDebugView } from './debug/StreamDebugView'
 
 export function AppRoutes() {
@@ -16,6 +21,11 @@ export function AppRoutes() {
           <Route path=":name" element={<DetailDrawer />} />
         </Route>
         <Route path="registry" element={<RegistryBrowser />} />
+        <Route path="overview" element={<Overview />} />
+        <Route path="nodes" element={<NodesView />} />
+        <Route path="events" element={<EventsView />} />
+        <Route path="helm" element={<HelmBrowser />} />
+        <Route path="argo" element={<ArgoRichView />} />
         <Route path="debug" element={<StreamDebugView />} />
         <Route path="*" element={<EmptyState />} />
       </Route>

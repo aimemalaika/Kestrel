@@ -165,3 +165,38 @@ describe('MockClient pipelineruns', () => {
     expect(objs[0].status.taskRuns[0].steps.length).toBeGreaterThan(0)
   })
 })
+
+describe('MockClient U7 seeds', () => {
+  const collect = (gvr: { group: string; version: string; resource: string }) => {
+    const c = createMockClient()
+    const events: WatchEnvelope[] = []
+    const stop = c.watch(gvr, {}, (e) => events.push(e))
+    stop()
+    return events
+  }
+
+  it('catalog includes applications', async () => {
+    const cat = await createMockClient().catalog()
+    expect(cat.some((e) => e.resource === 'applications' && e.group === 'argoproj.io')).toBe(true)
+  })
+
+  it('bursts seeded Applications with sync/health status', () => {
+    const apps = collect({ group: 'argoproj.io', version: 'v1alpha1', resource: 'applications' })
+    expect(apps.length).toBeGreaterThanOrEqual(2)
+    for (const e of apps) {
+      const o = (e as { object: { status?: any } }).object
+      expect(o.status.sync.status).toBeTruthy()
+      expect(o.status.health.status).toBeTruthy()
+      expect(o.status.resources.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('nodes carry conditions and at least one taint', () => {
+    const nodes = collect({ group: 'core', version: 'v1', resource: 'nodes' }).map(
+      (e) => (e as { object: { spec?: any; status?: any } }).object,
+    )
+    expect(nodes.length).toBeGreaterThanOrEqual(2)
+    expect(nodes.every((n) => n.status.conditions.length > 0)).toBe(true)
+    expect(nodes.some((n) => n.spec.taints.length > 0)).toBe(true)
+  })
+})
