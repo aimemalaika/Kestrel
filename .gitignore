@@ -1,0 +1,11 @@
+# local planning scaffold — not tracked
+.DS_Store
+/API-CONTRACT.md
+/TASKS.md
+/issues.json
+/bootstrap-github-project.sh
+/README.md
+/SETUP.md
+/task.md
+.claude
+/docs
