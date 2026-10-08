@@ -49,6 +49,22 @@ const CATALOG: CatalogEntry[] = [
     namespaced: true,
     verbs: ['get', 'list', 'watch'],
   },
+  {
+    group: 'argoproj.io',
+    version: 'v1alpha1',
+    resource: 'applications',
+    kind: 'Application',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'nodes',
+    kind: 'Node',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
 ]
 
 interface MockTask {
@@ -103,6 +119,7 @@ function event(
   reason: string,
   message: string,
   lastTimestamp: string,
+  type: 'Normal' | 'Warning' = 'Normal',
 ): K8sObject {
   return {
     apiVersion: 'v1',
@@ -112,7 +129,78 @@ function event(
     reason,
     message,
     lastTimestamp,
-    type: 'Normal',
+    type,
+  }
+}
+
+interface MockArgoRes {
+  group: string
+  version: string
+  kind: string
+  name: string
+  namespace: string
+  status: string
+  health: string
+}
+
+function argoApp(
+  name: string,
+  sync: 'Synced' | 'OutOfSync',
+  health: 'Healthy' | 'Degraded' | 'Progressing',
+  destNs: string,
+  resources: MockArgoRes[],
+): K8sObject {
+  return {
+    apiVersion: 'argoproj.io/v1alpha1',
+    kind: 'Application',
+    metadata: {
+      name,
+      namespace: 'argocd',
+      uid: `app/${name}`,
+      creationTimestamp: '2026-10-01T00:00:00Z',
+    },
+    spec: {
+      project: 'default',
+      source: {
+        repoURL: `https://git.example.com/kestrel/${name}.git`,
+        path: `deploy/${name}`,
+        targetRevision: 'main',
+      },
+      destination: { server: 'https://kubernetes.default.svc', namespace: destNs },
+    },
+    status: { sync: { status: sync }, health: { status: health }, resources },
+  }
+}
+
+function node(
+  name: string,
+  ready: boolean,
+  taints: { key: string; value: string; effect: string }[],
+  cpu: string,
+  memory: string,
+): K8sObject {
+  return {
+    apiVersion: 'v1',
+    kind: 'Node',
+    metadata: { name, uid: `node/${name}`, creationTimestamp: '2026-09-01T00:00:00Z' },
+    spec: { taints },
+    status: {
+      conditions: [
+        {
+          type: 'Ready',
+          status: ready ? 'True' : 'False',
+          reason: ready ? 'KubeletReady' : 'KubeletNotReady',
+        },
+        { type: 'MemoryPressure', status: 'False', reason: 'KubeletHasSufficientMemory' },
+        {
+          type: 'DiskPressure',
+          status: ready ? 'False' : 'True',
+          reason: 'KubeletHasDiskPressure',
+        },
+      ],
+      capacity: { cpu, memory, pods: '110' },
+      allocatable: { cpu, memory, pods: '110' },
+    },
   }
 }
 
@@ -187,6 +275,132 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
           { name: 'scan', succeeded: true, steps: [{ name: 'trivy', status: 'Completed' }] },
         ],
         { critical: 0, high: 0, medium: 1, low: 4 },
+      ),
+    ],
+    [
+      'app/guestbook',
+      argoApp('guestbook', 'Synced', 'Healthy', 'default', [
+        {
+          group: 'apps',
+          version: 'v1',
+          kind: 'Deployment',
+          name: 'guestbook-ui',
+          namespace: 'default',
+          status: 'Synced',
+          health: 'Healthy',
+        },
+        {
+          group: '',
+          version: 'v1',
+          kind: 'Service',
+          name: 'guestbook-ui',
+          namespace: 'default',
+          status: 'Synced',
+          health: 'Healthy',
+        },
+      ]),
+    ],
+    [
+      'app/payments',
+      argoApp('payments', 'OutOfSync', 'Degraded', 'shop', [
+        {
+          group: 'apps',
+          version: 'v1',
+          kind: 'Deployment',
+          name: 'payments-api',
+          namespace: 'shop',
+          status: 'OutOfSync',
+          health: 'Degraded',
+        },
+        {
+          group: '',
+          version: 'v1',
+          kind: 'Service',
+          name: 'payments-api',
+          namespace: 'shop',
+          status: 'Synced',
+          health: 'Healthy',
+        },
+        {
+          group: '',
+          version: 'v1',
+          kind: 'ConfigMap',
+          name: 'payments-config',
+          namespace: 'shop',
+          status: 'OutOfSync',
+          health: 'Healthy',
+        },
+      ]),
+    ],
+    [
+      'app/search',
+      argoApp('search', 'Synced', 'Progressing', 'shop', [
+        {
+          group: 'apps',
+          version: 'v1',
+          kind: 'StatefulSet',
+          name: 'search-index',
+          namespace: 'shop',
+          status: 'Synced',
+          health: 'Progressing',
+        },
+      ]),
+    ],
+    ['node/node-1', node('node-1', true, [], '4', '16Gi')],
+    [
+      'node/node-2',
+      node(
+        'node-2',
+        false,
+        [{ key: 'dedicated', value: 'gpu', effect: 'NoSchedule' }],
+        '8',
+        '32Gi',
+      ),
+    ],
+    [
+      'ev/shop-oom',
+      event(
+        'shop-oom',
+        'shop',
+        'cart-7',
+        'OOMKilled',
+        'Container exceeded memory limit',
+        '2026-10-08T09:30:00Z',
+        'Warning',
+      ),
+    ],
+    [
+      'ev/shop-pull',
+      event(
+        'shop-pull',
+        'shop',
+        'cart-7',
+        'BackOff',
+        'Back-off pulling image',
+        '2026-10-08T09:40:00Z',
+        'Warning',
+      ),
+    ],
+    [
+      'ev/ks-sched',
+      event(
+        'ks-sched',
+        'kube-system',
+        'coredns-1',
+        'Scheduled',
+        'Successfully assigned',
+        '2026-10-08T09:10:00Z',
+      ),
+    ],
+    [
+      'ev/shop-started',
+      event(
+        'shop-started',
+        'shop',
+        'cart-8',
+        'Started',
+        'Started container app',
+        '2026-10-08T09:50:00Z',
       ),
     ],
     [

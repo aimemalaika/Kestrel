@@ -1,6 +1,13 @@
 import { Link } from 'react-router-dom'
 import { NavTree } from '../nav/NavTree'
 
+const linkStyle = {
+  display: 'block',
+  color: 'var(--text)',
+  marginBottom: 'var(--space-2)',
+  textDecoration: 'none',
+} as const
+
 export function Sidebar() {
   return (
     <aside
@@ -14,17 +21,19 @@ export function Sidebar() {
       <div style={{ fontWeight: 700, color: 'var(--brand-600)', marginBottom: 'var(--space-4)' }}>
         Kestrel
       </div>
-      <Link
-        to="/registry"
-        style={{
-          display: 'block',
-          color: 'var(--text)',
-          marginBottom: 'var(--space-4)',
-          textDecoration: 'none',
-        }}
-      >
-        Registry
-      </Link>
+      {[
+        ['/overview', 'Overview'],
+        ['/nodes', 'Nodes'],
+        ['/events', 'Events'],
+        ['/registry', 'Registry'],
+        ['/helm', 'Helm'],
+        ['/argo', 'Argo'],
+      ].map(([to, label]) => (
+        <Link key={to} to={to} style={linkStyle}>
+          {label}
+        </Link>
+      ))}
+      <div style={{ marginBottom: 'var(--space-4)' }} />
       <NavTree />
     </aside>
   )

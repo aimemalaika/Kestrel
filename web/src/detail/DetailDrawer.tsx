@@ -10,11 +10,12 @@ import { PortForwardButton } from '../sessions/PortForwardButton'
 import { DeleteButton } from '../write/DeleteButton'
 import { useCanI } from '../write/useCanI'
 import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
+import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
 
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
 
-type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run'
+type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run' | 'app'
 
 export function DetailDrawer() {
   const { namespace, group, version, resource, name } = useParams()
@@ -32,11 +33,14 @@ export function DetailDrawer() {
   const canUpdate = useCanI(objRef ? { verb: 'update', ...objRef } : undefined)
   const canDelete = useCanI(objRef ? { verb: 'delete', ...objRef } : undefined)
   const isPipelineRun = object?.kind === 'PipelineRun'
+  const isApplication = object?.kind === 'Application'
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'logs', 'terminal']
     : isPipelineRun
       ? ['detail', 'yaml', 'events', 'run']
-      : ['detail', 'yaml', 'events']
+      : isApplication
+        ? ['detail', 'yaml', 'events', 'app']
+        : ['detail', 'yaml', 'events']
   // If the selected tab isn't available for the current object (e.g. after
   // navigating from a Pod/PipelineRun to another kind), fall back to detail so
   // the body never renders blank.
@@ -166,6 +170,7 @@ export function DetailDrawer() {
             )}
             {tab === 'events' && <EventsView object={object} />}
             {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
+            {tab === 'app' && isApplication && <ArgoRichView object={object} />}
             {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
             {tab === 'terminal' && isPod && podRef && <Terminal pod={podRef} />}
           </>
