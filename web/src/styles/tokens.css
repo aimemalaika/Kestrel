@@ -1,0 +1,48 @@
+:root {
+  --brand-700: #064e2b;
+  --brand-600: #0e7a3c;
+  --brand-500: #1b9e57;
+  --brand-100: #e6f4ea;
+  --indigo-600: #6e5bd6;
+  --indigo-100: #eceafb;
+  --amber-600: #e89b3c;
+  --amber-100: #fbebd6;
+  --blue-500: #3e9be0;
+  --blue-100: #e3f1fb;
+  --rose-400: #ee9292;
+  --rose-100: #fce7e7;
+  --yellow-400: #f4c24e;
+  --yellow-100: #fdf3d6;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --border: #eceff3;
+  --text: #1f2a37;
+  --text-muted: #6b7580;
+  --ok-fg: var(--brand-600);
+  --ok-bg: var(--brand-100);
+  --warn-fg: #b9761a;
+  --warn-bg: var(--amber-100);
+  --risk-fg: #c2453f;
+  --risk-bg: var(--rose-100);
+  --neutral-fg: #52606d;
+  --neutral-bg: #eef1f4;
+  --r-card: 16px;
+  --r-badge: 8px;
+  --r-pill: 999px;
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
