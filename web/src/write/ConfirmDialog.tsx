@@ -47,41 +47,18 @@ export function ConfirmDialog({
       aria-modal="true"
       aria-labelledby={titleId}
       onKeyDown={onKeyDown}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--scrim)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 40,
-      }}
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/60"
     >
-      <div
-        style={{
-          background: 'var(--surface)',
-          borderRadius: 'var(--r-card)',
-          padding: 'var(--space-6)',
-          boxShadow: 'var(--shadow-card)',
-          maxWidth: 420,
-        }}
-      >
-        <p id={titleId} style={{ color: 'var(--text)', marginTop: 0 }}>
+      <div className="max-w-105 w-full mx-4 bg-surface border border-zinc-700 rounded-lg p-6 shadow-2xl">
+        <p id={titleId} className="mt-0 mb-5 text-sm text-zinc-200">
           {message}
         </p>
-        <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end' }}>
+        <div className="flex gap-3 justify-end">
           <button
             ref={cancelRef}
             type="button"
             onClick={onCancel}
-            style={{
-              padding: '6px var(--space-3)',
-              borderRadius: 'var(--r-badge)',
-              border: '1px solid var(--border)',
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              cursor: 'pointer',
-            }}
+            className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-zinc-500"
           >
             Cancel
           </button>
@@ -89,14 +66,7 @@ export function ConfirmDialog({
             ref={confirmRef}
             type="button"
             onClick={onConfirm}
-            style={{
-              padding: '6px var(--space-3)',
-              borderRadius: 'var(--r-badge)',
-              border: 'none',
-              background: 'var(--risk-fg)',
-              color: 'var(--surface)',
-              cursor: 'pointer',
-            }}
+            className="text-xs bg-brand hover:bg-red-600 text-white px-3.5 py-1.5 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-red-400"
           >
             {confirmLabel}
           </button>

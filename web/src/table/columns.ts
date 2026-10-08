@@ -3,6 +3,8 @@ import type { K8sObject } from '../contract/types'
 export interface ColumnHint {
   header: string
   path: string
+  /** Right-align (numeric) column. */
+  numeric?: boolean
 }
 
 export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
@@ -11,8 +13,8 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
     { header: 'Node', path: 'spec.nodeName' },
   ],
   Deployment: [
-    { header: 'Ready', path: 'status.readyReplicas' },
-    { header: 'Available', path: 'status.availableReplicas' },
+    { header: 'Ready', path: 'status.readyReplicas', numeric: true },
+    { header: 'Available', path: 'status.availableReplicas', numeric: true },
   ],
 }
 
@@ -70,6 +72,7 @@ export interface ColumnSpec {
   id: string
   header: string
   kind: 'text' | 'age' | 'status' | 'scan'
+  align?: 'right'
   value: (o: K8sObject) => string
 }
 
@@ -86,7 +89,13 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
     })
   }
   for (const h of COLUMN_HINTS[kind] ?? []) {
-    cols.push({ id: h.path, header: h.header, kind: 'text', value: (o) => str(getPath(o, h.path)) })
+    cols.push({
+      id: h.path,
+      header: h.header,
+      kind: 'text',
+      align: h.numeric ? 'right' : undefined,
+      value: (o) => str(getPath(o, h.path)),
+    })
   }
   if (kind === 'PipelineRun') {
     cols.push({

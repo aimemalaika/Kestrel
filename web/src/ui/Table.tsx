@@ -20,10 +20,12 @@ export function Table({
   headers,
   children,
   actions,
+  'aria-label': ariaLabel,
 }: {
   headers: Header[]
   children: ReactNode
   actions?: ReactNode
+  'aria-label'?: string
 }) {
   return (
     <div className="bg-surface border border-zinc-800/80 rounded-xl overflow-hidden">
@@ -33,7 +35,7 @@ export function Table({
         </div>
       )}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" aria-label={ariaLabel}>
           <thead>
             <tr className="border-b border-zinc-800/60 bg-zinc-900/40">
               {headers.map((h, i) => {

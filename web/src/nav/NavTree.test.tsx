@@ -38,3 +38,15 @@ describe('NavTree', () => {
     expect(screen.getByRole('link', { name: /pods/i })).toBeInTheDocument()
   })
 })
+
+describe('NavTree rail', () => {
+  it('renders icon-only links with accessible names and no section headers', async () => {
+    render(
+      <MemoryRouter initialEntries={['/ns/default']}>
+        <NavTree rail />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByRole('link', { name: 'pods' })).toBeInTheDocument()
+    expect(screen.queryByText('Workloads')).toBeNull()
+  })
+})

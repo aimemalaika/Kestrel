@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { createClient } from '../client/createClient'
 import type { ResourceRef } from '../client/Client'
 import { useToast } from '../toast/ToastProvider'
+import { Icon } from '../ui'
 import { ConfirmDialog } from './ConfirmDialog'
 
 export function DeleteButton({ target, disabled }: { target: ResourceRef; disabled?: boolean }) {
@@ -28,15 +29,9 @@ export function DeleteButton({ target, disabled }: { target: ResourceRef; disabl
         type="button"
         disabled={disabled}
         onClick={() => setConfirming(true)}
-        style={{
-          padding: '4px var(--space-3)',
-          borderRadius: 'var(--r-badge)',
-          border: '1px solid var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--risk-fg)',
-          cursor: 'pointer',
-        }}
+        className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-red-950/60 text-red-400 border border-zinc-700 hover:border-red-900 px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50"
       >
+        <Icon name="close" className="w-3.5 h-3.5" />
         Delete {target.name}
       </button>
       {confirming && (

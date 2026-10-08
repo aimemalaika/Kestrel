@@ -24,21 +24,16 @@ export function NamespacePicker() {
   }, [])
 
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Namespace</span>
+    <label className="flex items-center gap-2">
+      <span className="sr-only">Namespace</span>
       <select
+        aria-label="Namespace"
         value={namespace ?? ''}
         onChange={(e) => navigate(`/ns/${e.target.value}`)}
-        style={{
-          padding: '4px var(--space-2)',
-          borderRadius: 'var(--r-badge)',
-          border: '1px solid var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--text)',
-        }}
+        className="text-xs bg-zinc-800/70 border border-zinc-700/70 rounded-lg px-2.5 py-1.5 text-zinc-300 focus:outline-none focus:border-brand"
       >
         <option value="" disabled>
-          Select…
+          Select namespace…
         </option>
         {namespaces.map((n) => (
           <option key={n} value={n}>

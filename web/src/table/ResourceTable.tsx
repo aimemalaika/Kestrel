@@ -8,21 +8,33 @@ import {
   flexRender,
   type ColumnDef,
   type SortingState,
+  type ColumnFiltersState,
 } from '@tanstack/react-table'
 import { Link } from 'react-router-dom'
+import type { ReactNode } from 'react'
+import { ViewHeader, FilterBar, Table, TR, TD, Mono, EmptyState } from '../ui'
 import type { K8sObject } from '../contract/types'
 import { useSelection } from '../state/selection'
 import { useResourceStream } from './useResourceStream'
-import { columnSpecs } from './columns'
+import { columnSpecs, getPath } from './columns'
 import { StatusPill } from './StatusPill'
 import { ScanCell } from './ScanCell'
 import { Age } from './Age'
 
-function Hint({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: 'var(--space-6)', color: 'var(--text-muted)' }}>{children}</div>
-}
+const cellAlign = (a?: 'right') => (a === 'right' ? 'text-right tabular-nums' : '')
 
-export function ResourceTable() {
+const pageBtn =
+  'text-xs px-3 py-1 rounded-md border border-zinc-700 bg-zinc-800 text-zinc-300 hover:text-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60'
+
+export function ResourceTable({
+  action,
+  rowActions,
+}: {
+  /** Header action slot (e.g. a Create button). */
+  action?: ReactNode
+  /** Trailing per-row action slot (logs / terminal / more). */
+  rowActions?: (o: K8sObject) => ReactNode
+} = {}) {
   const { namespace, gvr } = useSelection()
   const { rows, status } = useResourceStream(gvr, namespace)
   const kind = rows[0]?.kind ?? ''
@@ -32,6 +44,8 @@ export function ResourceTable() {
     return specs.map((s) => ({
       id: s.id,
       header: s.header,
+      meta: { align: s.align },
+      filterFn: 'equalsString',
       accessorFn: (o: K8sObject) => s.value(o),
       cell: (ctx) => {
         const v = String(ctx.getValue() ?? '')
@@ -39,21 +53,29 @@ export function ResourceTable() {
           return (
             <Link
               to={encodeURIComponent(v)}
-              style={{ color: 'var(--brand-600)', textDecoration: 'none' }}
+              className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 rounded"
             >
-              {v}
+              <Mono>{v}</Mono>
             </Link>
           )
         if (s.kind === 'status') return <StatusPill value={v} />
         if (s.kind === 'age') return <Age creationTimestamp={v === '—' ? undefined : v} />
         if (s.kind === 'scan') return <ScanCell value={v} />
-        return v
+        return s.kind === 'text' && s.id !== 'name' ? <span className="text-zinc-300">{v}</span> : v
       },
     }))
   }, [kind, namespace])
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [nsFilter, setNsFilter] = useState('')
+  const columnFilters = useMemo<ColumnFiltersState>(() => {
+    const f: ColumnFiltersState = []
+    if (statusFilter) f.push({ id: 'status', value: statusFilter })
+    if (nsFilter) f.push({ id: 'namespace', value: nsFilter })
+    return f
+  }, [statusFilter, nsFilter])
 
   const [pageSize, setPageSize] = useState(50)
   const [pageIndex, setPageIndex] = useState(0)
@@ -62,10 +84,11 @@ export function ResourceTable() {
     data: rows,
     columns,
     getRowId: (o) => o.metadata.uid ?? `${o.metadata.namespace ?? ''}/${o.metadata.name}`,
-    state: { sorting, globalFilter, pagination: { pageIndex, pageSize } },
+    state: { sorting, globalFilter, columnFilters, pagination: { pageIndex, pageSize } },
     autoResetPageIndex: false,
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
+    getColumnCanGlobalFilter: () => true,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -75,7 +98,34 @@ export function ResourceTable() {
   const gvrKey = gvr ? `${gvr.group}/${gvr.version}/${gvr.resource}` : ''
   useEffect(() => {
     setPageIndex(0)
-  }, [gvrKey, namespace, globalFilter])
+  }, [gvrKey, namespace, globalFilter, statusFilter, nsFilter])
+  // Reset filters when the resource type changes: a status/ns chip from the
+  // previous kind would otherwise persist with no visible control to clear it
+  // (the new kind may render no matching chips), stranding every row.
+  useEffect(() => {
+    setStatusFilter('')
+    setNsFilter('')
+    setGlobalFilter('')
+  }, [gvrKey])
+
+  const statusSpec = columns.find((c) => c.id === 'status')
+  const hasNsCol = columns.some((c) => c.id === 'namespace')
+  const statuses = useMemo(
+    () =>
+      statusSpec
+        ? [...new Set(rows.map((o) => String(getPath(o, 'status.phase') ?? '—')))]
+            .filter((v) => v !== '—')
+            .sort()
+        : [],
+    [rows, statusSpec],
+  )
+  const namespaces = useMemo(
+    () =>
+      hasNsCol
+        ? [...new Set(rows.map((o) => o.metadata.namespace).filter((n): n is string => !!n))].sort()
+        : [],
+    [rows, hasNsCol],
+  )
 
   const total = table.getFilteredRowModel().rows.length
   const pageCount = Math.max(1, Math.ceil(total / pageSize))
@@ -89,101 +139,106 @@ export function ResourceTable() {
     if (pageIndex > pageCount - 1) setPageIndex(Math.max(0, pageCount - 1))
   }, [pageCount, pageIndex])
 
-  if (!gvr) return <Hint>Select a resource type from the sidebar.</Hint>
-  if (status === 'loading') return <Hint>Loading…</Hint>
-  if (status === 'error') return <Hint>Stream interrupted — resyncing…</Hint>
-  if (rows.length === 0) return <Hint>No {gvr.resource} found.</Hint>
+  const title = gvr ? kind || gvr.resource : 'Resources'
+  const wrap = (children: ReactNode) => (
+    <div className="p-6">
+      <ViewHeader title={title} action={action} />
+      {children}
+    </div>
+  )
+  const card = (children: ReactNode) => (
+    <div className="bg-surface border border-zinc-800/80 rounded-xl">{children}</div>
+  )
+
+  if (!gvr)
+    return wrap(card(<EmptyState title="Select a resource type from the sidebar." icon="search" />))
+  if (status === 'loading') return wrap(card(<EmptyState title="Loading…" icon="refresh" />))
+  if (status === 'error')
+    return wrap(card(<EmptyState title="Stream interrupted — resyncing…" icon="alert" />))
+  if (rows.length === 0) return wrap(card(<EmptyState title={`No ${gvr.resource} found.`} />))
+
+  const headers = table.getHeaderGroups()[0].headers.map((h) => {
+    const align = (h.column.columnDef.meta as { align?: 'right' } | undefined)?.align
+    const sorted = h.column.getIsSorted()
+    return {
+      align,
+      label: (
+        <button
+          type="button"
+          onClick={h.column.getToggleSortingHandler()}
+          className="uppercase tracking-wider font-semibold hover:text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 rounded"
+        >
+          {flexRender(h.column.columnDef.header, h.getContext())}
+          {sorted && (
+            <span aria-hidden="true" className="ml-1">
+              {sorted === 'asc' ? '▲' : '▼'}
+            </span>
+          )}
+        </button>
+      ),
+    }
+  })
+  if (rowActions) headers.push({ align: 'right', label: <span className="sr-only">Actions</span> })
 
   return (
-    <div style={{ padding: 'var(--space-6)' }}>
-      <input
-        placeholder="Search…"
-        value={globalFilter}
-        onChange={(e) => setGlobalFilter(e.target.value)}
-        style={{
-          marginBottom: 'var(--space-4)',
-          padding: '6px var(--space-3)',
-          borderRadius: 'var(--r-badge)',
-          border: '1px solid var(--border)',
-          background: 'var(--surface)',
-          color: 'var(--text)',
-          minWidth: 240,
-        }}
+    <div className="p-6">
+      <ViewHeader title={title} count={total} action={action} />
+      <FilterBar
+        query={globalFilter}
+        onQuery={setGlobalFilter}
+        namespaceFilter={nsFilter}
+        onNamespace={hasNsCol ? setNsFilter : undefined}
+        namespaces={namespaces}
+        statusFilter={statusFilter}
+        onStatus={(s) => setStatusFilter((cur) => (cur === s ? '' : s))}
+        statuses={statuses}
       />
-      <table
-        aria-label={`${gvr.resource} table`}
-        style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--surface)' }}
-      >
-        <thead>
-          {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id}>
-              {hg.headers.map((h) => (
-                <th
-                  key={h.id}
-                  style={{
-                    textAlign: 'left',
-                    padding: 'var(--space-3)',
-                    borderBottom: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                    fontSize: 12,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={h.column.getToggleSortingHandler()}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                      font: 'inherit',
-                      color: 'inherit',
-                      textTransform: 'inherit',
-                    }}
-                  >
-                    {flexRender(h.column.columnDef.header, h.getContext())}
-                    {({ asc: ' ▲', desc: ' ▼' } as Record<string, string>)[
-                      h.column.getIsSorted() as string
-                    ] ?? ''}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.map((r) => (
-            <tr key={r.id}>
+      <Table headers={headers} aria-label={`${gvr.resource} table`}>
+        {total === 0 ? (
+          <tr>
+            <td colSpan={headers.length}>
+              <EmptyState title="No matching rows" hint="Adjust the filters to see more." />
+            </td>
+          </tr>
+        ) : (
+          table.getRowModel().rows.map((r) => (
+            <TR key={r.id}>
               {r.getVisibleCells().map((c) => (
-                <td
+                <TD
                   key={c.id}
-                  style={{ padding: 'var(--space-3)', borderBottom: '1px solid var(--border)' }}
+                  className={cellAlign(
+                    (c.column.columnDef.meta as { align?: 'right' } | undefined)?.align,
+                  )}
                 >
                   {flexRender(c.column.columnDef.cell, c.getContext())}
-                </td>
+                </TD>
               ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div
-        style={{
-          display: 'flex',
-          gap: 'var(--space-3)',
-          alignItems: 'center',
-          marginTop: 'var(--space-4)',
-          color: 'var(--text-muted)',
-        }}
-      >
-        <button type="button" onClick={() => setPageIndex(safeIndex - 1)} disabled={safeIndex <= 0}>
+              {rowActions && (
+                <TD className="text-right">
+                  <span className="inline-flex items-center gap-1 text-zinc-500">
+                    {rowActions(r.original)}
+                  </span>
+                </TD>
+              )}
+            </TR>
+          ))
+        )}
+      </Table>
+      <div className="flex items-center gap-3 mt-4 text-xs text-zinc-500">
+        <button
+          type="button"
+          className={pageBtn}
+          onClick={() => setPageIndex(safeIndex - 1)}
+          disabled={safeIndex <= 0}
+        >
           Prev
         </button>
-        <span>
+        <span className="tabular-nums">
           rows {first}–{last} of {total}
         </span>
         <button
           type="button"
+          className={pageBtn}
           onClick={() => setPageIndex(safeIndex + 1)}
           disabled={safeIndex >= pageCount - 1}
         >
@@ -191,6 +246,7 @@ export function ResourceTable() {
         </button>
         <select
           aria-label="Rows per page"
+          className="text-xs bg-zinc-800 border border-zinc-700 rounded-md px-2 py-1 text-zinc-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
           value={pageSize}
           onChange={(e) => {
             setPageSize(Number(e.target.value))

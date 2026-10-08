@@ -22,52 +22,27 @@ export function LogViewer({ pod }: { pod: ResourceRef }) {
   }, [shown, follow])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 'var(--space-3)',
-          marginBottom: 'var(--space-3)',
-          alignItems: 'center',
-        }}
-      >
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 mb-3">
         <input
           placeholder="Filter…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          style={{
-            padding: '4px var(--space-2)',
-            borderRadius: 'var(--r-badge)',
-            border: '1px solid var(--border)',
-            background: 'var(--surface)',
-            color: 'var(--text)',
-          }}
+          className="text-xs bg-[#0d1117] text-zinc-200 placeholder-zinc-600 border border-zinc-700 rounded-md px-2.5 py-1.5 focus:outline-none focus:border-zinc-500"
         />
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-2)',
-            color: 'var(--text-muted)',
-          }}
-        >
-          <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} />
+        <label className="flex items-center gap-2 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            className="accent-red-500"
+            checked={follow}
+            onChange={(e) => setFollow(e.target.checked)}
+          />
           Follow
         </label>
       </div>
       <pre
         ref={boxRef}
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          margin: 0,
-          fontSize: 12,
-          lineHeight: 1.5,
-          color: 'var(--text)',
-          background: 'var(--bg)',
-          padding: 'var(--space-3)',
-          borderRadius: 'var(--r-badge)',
-        }}
+        className="flex-1 overflow-auto m-0 font-mono text-xs leading-relaxed text-[#b0c4de] bg-[#0d1117] border border-zinc-800 rounded-md p-3"
       >
         {shown.map((l, i) => (
           <div key={i}>{l}</div>

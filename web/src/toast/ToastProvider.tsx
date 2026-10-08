@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { Icon } from '../ui'
 
 export interface Toast {
   id: number
@@ -27,29 +28,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={toast}>
       {children}
-      <div
-        style={{
-          position: 'fixed',
-          top: 'var(--space-4)',
-          right: 'var(--space-4)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--space-2)',
-          zIndex: 30,
-        }}
-      >
+      <div className="fixed top-4 right-4 z-30 flex flex-col gap-2">
         {toasts.map((t) => (
           <div
             key={t.id}
             role="status"
-            style={{
-              padding: 'var(--space-3) var(--space-4)',
-              borderRadius: 'var(--r-badge)',
-              background: t.kind === 'ok' ? 'var(--ok-bg)' : 'var(--risk-bg)',
-              color: t.kind === 'ok' ? 'var(--ok-fg)' : 'var(--risk-fg)',
-              boxShadow: 'var(--shadow-card)',
-            }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-xs font-medium border shadow-lg ${
+              t.kind === 'ok'
+                ? 'bg-emerald-950 border-emerald-800 text-emerald-300'
+                : 'bg-red-950 border-red-900 text-red-300'
+            }`}
           >
+            <Icon name={t.kind === 'ok' ? 'check' : 'alert'} className="w-3.5 h-3.5 shrink-0" />
             {t.message}
           </div>
         ))}
