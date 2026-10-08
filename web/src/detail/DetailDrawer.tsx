@@ -4,8 +4,12 @@ import { useResourceObject } from './useResourceObject'
 import { DetailPanel } from './DetailPanel'
 import { YamlView } from './YamlView'
 import { EventsView } from './EventsView'
+import { LogViewer } from '../streaming/LogViewer'
+import { Terminal } from '../streaming/Terminal'
+import { PortForwardButton } from '../sessions/PortForwardButton'
+import type { ResourceRef } from '../client/Client'
 
-type Tab = 'detail' | 'yaml' | 'events'
+type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal'
 
 export function DetailDrawer() {
   const { namespace, group, version, resource, name } = useParams()
@@ -13,6 +17,11 @@ export function DetailDrawer() {
   const [tab, setTab] = useState<Tab>('detail')
   const gvr = group && version && resource ? { group, version, resource } : undefined
   const { object, status } = useResourceObject(gvr, namespace, name)
+  const isPod = object?.kind === 'Pod'
+  const podRef: ResourceRef | undefined = gvr && name ? { ...gvr, namespace, name } : undefined
+  const tabs: Tab[] = isPod
+    ? ['detail', 'yaml', 'events', 'logs', 'terminal']
+    : ['detail', 'yaml', 'events']
 
   return (
     <div
@@ -65,7 +74,7 @@ export function DetailDrawer() {
           borderBottom: '1px solid var(--border)',
         }}
       >
-        {(['detail', 'yaml', 'events'] as Tab[]).map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             type="button"
@@ -94,9 +103,20 @@ export function DetailDrawer() {
         )}
         {status === 'ready' && object && (
           <>
-            {tab === 'detail' && <DetailPanel object={object} />}
+            {tab === 'detail' && (
+              <>
+                <DetailPanel object={object} />
+                {isPod && podRef && (
+                  <div style={{ marginTop: 'var(--space-4)' }}>
+                    <PortForwardButton target={podRef} />
+                  </div>
+                )}
+              </>
+            )}
             {tab === 'yaml' && <YamlView object={object} />}
             {tab === 'events' && <EventsView object={object} />}
+            {tab === 'logs' && podRef && <LogViewer pod={podRef} />}
+            {tab === 'terminal' && podRef && <Terminal pod={podRef} />}
           </>
         )}
       </div>

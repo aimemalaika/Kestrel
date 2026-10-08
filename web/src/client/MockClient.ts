@@ -1,5 +1,12 @@
 import type { CatalogEntry, GVR, K8sObject, WatchEnvelope } from '../contract/types'
-import type { Client, ResourceRef, Unsubscribe, WatchOptions } from './Client'
+import type {
+  Client,
+  ExecSession,
+  PortForwardSession,
+  ResourceRef,
+  Unsubscribe,
+  WatchOptions,
+} from './Client'
 
 const CATALOG: CatalogEntry[] = [
   {
@@ -46,6 +53,7 @@ function pod(name: string, ns: string, phase: string): K8sObject {
       uid: `${ns}/${name}`,
       creationTimestamp: new Date().toISOString(),
     },
+    spec: { containers: [{ name: 'app' }] },
     status: { phase },
   }
 }
@@ -145,6 +153,35 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     logs(_ref: ResourceRef, onLine: (line: string) => void): Unsubscribe {
       const id = setInterval(() => onLine(`log line ${++counter}`), tickMs)
       return () => clearInterval(id)
+    },
+    exec(): ExecSession {
+      let cb: ((data: string) => void) | undefined
+      return {
+        onData(fn) {
+          cb = fn
+          cb('Connected to echo shell.\r\n$ ')
+        },
+        send(data) {
+          cb?.(data)
+        },
+        resize() {},
+        close() {
+          cb = undefined
+        },
+      }
+    },
+    portForward(ref: ResourceRef, localPort: number, remotePort: number): PortForwardSession {
+      const s: PortForwardSession = {
+        id: `pf-${++counter}`,
+        ref,
+        localPort,
+        remotePort,
+        status: 'active',
+        close() {
+          s.status = 'closed'
+        },
+      }
+      return s
     },
     watch(gvr: GVR, _opts: WatchOptions, onEvent: (e: WatchEnvelope) => void): Unsubscribe {
       const wantKind = CATALOG.find(

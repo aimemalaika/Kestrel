@@ -21,4 +21,22 @@ export interface Client {
   watch(gvr: GVR, opts: WatchOptions, onEvent: (e: WatchEnvelope) => void): Unsubscribe
   canI(req: CanIRequest): Promise<CanIResponse>
   logs(ref: ResourceRef, onLine: (line: string) => void): Unsubscribe
+  exec(ref: ResourceRef): ExecSession
+  portForward(ref: ResourceRef, localPort: number, remotePort: number): PortForwardSession
+}
+
+export interface ExecSession {
+  onData(cb: (data: string) => void): void
+  send(data: string): void
+  resize(cols: number, rows: number): void
+  close(): void
+}
+
+export interface PortForwardSession {
+  id: string
+  ref: ResourceRef
+  localPort: number
+  remotePort: number
+  status: 'active' | 'closed'
+  close(): void
 }

@@ -88,3 +88,34 @@ describe('MockClient events', () => {
     stop()
   })
 })
+
+describe('MockClient exec + portForward', () => {
+  it('exec echoes sent data and a banner', () => {
+    const c = createMockClient()
+    const out: string[] = []
+    const s = c.exec({
+      group: 'core',
+      version: 'v1',
+      resource: 'pods',
+      namespace: 'default',
+      name: 'web-1',
+    })
+    s.onData((d) => out.push(d))
+    s.send('hello')
+    expect(out.join('')).toContain('hello')
+    s.close()
+  })
+
+  it('portForward returns an active session that closes', () => {
+    const c = createMockClient()
+    const pf = c.portForward(
+      { group: 'core', version: 'v1', resource: 'pods', namespace: 'default', name: 'web-1' },
+      8080,
+      80,
+    )
+    expect(pf.status).toBe('active')
+    expect(pf.localPort).toBe(8080)
+    pf.close()
+    expect(pf.status).toBe('closed')
+  })
+})
