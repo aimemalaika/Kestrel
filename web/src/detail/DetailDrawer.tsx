@@ -8,6 +8,7 @@ import { LogViewer } from '../streaming/LogViewer'
 import { Terminal } from '../streaming/Terminal'
 import { PortForwardButton } from '../sessions/PortForwardButton'
 import { DeleteButton } from '../write/DeleteButton'
+import { useCanI } from '../write/useCanI'
 import type { ResourceRef } from '../client/Client'
 
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
@@ -27,6 +28,8 @@ export function DetailDrawer() {
   const isPod = object?.kind === 'Pod'
   const podRef: ResourceRef | undefined = gvr && name ? { ...gvr, namespace, name } : undefined
   const objRef: ResourceRef | undefined = gvr && name ? { ...gvr, namespace, name } : undefined
+  const canUpdate = useCanI(objRef ? { verb: 'update', ...objRef } : undefined)
+  const canDelete = useCanI(objRef ? { verb: 'delete', ...objRef } : undefined)
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'logs', 'terminal']
     : ['detail', 'yaml', 'events']
@@ -60,7 +63,7 @@ export function DetailDrawer() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
           <strong style={{ color: 'var(--text)' }}>{name}</strong>
-          {objRef && <DeleteButton target={objRef} />}
+          {objRef && <DeleteButton target={objRef} disabled={!canDelete} />}
         </div>
         <button
           type="button"
@@ -129,6 +132,7 @@ export function DetailDrawer() {
                 <button
                   type="button"
                   onClick={() => setEditing((v) => !v)}
+                  disabled={!canUpdate}
                   style={{
                     padding: '4px var(--space-3)',
                     borderRadius: 'var(--r-badge)',

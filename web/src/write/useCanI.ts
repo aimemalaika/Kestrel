@@ -15,6 +15,9 @@ export function useCanI(req: CanIRequest | undefined): boolean {
       .then((r) => {
         if (active) setAllowed(r.allowed)
       })
+      .catch(() => {
+        if (active) setAllowed(false)
+      })
     return () => {
       active = false
     }
