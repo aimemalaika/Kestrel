@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+/* Kestrel dark design system (Tailwind 4). Dark only. */
+@theme {
+  --color-page: #0f1117;
+  --color-header: #1a1d23;
+  --color-sidebar: #13161e;
+  --color-surface: #1a1f2e;
+  --color-brand: #ee0000;
+  --color-brand-fg: #ff7a7a;
+  --color-brand-fg-soft: #ff8080;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  background-color: #0f1117;
+  color: #e4e4e7;
+}
