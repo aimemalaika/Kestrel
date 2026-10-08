@@ -5,7 +5,7 @@ import { DetailPanel } from './DetailPanel'
 import { YamlView } from './YamlView'
 import { EventsView } from './EventsView'
 import { LogViewer } from '../streaming/LogViewer'
-import { Terminal } from '../streaming/Terminal'
+import { RelationsView } from './RelationsView'
 import { PortForwardButton } from '../sessions/PortForwardButton'
 import { DeleteButton } from '../write/DeleteButton'
 import { useCanI } from '../write/useCanI'
@@ -14,8 +14,9 @@ import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
 
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
+const Terminal = lazy(() => import('../streaming/Terminal'))
 
-type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run' | 'app'
+type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run' | 'app' | 'relations'
 
 export function DetailDrawer() {
   const { namespace, group, version, resource, name } = useParams()
@@ -35,12 +36,12 @@ export function DetailDrawer() {
   const isPipelineRun = object?.kind === 'PipelineRun'
   const isApplication = object?.kind === 'Application'
   const tabs: Tab[] = isPod
-    ? ['detail', 'yaml', 'events', 'logs', 'terminal']
+    ? ['detail', 'yaml', 'events', 'relations', 'logs', 'terminal']
     : isPipelineRun
-      ? ['detail', 'yaml', 'events', 'run']
+      ? ['detail', 'yaml', 'events', 'relations', 'run']
       : isApplication
-        ? ['detail', 'yaml', 'events', 'app']
-        : ['detail', 'yaml', 'events']
+        ? ['detail', 'yaml', 'events', 'relations', 'app']
+        : ['detail', 'yaml', 'events', 'relations']
   // If the selected tab isn't available for the current object (e.g. after
   // navigating from a Pod/PipelineRun to another kind), fall back to detail so
   // the body never renders blank.
@@ -169,10 +170,15 @@ export function DetailDrawer() {
               </>
             )}
             {tab === 'events' && <EventsView object={object} />}
+            {tab === 'relations' && <RelationsView object={object} />}
             {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
             {tab === 'app' && isApplication && <ArgoRichView object={object} />}
             {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
-            {tab === 'terminal' && isPod && podRef && <Terminal pod={podRef} />}
+            {tab === 'terminal' && isPod && podRef ? (
+              <Suspense fallback={<p>Loading terminal…</p>}>
+                <Terminal pod={podRef} />
+              </Suspense>
+            ) : null}
           </>
         )}
       </div>

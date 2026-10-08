@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   useReactTable,
   getCoreRowModel,
   getSortedRowModel,
   getFilteredRowModel,
+  getPaginationRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
@@ -54,17 +55,33 @@ export function ResourceTable() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
 
+  const [pageSize, setPageSize] = useState(50)
+  const [pageIndex, setPageIndex] = useState(0)
+
   const table = useReactTable({
     data: rows,
     columns,
     getRowId: (o) => o.metadata.uid ?? `${o.metadata.namespace ?? ''}/${o.metadata.name}`,
-    state: { sorting, globalFilter },
+    state: { sorting, globalFilter, pagination: { pageIndex, pageSize } },
+    autoResetPageIndex: false,
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
   })
+
+  const gvrKey = gvr ? `${gvr.group}/${gvr.version}/${gvr.resource}` : ''
+  useEffect(() => {
+    setPageIndex(0)
+  }, [gvrKey, namespace, globalFilter])
+
+  const total = table.getFilteredRowModel().rows.length
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const safeIndex = Math.min(pageIndex, pageCount - 1)
+  const first = total === 0 ? 0 : safeIndex * pageSize + 1
+  const last = Math.min(total, (safeIndex + 1) * pageSize)
 
   if (!gvr) return <Hint>Select a resource type from the sidebar.</Hint>
   if (status === 'loading') return <Hint>Loading…</Hint>
@@ -87,7 +104,10 @@ export function ResourceTable() {
           minWidth: 240,
         }}
       />
-      <table style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--surface)' }}>
+      <table
+        aria-label={`${gvr.resource} table`}
+        style={{ width: '100%', borderCollapse: 'collapse', background: 'var(--surface)' }}
+      >
         <thead>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
@@ -141,6 +161,43 @@ export function ResourceTable() {
           ))}
         </tbody>
       </table>
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--space-3)',
+          alignItems: 'center',
+          marginTop: 'var(--space-4)',
+          color: 'var(--text-muted)',
+        }}
+      >
+        <button type="button" onClick={() => setPageIndex(safeIndex - 1)} disabled={safeIndex <= 0}>
+          Prev
+        </button>
+        <span>
+          rows {first}–{last} of {total}
+        </span>
+        <button
+          type="button"
+          onClick={() => setPageIndex(safeIndex + 1)}
+          disabled={safeIndex >= pageCount - 1}
+        >
+          Next
+        </button>
+        <select
+          aria-label="Rows per page"
+          value={pageSize}
+          onChange={(e) => {
+            setPageSize(Number(e.target.value))
+            setPageIndex(0)
+          }}
+        >
+          {[25, 50, 100, 200].map((n) => (
+            <option key={n} value={n}>
+              {n} / page
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   )
 }

@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createMockClient } from '../MockClient'
+import { setIdentity, IDENTITY_PRESETS } from '../../auth/identity'
 import { isDeltaEnvelope, type WatchEnvelope } from '../../contract/types'
 
 beforeEach(() => vi.useFakeTimers())
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  setIdentity(null)
+})
 
 describe('MockClient', () => {
   it('exposes a non-empty catalog', async () => {
@@ -207,5 +211,26 @@ describe('MockClient U7 seeds', () => {
     expect(nodes.length).toBeGreaterThanOrEqual(2)
     expect(nodes.every((n) => n.status.conditions.length > 0)).toBe(true)
     expect(nodes.some((n) => n.spec.taints.length > 0)).toBe(true)
+  })
+})
+
+describe('MockClient canI identity', () => {
+  const [operator, viewer] = IDENTITY_PRESETS
+  const pods = { group: 'core', version: 'v1', resource: 'pods' }
+
+  it('viewer denies writes and allows reads', async () => {
+    setIdentity(viewer)
+    const c = createMockClient()
+    expect((await c.canI({ ...pods, verb: 'delete', namespace: 'default' })).allowed).toBe(false)
+    expect((await c.canI({ ...pods, verb: 'get', namespace: 'default' })).allowed).toBe(true)
+  })
+
+  it('operator allows delete in default, denies in kube-system', async () => {
+    setIdentity(operator)
+    const c = createMockClient()
+    expect((await c.canI({ ...pods, verb: 'delete', namespace: 'default' })).allowed).toBe(true)
+    expect((await c.canI({ ...pods, verb: 'delete', namespace: 'kube-system' })).allowed).toBe(
+      false,
+    )
   })
 })

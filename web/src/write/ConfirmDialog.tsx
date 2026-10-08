@@ -1,3 +1,6 @@
+import { useEffect, useId, useRef } from 'react'
+import type { KeyboardEvent } from 'react'
+
 export function ConfirmDialog({
   message,
   confirmLabel = 'Confirm',
@@ -9,10 +12,41 @@ export function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const titleId = useId()
+  const confirmRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null
+    cancelRef.current?.focus()
+    return () => opener?.focus?.()
+  }, [])
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      onCancel()
+      return
+    }
+    if (e.key === 'Tab') {
+      const first = cancelRef.current
+      const last = confirmRef.current
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last?.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first?.focus()
+      }
+    }
+  }
+
   return (
     <div
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      onKeyDown={onKeyDown}
       style={{
         position: 'fixed',
         inset: 0,
@@ -32,9 +66,12 @@ export function ConfirmDialog({
           maxWidth: 420,
         }}
       >
-        <p style={{ color: 'var(--text)', marginTop: 0 }}>{message}</p>
+        <p id={titleId} style={{ color: 'var(--text)', marginTop: 0 }}>
+          {message}
+        </p>
         <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end' }}>
           <button
+            ref={cancelRef}
             type="button"
             onClick={onCancel}
             style={{
@@ -49,6 +86,7 @@ export function ConfirmDialog({
             Cancel
           </button>
           <button
+            ref={confirmRef}
             type="button"
             onClick={onConfirm}
             style={{
