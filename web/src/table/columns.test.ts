@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { columnSpecs, getPath, ageString } from './columns'
+import { columnSpecs, getPath, ageString, scanSummary } from './columns'
 import type { K8sObject } from '../contract/types'
 
 const pod: K8sObject = {
@@ -44,5 +44,27 @@ describe('columnSpecs', () => {
     const ids = cols.map((c) => c.id)
     expect(ids).toContain('namespace')
     expect(ids).toEqual(['name', 'namespace', 'status', 'age'])
+  })
+})
+
+describe('scanSummary / scan column', () => {
+  const run: K8sObject = {
+    apiVersion: 'tekton.dev/v1',
+    kind: 'PipelineRun',
+    metadata: { name: 'r1' },
+    status: {
+      results: [{ name: 'IMAGE_SCAN_OUTPUT', value: '{"critical":1,"high":2,"medium":3,"low":4}' }],
+    },
+  }
+  it('parses SCAN_OUTPUT counts', () => {
+    expect(scanSummary(run)).toEqual({ critical: 1, high: 2, medium: 3, low: 4 })
+  })
+  it('returns undefined when absent', () => {
+    expect(scanSummary(pod)).toBeUndefined()
+  })
+  it('adds scan column only for PipelineRun', () => {
+    const ids = (k: string) => columnSpecs(k, { namespaceSelected: true }).map((c) => c.id)
+    expect(ids('PipelineRun')).toContain('scan')
+    expect(ids('Pod')).not.toContain('scan')
   })
 })

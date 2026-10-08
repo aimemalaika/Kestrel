@@ -9,11 +9,12 @@ import { Terminal } from '../streaming/Terminal'
 import { PortForwardButton } from '../sessions/PortForwardButton'
 import { DeleteButton } from '../write/DeleteButton'
 import { useCanI } from '../write/useCanI'
+import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
 import type { ResourceRef } from '../client/Client'
 
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
 
-type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal'
+type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run'
 
 export function DetailDrawer() {
   const { namespace, group, version, resource, name } = useParams()
@@ -30,9 +31,19 @@ export function DetailDrawer() {
   const objRef: ResourceRef | undefined = gvr && name ? { ...gvr, namespace, name } : undefined
   const canUpdate = useCanI(objRef ? { verb: 'update', ...objRef } : undefined)
   const canDelete = useCanI(objRef ? { verb: 'delete', ...objRef } : undefined)
+  const isPipelineRun = object?.kind === 'PipelineRun'
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'logs', 'terminal']
-    : ['detail', 'yaml', 'events']
+    : isPipelineRun
+      ? ['detail', 'yaml', 'events', 'run']
+      : ['detail', 'yaml', 'events']
+  // If the selected tab isn't available for the current object (e.g. after
+  // navigating from a Pod/PipelineRun to another kind), fall back to detail so
+  // the body never renders blank.
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTab('detail')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.join(','), tab])
 
   return (
     <div
@@ -154,6 +165,7 @@ export function DetailDrawer() {
               </>
             )}
             {tab === 'events' && <EventsView object={object} />}
+            {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
             {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
             {tab === 'terminal' && isPod && podRef && <Terminal pod={podRef} />}
           </>

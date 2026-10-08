@@ -14,6 +14,7 @@ import { useSelection } from '../state/selection'
 import { useResourceStream } from './useResourceStream'
 import { columnSpecs } from './columns'
 import { StatusPill } from './StatusPill'
+import { ScanCell } from './ScanCell'
 import { Age } from './Age'
 
 function Hint({ children }: { children: React.ReactNode }) {
@@ -44,6 +45,7 @@ export function ResourceTable() {
           )
         if (s.kind === 'status') return <StatusPill value={v} />
         if (s.kind === 'age') return <Age creationTimestamp={v === '—' ? undefined : v} />
+        if (s.kind === 'scan') return <ScanCell value={v} />
         return v
       },
     }))

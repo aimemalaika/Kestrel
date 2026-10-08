@@ -140,3 +140,28 @@ describe('MockClient apply dryRun + canI', () => {
     expect((await c.canI({ verb: 'update', namespace: 'kube-system', ...base })).allowed).toBe(true)
   })
 })
+
+describe('MockClient pipelineruns', () => {
+  it('catalog includes pipelineruns and watch bursts seeded runs with scan results', async () => {
+    const c = createMockClient()
+    expect((await c.catalog()).some((e) => e.resource === 'pipelineruns')).toBe(true)
+    type Result = { name: string }
+    type PipelineRunStatus = { results: Result[]; taskRuns: { steps: unknown[] }[] }
+    const objs: { kind?: string; status: PipelineRunStatus }[] = []
+    const stop = c.watch(
+      { group: 'tekton.dev', version: 'v1', resource: 'pipelineruns' },
+      {},
+      (e) => {
+        if (isDeltaEnvelope(e) && e.type === 'added')
+          objs.push(e.object as unknown as { kind?: string; status: PipelineRunStatus })
+      },
+    )
+    stop()
+    expect(objs.length).toBeGreaterThanOrEqual(2)
+    expect(objs.every((o) => o.kind === 'PipelineRun')).toBe(true)
+    const names = (o: (typeof objs)[number]) => o.status.results.map((r) => r.name)
+    expect(objs.some((o) => names(o).some((n) => n.endsWith('SCAN_OUTPUT')))).toBe(true)
+    expect(objs.some((o) => o.status.results.length === 0)).toBe(true)
+    expect(objs[0].status.taskRuns[0].steps.length).toBeGreaterThan(0)
+  })
+})

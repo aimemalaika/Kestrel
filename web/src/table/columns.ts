@@ -42,10 +42,34 @@ function str(v: unknown): string {
   return v === undefined || v === null ? '—' : String(v)
 }
 
+export interface ScanCounts {
+  critical: number
+  high: number
+  medium: number
+  low: number
+}
+
+export function scanSummary(object: K8sObject): ScanCounts | undefined {
+  const results = getPath(object, 'status.results')
+  if (!Array.isArray(results)) return undefined
+  const r = results.find(
+    (x) => x && typeof x.name === 'string' && x.name.endsWith('SCAN_OUTPUT'),
+  ) as { value?: unknown } | undefined
+  if (!r || typeof r.value !== 'string') return undefined
+  try {
+    const p = JSON.parse(r.value) as Record<string, unknown>
+    if (!p || typeof p !== 'object') return undefined
+    const n = (k: string) => (typeof p[k] === 'number' ? (p[k] as number) : 0)
+    return { critical: n('critical'), high: n('high'), medium: n('medium'), low: n('low') }
+  } catch {
+    return undefined
+  }
+}
+
 export interface ColumnSpec {
   id: string
   header: string
-  kind: 'text' | 'age' | 'status'
+  kind: 'text' | 'age' | 'status' | 'scan'
   value: (o: K8sObject) => string
 }
 
@@ -63,6 +87,14 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
   }
   for (const h of COLUMN_HINTS[kind] ?? []) {
     cols.push({ id: h.path, header: h.header, kind: 'text', value: (o) => str(getPath(o, h.path)) })
+  }
+  if (kind === 'PipelineRun') {
+    cols.push({
+      id: 'scan',
+      header: 'Vulnerabilities',
+      kind: 'scan',
+      value: (o) => JSON.stringify(scanSummary(o) ?? {}),
+    })
   }
   cols.push({
     id: 'status',

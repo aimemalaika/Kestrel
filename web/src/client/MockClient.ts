@@ -41,7 +41,45 @@ const CATALOG: CatalogEntry[] = [
     namespaced: true,
     verbs: ['get', 'list', 'watch'],
   },
+  {
+    group: 'tekton.dev',
+    version: 'v1',
+    resource: 'pipelineruns',
+    kind: 'PipelineRun',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
 ]
+
+interface MockTask {
+  name: string
+  succeeded: boolean
+  steps: { name: string; status: 'Completed' | 'Error' }[]
+}
+
+function pipelineRun(
+  name: string,
+  ok: boolean,
+  reason: string,
+  startTime: string,
+  completionTime: string,
+  taskRuns: MockTask[],
+  scan?: Record<string, number>,
+): K8sObject {
+  return {
+    apiVersion: 'tekton.dev/v1',
+    kind: 'PipelineRun',
+    metadata: { name, namespace: 'default', uid: `pr/${name}`, creationTimestamp: startTime },
+    spec: { pipelineRef: { name: 'build-and-push' } },
+    status: {
+      conditions: [{ type: 'Succeeded', status: ok ? 'True' : 'False', reason }],
+      startTime,
+      completionTime,
+      taskRuns,
+      results: scan ? [{ name: 'image-SCAN_OUTPUT', value: JSON.stringify(scan) }] : [],
+    },
+  }
+}
 
 function pod(name: string, ns: string, phase: string): K8sObject {
   return {
@@ -95,6 +133,62 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     ['ns/default', ns('default')],
     ['ns/kube-system', ns('kube-system')],
     ['ns/shop', ns('shop')],
+    [
+      'pr/build-101',
+      pipelineRun(
+        'build-101',
+        true,
+        'Succeeded',
+        '2026-10-08T08:00:00Z',
+        '2026-10-08T08:05:00Z',
+        [
+          {
+            name: 'clone',
+            succeeded: true,
+            steps: [{ name: 'git-clone', status: 'Completed' }],
+          },
+          {
+            name: 'build',
+            succeeded: true,
+            steps: [
+              { name: 'compile', status: 'Completed' },
+              { name: 'push', status: 'Completed' },
+            ],
+          },
+          { name: 'scan', succeeded: true, steps: [{ name: 'trivy', status: 'Completed' }] },
+        ],
+        { critical: 2, high: 5, medium: 3, low: 10 },
+      ),
+    ],
+    [
+      'pr/build-102',
+      pipelineRun('build-102', false, 'Failed', '2026-10-08T09:00:00Z', '2026-10-08T09:02:00Z', [
+        { name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] },
+        {
+          name: 'build',
+          succeeded: false,
+          steps: [
+            { name: 'compile', status: 'Error' },
+            { name: 'push', status: 'Error' },
+          ],
+        },
+      ]),
+    ],
+    [
+      'pr/build-103',
+      pipelineRun(
+        'build-103',
+        true,
+        'Succeeded',
+        '2026-10-08T10:00:00Z',
+        '2026-10-08T10:04:00Z',
+        [
+          { name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] },
+          { name: 'scan', succeeded: true, steps: [{ name: 'trivy', status: 'Completed' }] },
+        ],
+        { critical: 0, high: 0, medium: 1, low: 4 },
+      ),
+    ],
     [
       'ev/web-1.1',
       event(
