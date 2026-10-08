@@ -141,7 +141,8 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         throw { error: `${ref.resource} "${ref.name}" not found`, code: 404, reason: 'NotFound' }
       return o
     },
-    async apply(obj: K8sObject) {
+    async apply(obj: K8sObject, opts?: { dryRun?: boolean }) {
+      if (opts?.dryRun) return obj
       const key = `${obj.metadata.namespace}/${obj.metadata.name}`
       store.set(key, obj)
       return obj
@@ -149,7 +150,9 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     async delete(ref: ResourceRef) {
       store.delete(`${ref.namespace}/${ref.name}`)
     },
-    canI: async () => ({ allowed: true }),
+    canI: async (req) => ({
+      allowed: !(req.verb === 'delete' && req.namespace === 'kube-system'),
+    }),
     logs(_ref: ResourceRef, onLine: (line: string) => void): Unsubscribe {
       const id = setInterval(() => onLine(`log line ${++counter}`), tickMs)
       return () => clearInterval(id)

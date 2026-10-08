@@ -18,6 +18,7 @@ export function useExecSession(pod: ResourceRef): {
       s.close()
       sessionRef.current = null
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are pod's primitive fields; avoids resubscribing on a new pod object identity
   }, [pod.namespace, pod.name, pod.resource])
   return {
     data,
