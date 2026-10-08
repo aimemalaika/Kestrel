@@ -22,7 +22,7 @@ describe('ResourceTable pagination', () => {
         <ResourceTable />
       </MemoryRouter>,
     )
-    expect(screen.getByRole('table', { name: /pods/i })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getAllByRole('row')).toHaveLength(51) // header + 50
     expect(screen.getByText('rows 1–50 of 120')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /next/i }))

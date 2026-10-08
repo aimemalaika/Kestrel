@@ -6,17 +6,25 @@ import { diffLines, type Change } from 'diff'
 import { createClient } from '../client/createClient'
 import type { K8sObject } from '../contract/types'
 import { useToast } from '../toast/ToastProvider'
+import { EditorView } from '@codemirror/view'
+import { PrimaryBtn, SecondaryBtn } from '../ui'
 import { DiffView } from './DiffView'
 
+const darkTheme = EditorView.theme(
+  {
+    '&': { backgroundColor: '#0d1117', color: '#b0c4de' },
+    '.cm-content': { caretColor: '#ee6060', fontFamily: 'ui-monospace, Menlo, monospace' },
+    '.cm-cursor': { borderLeftColor: '#ee6060' },
+    '.cm-gutters': { backgroundColor: '#0d1117', color: '#52525b', border: 'none' },
+    '.cm-activeLine, .cm-activeLineGutter': { backgroundColor: '#ffffff08' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+      backgroundColor: '#3f3f46',
+    },
+  },
+  { dark: true },
+)
+
 const dump = (o: unknown) => yaml.dump(o, { noRefs: true, sortKeys: false, skipInvalid: true })
-const btn = (kind: 'ghost' | 'primary') => ({
-  padding: '6px var(--space-3)',
-  borderRadius: 'var(--r-badge)',
-  cursor: 'pointer',
-  border: kind === 'ghost' ? '1px solid var(--border)' : 'none',
-  background: kind === 'ghost' ? 'var(--surface)' : 'var(--brand-600)',
-  color: kind === 'ghost' ? 'var(--text)' : 'var(--surface)',
-})
 
 function parse(text: string): K8sObject {
   const obj = yaml.load(text)
@@ -62,14 +70,18 @@ export default function YamlEditor({ object }: { object: K8sObject }) {
 
   return (
     <div>
-      <CodeMirror value={text} extensions={[yamlLang()]} onChange={setText} height="300px" />
-      <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-3)' }}>
-        <button type="button" onClick={preview} style={btn('ghost')}>
-          Preview changes
-        </button>
-        <button type="button" onClick={apply} style={btn('primary')}>
-          Apply
-        </button>
+      <div className="rounded-md border border-zinc-800 overflow-hidden">
+        <CodeMirror
+          value={text}
+          theme="dark"
+          extensions={[yamlLang(), darkTheme]}
+          onChange={setText}
+          height="300px"
+        />
+      </div>
+      <div className="flex gap-3 mt-3">
+        <SecondaryBtn onClick={preview}>Preview changes</SecondaryBtn>
+        <PrimaryBtn onClick={apply}>Apply</PrimaryBtn>
       </div>
       {diff && <DiffView parts={diff} />}
     </div>

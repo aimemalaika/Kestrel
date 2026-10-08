@@ -1,49 +1,24 @@
 import { useSessions } from './SessionsProvider'
+import { Icon } from '../ui'
 
+// Fixed bottom bar with its own opaque dark surface; independent of the shell background.
 export function SessionsDock() {
   const { sessions, stop } = useSessions()
   if (!sessions.length) return null
   return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: 'var(--surface)',
-        borderTop: '1px solid var(--border)',
-        padding: 'var(--space-3) var(--space-6)',
-        display: 'flex',
-        gap: 'var(--space-4)',
-        alignItems: 'center',
-        zIndex: 20,
-        flexWrap: 'wrap',
-      }}
-    >
-      <strong style={{ color: 'var(--text)' }}>Port-forwards ({sessions.length})</strong>
+    <div className="fixed inset-x-0 bottom-0 z-20 flex flex-wrap items-center gap-4 bg-[#151922] border-t border-zinc-800 px-6 py-2">
+      <strong className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
+        <Icon name="terminal" className="w-3.5 h-3.5 text-zinc-400" />
+        Port-forwards ({sessions.length})
+      </strong>
       {sessions.map((s) => (
-        <span
-          key={s.id}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--space-2)',
-            color: 'var(--text-muted)',
-          }}
-        >
+        <span key={s.id} className="flex items-center gap-2 text-xs font-mono text-zinc-400">
           {s.ref.name} {s.localPort}→{s.remotePort}
-          <span style={{ color: 'var(--ok-fg)' }}>●</span>
+          <span className="text-emerald-400">●</span>
           <button
             type="button"
             onClick={() => stop(s.id)}
-            style={{
-              background: 'none',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--r-badge)',
-              cursor: 'pointer',
-              color: 'var(--text)',
-              padding: '2px 8px',
-            }}
+            className="text-[11px] bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-2 py-0.5 rounded transition-colors"
           >
             stop
           </button>

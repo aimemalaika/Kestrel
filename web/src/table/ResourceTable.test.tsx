@@ -40,7 +40,7 @@ describe('ResourceTable interactions', () => {
       </MemoryRouter>,
     )
     await screen.findByText('web-1')
-    const search = screen.getByPlaceholderText(/search/i)
+    const search = screen.getByLabelText('Filter by name')
     fireEvent.change(search, { target: { value: 'web-2' } })
     expect(screen.queryByText('web-1')).not.toBeInTheDocument()
     expect(screen.getByText('web-2')).toBeInTheDocument()
@@ -56,5 +56,23 @@ describe('ResourceTable interactions', () => {
     fireEvent.click(nameHeader) // asc
     fireEvent.click(nameHeader) // desc
     expect(screen.getByText('web-1')).toBeInTheDocument()
+  })
+})
+
+describe('ResourceTable status chips', () => {
+  it('toggles a status chip filter and shows the count chip', async () => {
+    render(
+      <MemoryRouter initialEntries={['/ns/default/core/v1/pods']}>
+        <ResourceTable />
+      </MemoryRouter>,
+    )
+    await screen.findByText('web-1')
+    const group = screen.getByRole('group', { name: /status filter/i })
+    const chips = group.querySelectorAll('button')
+    expect(chips.length).toBeGreaterThan(0)
+    fireEvent.click(chips[0])
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(chips[0])
+    expect(chips[0]).toHaveAttribute('aria-pressed', 'false')
   })
 })
