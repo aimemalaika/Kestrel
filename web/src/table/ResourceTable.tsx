@@ -8,6 +8,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
+import { Link } from 'react-router-dom'
 import type { K8sObject } from '../contract/types'
 import { useSelection } from '../state/selection'
 import { useResourceStream } from './useResourceStream'
@@ -32,6 +33,15 @@ export function ResourceTable() {
       accessorFn: (o: K8sObject) => s.value(o),
       cell: (ctx) => {
         const v = String(ctx.getValue() ?? '')
+        if (s.id === 'name')
+          return (
+            <Link
+              to={encodeURIComponent(v)}
+              style={{ color: 'var(--brand-600)', textDecoration: 'none' }}
+            >
+              {v}
+            </Link>
+          )
         if (s.kind === 'status') return <StatusPill value={v} />
         if (s.kind === 'age') return <Age creationTimestamp={v === '—' ? undefined : v} />
         return v

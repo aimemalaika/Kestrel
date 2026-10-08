@@ -46,3 +46,22 @@ body {
     -apple-system,
     sans-serif;
 }
+.hljs {
+  color: var(--text);
+  background: transparent;
+}
+.hljs-attr,
+.hljs-attribute {
+  color: var(--brand-600);
+}
+.hljs-string {
+  color: var(--amber-600);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-bullet {
+  color: var(--indigo-600);
+}
+.hljs-comment {
+  color: var(--text-muted);
+}
