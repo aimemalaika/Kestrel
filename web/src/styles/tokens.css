@@ -35,6 +35,7 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-6: 24px;
+  --scrim: rgba(16, 24, 40, 0.35);
 }
 body {
   margin: 0;

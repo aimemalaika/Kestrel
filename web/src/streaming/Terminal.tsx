@@ -30,6 +30,7 @@ export function Terminal({ pod }: { pod: ResourceRef }) {
       session.close()
       term.dispose()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are pod's primitive fields; avoids resubscribing on a new pod object identity
   }, [pod.namespace, pod.name, pod.resource])
   return (
     <div ref={hostRef} data-testid="terminal-host" style={{ height: '100%', minHeight: 320 }} />

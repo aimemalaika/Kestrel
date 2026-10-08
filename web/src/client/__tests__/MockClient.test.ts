@@ -119,3 +119,24 @@ describe('MockClient exec + portForward', () => {
     expect(pf.status).toBe('closed')
   })
 })
+
+describe('MockClient apply dryRun + canI', () => {
+  it('dryRun apply returns the object without persisting', async () => {
+    const c = createMockClient()
+    const obj = { apiVersion: 'v1', kind: 'Pod', metadata: { name: 'tmp', namespace: 'default' } }
+    const res = await c.apply(obj, { dryRun: true })
+    expect(res.metadata.name).toBe('tmp')
+    await expect(
+      c.get({ group: 'core', version: 'v1', resource: 'pods', namespace: 'default', name: 'tmp' }),
+    ).rejects.toBeTruthy()
+  })
+  it('canI denies delete in kube-system, allows elsewhere', async () => {
+    const c = createMockClient()
+    const base = { group: 'core', version: 'v1', resource: 'pods', name: 'x' }
+    expect((await c.canI({ verb: 'delete', namespace: 'kube-system', ...base })).allowed).toBe(
+      false,
+    )
+    expect((await c.canI({ verb: 'delete', namespace: 'default', ...base })).allowed).toBe(true)
+    expect((await c.canI({ verb: 'update', namespace: 'kube-system', ...base })).allowed).toBe(true)
+  })
+})

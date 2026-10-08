@@ -12,6 +12,7 @@ export function LogViewer({ pod }: { pod: ResourceRef }) {
     setLines([])
     const stop = createClient().logs(pod, (line) => setLines((prev) => [...prev.slice(-999), line]))
     return stop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are pod's primitive fields; avoids resubscribing on a new pod object identity
   }, [pod.namespace, pod.name, pod.resource])
 
   const shown = filter ? lines.filter((l) => l.includes(filter)) : lines
