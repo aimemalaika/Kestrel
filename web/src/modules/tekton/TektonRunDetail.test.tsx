@@ -22,8 +22,8 @@ describe('TektonRunDetail', () => {
   it('renders condition, tasks and steps', () => {
     render(<TektonRunDetail object={run} />)
     expect(screen.getAllByText('Failed').length).toBe(2)
-    expect(screen.getByText('fetch')).toBeTruthy()
-    expect(screen.getByText('test')).toBeTruthy()
+    expect(screen.getAllByText('fetch')).toHaveLength(2) // StageViz + task row
+    expect(screen.getAllByText('test')).toHaveLength(2)
     expect(screen.getByText('clone: Completed')).toBeTruthy()
     expect(screen.getByText('unit: Error')).toBeTruthy()
     expect(screen.getByText('2026-10-08T10:00:00Z')).toBeTruthy()

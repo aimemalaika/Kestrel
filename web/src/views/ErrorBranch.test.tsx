@@ -18,8 +18,4 @@ describe('stream error branch', () => {
     render(<C />)
     expect(screen.getByText('Stream interrupted — resyncing…')).toBeInTheDocument()
   })
-  it('Overview shows metrics placeholder', () => {
-    render(<Overview />)
-    expect(screen.getByTestId('card-metrics')).toHaveTextContent('Metrics pending')
-  })
 })

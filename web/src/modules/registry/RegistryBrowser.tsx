@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createRegistryClient, type RegistryClient } from './RegistryClient'
+import { ViewHeader } from '../../ui'
 import { RepoList } from './RepoList'
 import { TagList } from './TagList'
 import { ImageDetail } from './ImageDetail'
 
-const crumb = {
-  background: 'none',
-  border: 'none',
-  color: 'var(--brand-600)',
-  cursor: 'pointer',
-  padding: 0,
-} as const
+const crumb = 'bg-transparent border-0 p-0 text-xs text-brand-fg cursor-pointer hover:underline'
 
 export function RegistryBrowser({ client: injected }: { client?: RegistryClient }) {
   const client = useMemo(() => injected ?? createRegistryClient(), [injected])
@@ -43,12 +38,12 @@ export function RegistryBrowser({ client: injected }: { client?: RegistryClient 
   }
 
   return (
-    <section style={{ padding: 'var(--space-4)', color: 'var(--text)' }}>
-      <h1 style={{ marginTop: 0 }}>Registry</h1>
-      <nav aria-label="Registry path" style={{ marginBottom: 'var(--space-4)' }}>
+    <section className="p-6 text-zinc-200">
+      <ViewHeader title="Registry" count={repos.length} />
+      <nav aria-label="Registry path" className="mb-4 text-xs text-zinc-500">
         <button
           type="button"
-          style={crumb}
+          className={crumb}
           onClick={() => {
             setRepo(null)
             setTag(null)
@@ -59,7 +54,7 @@ export function RegistryBrowser({ client: injected }: { client?: RegistryClient 
         {repo && (
           <>
             {' / '}
-            <button type="button" style={crumb} onClick={() => setTag(null)}>
+            <button type="button" className={crumb} onClick={() => setTag(null)}>
               {repo}
             </button>
           </>

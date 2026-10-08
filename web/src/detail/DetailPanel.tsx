@@ -1,22 +1,23 @@
 import type { K8sObject } from '../contract/types'
+import { Card } from '../ui'
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', gap: 'var(--space-3)', padding: '4px 0' }}>
-      <div style={{ width: 140, color: 'var(--text-muted)', flexShrink: 0 }}>{label}</div>
-      <div style={{ color: 'var(--text)', wordBreak: 'break-word' }}>{children}</div>
+    <div className="flex gap-3 py-1 text-xs">
+      <div className="w-36 shrink-0 text-zinc-500">{label}</div>
+      <div className="text-zinc-200 break-words min-w-0">{children}</div>
     </div>
   )
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ marginBottom: 'var(--space-6)' }}>
-      <h3 style={{ color: 'var(--brand-600)', fontSize: 14, margin: '0 0 var(--space-2)' }}>
+    <Card className="mb-4">
+      <h3 className="px-4 py-2.5 border-b border-zinc-800/80 text-xs font-semibold uppercase tracking-wide text-zinc-400 m-0">
         {title}
       </h3>
-      {children}
-    </section>
+      <div className="px-4 py-3">{children}</div>
+    </Card>
   )
 }
 
@@ -57,7 +58,7 @@ export function DetailPanel({ object }: { object: K8sObject }) {
         )}
       </Section>
       <Section title="Status">
-        <pre style={{ margin: 0, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+        <pre className="m-0 text-xs font-mono text-zinc-300 whitespace-pre-wrap">
           {object.status ? JSON.stringify(object.status, null, 2) : 'none'}
         </pre>
       </Section>

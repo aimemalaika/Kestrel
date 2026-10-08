@@ -1,16 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Card } from '../../ui'
 import type { Chart, ChartRepo, HelmClient } from './HelmClient'
-
-const btn = (active: boolean) =>
-  ({
-    padding: 'var(--space-2) var(--space-3)',
-    background: active ? 'var(--brand-600)' : 'var(--surface)',
-    color: active ? 'var(--surface)' : 'var(--text)',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--r-badge)',
-    cursor: 'pointer',
-    marginRight: 'var(--space-2)',
-  }) as const
 
 export function ChartRepoBrowse({ client }: { client: HelmClient }) {
   const [repos, setRepos] = useState<ChartRepo[]>([])
@@ -36,13 +26,17 @@ export function ChartRepoBrowse({ client }: { client: HelmClient }) {
 
   return (
     <div>
-      <div role="group" aria-label="Chart repositories" style={{ marginBottom: 'var(--space-3)' }}>
+      <div role="group" aria-label="Chart repositories" className="mb-3 flex flex-wrap gap-2">
         {repos.map((r) => (
           <button
             key={r.name}
             type="button"
-            style={btn(r.name === repo)}
             onClick={() => setRepo(r.name)}
+            className={`text-xs px-3 py-1.5 rounded-md border cursor-pointer transition-colors ${
+              r.name === repo
+                ? 'bg-brand/15 text-brand-fg border-brand/30'
+                : 'bg-zinc-800 text-zinc-300 border-zinc-700 hover:bg-zinc-700'
+            }`}
           >
             {r.name}
           </button>
@@ -50,19 +44,20 @@ export function ChartRepoBrowse({ client }: { client: HelmClient }) {
       </div>
       {repo && (
         <>
-          <p style={{ color: 'var(--text-muted)' }}>{repos.find((r) => r.name === repo)?.url}</p>
-          <ul aria-label="Charts" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {charts.map((c) => (
-              <li
-                key={c.name}
-                style={{ padding: 'var(--space-2) 0', borderTop: '1px solid var(--border)' }}
-              >
-                <strong>{c.name}</strong>{' '}
-                <span style={{ color: 'var(--text-muted)' }}>{c.version}</span>
-                <div style={{ color: 'var(--text-muted)' }}>{c.description}</div>
-              </li>
-            ))}
-          </ul>
+          <p className="text-xs text-zinc-500 font-mono">
+            {repos.find((r) => r.name === repo)?.url}
+          </p>
+          <Card>
+            <ul aria-label="Charts" className="list-none m-0 p-0 divide-y divide-zinc-800/60">
+              {charts.map((c) => (
+                <li key={c.name} className="px-5 py-3">
+                  <strong className="font-mono text-sky-400 text-xs">{c.name}</strong>{' '}
+                  <span className="text-xs tabular-nums text-zinc-400">{c.version}</span>
+                  <div className="text-xs text-zinc-500 mt-0.5">{c.description}</div>
+                </li>
+              ))}
+            </ul>
+          </Card>
         </>
       )}
     </div>

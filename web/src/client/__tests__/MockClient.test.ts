@@ -234,3 +234,37 @@ describe('MockClient canI identity', () => {
     )
   })
 })
+
+describe('MockClient generic resources (R9)', () => {
+  const kinds: [string, string, boolean][] = [
+    ['services', 'core', true],
+    ['configmaps', 'core', true],
+    ['secrets', 'core', true],
+    ['persistentvolumes', 'core', false],
+    ['persistentvolumeclaims', 'core', true],
+    ['storageclasses', 'storage.k8s.io', false],
+    ['serviceaccounts', 'core', true],
+    ['roles', 'rbac.authorization.k8s.io', true],
+    ['rolebindings', 'rbac.authorization.k8s.io', true],
+    ['routes', 'route.openshift.io', true],
+    ['resourcequotas', 'core', true],
+  ]
+  it('catalog includes the new kinds with correct scope', async () => {
+    const cat = await createMockClient().catalog()
+    for (const [resource, group, namespaced] of kinds) {
+      const e = cat.find((c) => c.resource === resource)
+      expect(e, resource).toBeDefined()
+      expect(e!.group).toBe(group)
+      expect(e!.namespaced).toBe(namespaced)
+    }
+  })
+  it('watch bursts seeds for each new kind', () => {
+    const c = createMockClient({ tickMs: 1000 })
+    for (const [resource, group] of kinds) {
+      const evs: WatchEnvelope[] = []
+      const stop = c.watch({ group, version: 'v1', resource }, {}, (e) => evs.push(e))
+      stop()
+      expect(evs.length, resource).toBeGreaterThanOrEqual(1)
+    }
+  })
+})

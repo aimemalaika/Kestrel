@@ -3,16 +3,7 @@ import { createHelmClient, type HelmClient, type Release } from './HelmClient'
 import { ReleaseList } from './ReleaseList'
 import { ReleaseDetail } from './ReleaseDetail'
 import { ChartRepoBrowse } from './ChartRepoBrowse'
-
-const tab = (active: boolean) =>
-  ({
-    padding: 'var(--space-2) var(--space-3)',
-    background: 'none',
-    border: 'none',
-    borderBottom: active ? '2px solid var(--brand-600)' : '2px solid transparent',
-    color: active ? 'var(--text)' : 'var(--text-muted)',
-    cursor: 'pointer',
-  }) as const
+import { Icon, PrimaryBtn, ViewHeader } from '../../ui'
 
 export function HelmBrowser({ client: injected }: { client?: HelmClient }) {
   const client = useMemo(() => injected ?? createHelmClient(), [injected])
@@ -28,15 +19,29 @@ export function HelmBrowser({ client: injected }: { client?: HelmClient }) {
     }
   }, [client])
 
+  const tabCls = (active: boolean) =>
+    `px-3 py-2 text-xs bg-transparent border-0 border-b-2 cursor-pointer transition-colors ${
+      active ? 'border-brand text-zinc-100' : 'border-transparent text-zinc-500 hover:text-zinc-300'
+    }`
+
   return (
-    <section style={{ padding: 'var(--space-4)', color: 'var(--text)' }}>
-      <h1 style={{ marginTop: 0 }}>Helm</h1>
-      <div role="tablist" style={{ marginBottom: 'var(--space-4)' }}>
+    <section className="p-6 text-zinc-200">
+      <ViewHeader
+        title="Helm Releases"
+        count={releases.length}
+        action={
+          <PrimaryBtn>
+            <Icon name="plus" className="w-3.5 h-3.5" />
+            Install Chart
+          </PrimaryBtn>
+        }
+      />
+      <div role="tablist" className="mb-4 flex border-b border-zinc-800">
         <button
           type="button"
           role="tab"
           aria-selected={view === 'releases'}
-          style={tab(view === 'releases')}
+          className={tabCls(view === 'releases')}
           onClick={() => {
             setView('releases')
             setSelected(null)
@@ -48,7 +53,7 @@ export function HelmBrowser({ client: injected }: { client?: HelmClient }) {
           type="button"
           role="tab"
           aria-selected={view === 'charts'}
-          style={tab(view === 'charts')}
+          className={tabCls(view === 'charts')}
           onClick={() => setView('charts')}
         >
           Chart repos
@@ -63,13 +68,7 @@ export function HelmBrowser({ client: injected }: { client?: HelmClient }) {
           <button
             type="button"
             onClick={() => setSelected(null)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--brand-600)',
-              cursor: 'pointer',
-              padding: 0,
-            }}
+            className="mb-3 bg-transparent border-0 p-0 text-xs text-brand-fg cursor-pointer hover:underline"
           >
             Back to releases
           </button>

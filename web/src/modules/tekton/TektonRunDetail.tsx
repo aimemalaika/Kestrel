@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react'
 import type { K8sObject } from '../../contract/types'
+import { Card, StageViz, StatusBadge } from '../../ui'
 
 interface Step {
   name: string
@@ -16,20 +16,6 @@ interface Condition {
   reason?: string
 }
 
-function tone(status: string | undefined): { bg: string; fg: string } {
-  if (status === 'True') return { bg: 'var(--ok-bg)', fg: 'var(--ok-fg)' }
-  if (status === 'False') return { bg: 'var(--risk-bg)', fg: 'var(--risk-fg)' }
-  return { bg: 'var(--neutral-bg)', fg: 'var(--neutral-fg)' }
-}
-
-const pill = (bg: string, fg: string): CSSProperties => ({
-  display: 'inline-block',
-  padding: '2px var(--space-2)',
-  borderRadius: 'var(--r-badge)',
-  background: bg,
-  color: fg,
-})
-
 export function TektonRunDetail({ object }: { object: K8sObject }) {
   const status = (object.status ?? {}) as {
     conditions?: Condition[]
@@ -38,43 +24,45 @@ export function TektonRunDetail({ object }: { object: K8sObject }) {
     taskRuns?: TaskRun[]
   }
   const cond = status.conditions?.find((c) => c.type === 'Succeeded')
-  const t = tone(cond?.status)
   const taskRuns = status.taskRuns ?? []
+  const stages = taskRuns.map((tr) => ({
+    name: tr.name,
+    status: tr.succeeded ? 'Succeeded' : 'Failed',
+  }))
 
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-        <span style={pill(t.bg, t.fg)}>{cond?.reason ?? 'Unknown'}</span>
+    <div className="text-zinc-200">
+      <div className="flex items-center gap-3">
+        <StatusBadge status={cond?.reason ?? 'Unknown'} />
       </div>
-      <dl style={{ color: 'var(--text-muted)', margin: 'var(--space-3) 0' }}>
+      <dl className="my-3 text-xs text-zinc-500">
         <dt>Started</dt>
-        <dd style={{ color: 'var(--text)', margin: 0 }}>{status.startTime ?? '—'}</dd>
+        <dd className="m-0 text-zinc-200">{status.startTime ?? '—'}</dd>
         <dt>Completed</dt>
-        <dd style={{ color: 'var(--text)', margin: 0 }}>{status.completionTime ?? '—'}</dd>
+        <dd className="m-0 text-zinc-200">{status.completionTime ?? '—'}</dd>
       </dl>
-      {taskRuns.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No tasks.</p>}
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-        {taskRuns.map((tr) => {
-          const tt = tone(tr.succeeded ? 'True' : 'False')
-          return (
-            <li
-              key={tr.name}
-              style={{ padding: 'var(--space-3) 0', borderBottom: '1px solid var(--border)' }}
-            >
-              <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-                <strong style={{ color: 'var(--text)' }}>{tr.name}</strong>
-                <span style={pill(tt.bg, tt.fg)}>{tr.succeeded ? 'Succeeded' : 'Failed'}</span>
-              </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 'var(--space-2) 0 0' }}>
-                {(tr.steps ?? []).map((s) => (
-                  <li key={s.name} style={{ color: 'var(--text-muted)' }}>
-                    {s.name}: {s.status}
-                  </li>
-                ))}
-              </ul>
-            </li>
-          )
-        })}
+      {taskRuns.length === 0 && <p className="text-xs text-zinc-500">No tasks.</p>}
+      {stages.length > 0 && (
+        <Card className="p-4 mb-3 overflow-x-auto">
+          <StageViz stages={stages} />
+        </Card>
+      )}
+      <ul className="list-none p-0 m-0">
+        {taskRuns.map((tr) => (
+          <li key={tr.name} className="py-3 border-b border-zinc-800/60">
+            <div className="flex items-center gap-2">
+              <strong className="text-xs font-semibold text-zinc-200">{tr.name}</strong>
+              <StatusBadge status={tr.succeeded ? 'Succeeded' : 'Failed'} />
+            </div>
+            <ul className="list-none p-0 mt-2 mb-0">
+              {(tr.steps ?? []).map((s) => (
+                <li key={s.name} className="text-xs text-zinc-500">
+                  {s.name}: {s.status}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
       </ul>
     </div>
   )

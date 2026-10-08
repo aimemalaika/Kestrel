@@ -1,16 +1,22 @@
-import { linkButton } from './styles'
+import { Mono, TD, TR, Table } from '../../ui'
 
 export function TagList({ tags, onSelect }: { tags: string[]; onSelect: (tag: string) => void }) {
-  if (tags.length === 0) return <p style={{ color: 'var(--text-muted)' }}>No tags.</p>
+  if (tags.length === 0) return <p className="text-sm text-zinc-500">No tags.</p>
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label="Tags">
+    <Table aria-label="Tags" headers={['Tag']}>
       {tags.map((t) => (
-        <li key={t}>
-          <button type="button" style={linkButton} onClick={() => onSelect(t)}>
-            {t}
-          </button>
-        </li>
+        <TR key={t}>
+          <TD>
+            <button
+              type="button"
+              onClick={() => onSelect(t)}
+              className="bg-transparent border-0 p-0 cursor-pointer hover:underline"
+            >
+              <Mono>{t}</Mono>
+            </button>
+          </TD>
+        </TR>
       ))}
-    </ul>
+    </Table>
   )
 }

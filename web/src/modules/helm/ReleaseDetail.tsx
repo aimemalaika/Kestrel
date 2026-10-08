@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react'
-import { StatusPill } from '../../table/StatusPill'
+import { Card, CardHeader, StatusBadge } from '../../ui'
 import type { HelmClient, ReleaseDetail as Detail } from './HelmClient'
 
-const pre = {
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 'var(--r-badge)',
-  padding: 'var(--space-3)',
-  overflowX: 'auto',
-  margin: 0,
-} as const
+const pre =
+  'bg-zinc-950 border border-zinc-800 rounded-lg p-3 m-0 overflow-x-auto text-xs font-mono text-zinc-300'
 
 export function ReleaseDetail({
   client,
@@ -29,38 +23,44 @@ export function ReleaseDetail({
     }
   }, [client, namespace, name])
 
-  if (!d) return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+  if (!d) return <p className="text-sm text-zinc-500">Loading…</p>
   return (
-    <div>
-      <h2 style={{ marginTop: 0 }}>{d.name}</h2>
-      <dl
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'max-content 1fr',
-          gap: 'var(--space-2) var(--space-4)',
-        }}
-      >
-        <dt>Revision</dt>
-        <dd style={{ margin: 0 }}>{d.revision}</dd>
-        <dt>Status</dt>
-        <dd style={{ margin: 0 }}>
-          <StatusPill value={d.status} />
-        </dd>
-        <dt>Chart</dt>
-        <dd style={{ margin: 0 }}>
-          {d.chart}-{d.chartVersion}
-        </dd>
-        <dt>App version</dt>
-        <dd style={{ margin: 0 }}>{d.appVersion}</dd>
-        <dt>Updated</dt>
-        <dd style={{ margin: 0 }}>{d.updated}</dd>
-      </dl>
-      <h3>Notes</h3>
-      <pre style={pre}>{d.notes}</pre>
-      <h3>Values</h3>
-      <pre style={pre}>{d.values}</pre>
-      <h3>Manifest</h3>
-      <p style={{ color: 'var(--text-muted)' }}>{d.manifestSummary}</p>
+    <div className="space-y-4">
+      <h2 className="text-base font-semibold text-zinc-100 m-0">{d.name}</h2>
+      <Card className="p-4">
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-xs m-0">
+          <dt className="text-zinc-500">Revision</dt>
+          <dd className="m-0 text-zinc-200 tabular-nums">{d.revision}</dd>
+          <dt className="text-zinc-500">Status</dt>
+          <dd className="m-0">
+            <StatusBadge status={d.status} />
+          </dd>
+          <dt className="text-zinc-500">Chart</dt>
+          <dd className="m-0 font-mono text-zinc-300">
+            {d.chart}-{d.chartVersion}
+          </dd>
+          <dt className="text-zinc-500">App version</dt>
+          <dd className="m-0 text-zinc-300">{d.appVersion}</dd>
+          <dt className="text-zinc-500">Updated</dt>
+          <dd className="m-0 text-zinc-300">{d.updated}</dd>
+        </dl>
+      </Card>
+      <Card>
+        <CardHeader title="Notes" />
+        <div className="p-4">
+          <pre className={pre}>{d.notes}</pre>
+        </div>
+      </Card>
+      <Card>
+        <CardHeader title="Values" />
+        <div className="p-4">
+          <pre className={pre}>{d.values}</pre>
+        </div>
+      </Card>
+      <Card>
+        <CardHeader title="Manifest" />
+        <p className="p-4 m-0 text-xs text-zinc-400">{d.manifestSummary}</p>
+      </Card>
     </div>
   )
 }

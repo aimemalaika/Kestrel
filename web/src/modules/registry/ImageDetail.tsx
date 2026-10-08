@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ConfirmDialog } from '../../write/ConfirmDialog'
 import { useToast } from '../../toast/ToastProvider'
+import { Card } from '../../ui'
 import type { ImageInfo, RegistryClient } from './RegistryClient'
 
 export const GC_NOTE =
@@ -33,8 +34,8 @@ export function ImageDetail({
     }
   }, [client, repo, tag])
 
-  if (error) return <p style={{ color: 'var(--risk-fg)' }}>{error}</p>
-  if (!image) return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+  if (error) return <p className="text-sm text-red-400">{error}</p>
+  if (!image) return <p className="text-sm text-zinc-500">Loading…</p>
 
   const doDelete = async () => {
     setConfirming(false)
@@ -48,35 +49,24 @@ export function ImageDetail({
   }
 
   return (
-    <div>
-      <dl
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'max-content 1fr',
-          gap: 'var(--space-2) var(--space-4)',
-        }}
-      >
-        <dt>Digest</dt>
-        <dd style={{ margin: 0, fontFamily: 'monospace' }}>{image.digest}</dd>
-        <dt>Size</dt>
-        <dd style={{ margin: 0 }}>{(image.size / 1_000_000).toFixed(1)} MB</dd>
-        <dt>Layers</dt>
-        <dd style={{ margin: 0 }}>{image.layers}</dd>
-      </dl>
+    <div className="space-y-4">
+      <Card className="p-4">
+        <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-xs m-0">
+          <dt className="text-zinc-500">Digest</dt>
+          <dd className="m-0 font-mono text-sky-400 break-all">{image.digest}</dd>
+          <dt className="text-zinc-500">Size</dt>
+          <dd className="m-0 text-zinc-300">{(image.size / 1_000_000).toFixed(1)} MB</dd>
+          <dt className="text-zinc-500">Layers</dt>
+          <dd className="m-0 text-zinc-300">{image.layers}</dd>
+        </dl>
+      </Card>
       {client.deletesEnabled && (
         <div>
-          <p style={{ color: 'var(--text-muted)' }}>{GC_NOTE}</p>
+          <p className="text-xs text-zinc-500">{GC_NOTE}</p>
           <button
             type="button"
             onClick={() => setConfirming(true)}
-            style={{
-              padding: '6px var(--space-3)',
-              borderRadius: 'var(--r-badge)',
-              border: '1px solid var(--risk-fg)',
-              background: 'var(--surface)',
-              color: 'var(--risk-fg)',
-              cursor: 'pointer',
-            }}
+            className="text-xs px-3 py-1.5 rounded-md border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 cursor-pointer transition-colors"
           >
             Delete
           </button>

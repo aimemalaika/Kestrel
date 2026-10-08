@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { Card } from '../ui'
 import type { GVR, K8sObject, OwnerRef } from '../contract/types'
 import { useResourceStream } from '../table/useResourceStream'
 
@@ -29,18 +30,15 @@ function hrefFor(gvr: GVR | undefined, namespace: string | undefined, name: stri
 }
 
 function Node({ label, href, current }: { label: string; href?: string; current?: boolean }) {
-  const style = {
-    color: current ? 'var(--text)' : 'var(--accent)',
-    fontWeight: current ? 600 : 400,
-  }
+  const cls = current ? 'text-zinc-100 font-semibold' : 'text-brand-fg hover:underline'
   return (
-    <li style={{ listStyle: 'none', padding: 'var(--space-1) 0' }}>
+    <li className="list-none py-1 text-xs">
       {href && !current ? (
-        <Link to={href} style={style}>
+        <Link to={href} className={cls}>
           {label}
         </Link>
       ) : (
-        <span style={style}>{label}</span>
+        <span className={current ? cls : 'text-zinc-300'}>{label}</span>
       )}
     </li>
   )
@@ -57,13 +55,18 @@ export function RelationsView({ object }: { object: K8sObject }) {
     ? rows.filter((r) => r.metadata.ownerReferences?.some((o) => o.uid === uid))
     : []
 
+  const H = ({ children }: { children: React.ReactNode }) => (
+    <h4 className="m-0 mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+      {children}
+    </h4>
+  )
   return (
-    <div style={{ padding: 'var(--space-4)', color: 'var(--text)' }}>
-      <h4 style={{ margin: 0, color: 'var(--text-muted)' }}>Owners</h4>
+    <Card className="p-4 text-zinc-200">
+      <H>Owners</H>
       {owners.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)' }}>No owners</p>
+        <p className="m-0 mb-2 text-xs text-zinc-500">No owners</p>
       ) : (
-        <ul style={{ margin: 0, padding: 0 }}>
+        <ul className="m-0 mb-2 p-0">
           {owners.map((o) => (
             <Node
               key={o.uid}
@@ -73,14 +76,14 @@ export function RelationsView({ object }: { object: K8sObject }) {
           ))}
         </ul>
       )}
-      <ul style={{ margin: 'var(--space-2) 0', padding: 0 }}>
+      <ul className="my-2 p-0 border-l-2 border-brand/40 pl-3">
         <Node label={`${object.kind}/${object.metadata.name}`} current />
       </ul>
-      <h4 style={{ margin: 0, color: 'var(--text-muted)' }}>Children</h4>
+      <H>Children</H>
       {children.length === 0 ? (
-        <p style={{ color: 'var(--text-muted)' }}>No children</p>
+        <p className="m-0 text-xs text-zinc-500">No children</p>
       ) : (
-        <ul style={{ margin: 0, paddingLeft: 'var(--space-4)' }}>
+        <ul className="m-0 p-0 pl-4">
           {children.map((c) => (
             <Node
               key={c.metadata.uid ?? c.metadata.name}
@@ -90,6 +93,6 @@ export function RelationsView({ object }: { object: K8sObject }) {
           ))}
         </ul>
       )}
-    </div>
+    </Card>
   )
 }
