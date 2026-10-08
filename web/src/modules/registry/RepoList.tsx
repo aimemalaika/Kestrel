@@ -1,4 +1,4 @@
-import { linkButton } from './styles'
+import { Mono, TD, TR, Table } from '../../ui'
 
 export function RepoList({
   repos,
@@ -8,14 +8,20 @@ export function RepoList({
   onSelect: (repo: string) => void
 }) {
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }} aria-label="Repositories">
+    <Table aria-label="Repositories" headers={['Repository']}>
       {repos.map((r) => (
-        <li key={r}>
-          <button type="button" style={linkButton} onClick={() => onSelect(r)}>
-            {r}
-          </button>
-        </li>
+        <TR key={r}>
+          <TD>
+            <button
+              type="button"
+              onClick={() => onSelect(r)}
+              className="bg-transparent border-0 p-0 cursor-pointer hover:underline"
+            >
+              <Mono>{r}</Mono>
+            </button>
+          </TD>
+        </TR>
       ))}
-    </ul>
+    </Table>
   )
 }

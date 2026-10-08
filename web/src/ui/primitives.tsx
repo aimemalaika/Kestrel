@@ -46,6 +46,7 @@ const ICON_BG: Record<string, string> = {
   'text-red-400': 'bg-red-500/15',
   'text-amber-400': 'bg-amber-500/15',
   'text-sky-400': 'bg-sky-500/15',
+  'text-cyan-400': 'bg-cyan-500/15',
   'text-blue-400': 'bg-blue-500/15',
   'text-violet-400': 'bg-violet-500/15',
   'text-zinc-400': 'bg-zinc-500/15',

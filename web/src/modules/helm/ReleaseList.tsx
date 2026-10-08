@@ -1,7 +1,5 @@
-import { StatusPill } from '../../table/StatusPill'
+import { Mono, StatusBadge, TD, TR, Table } from '../../ui'
 import type { Release } from './HelmClient'
-
-const cell = { textAlign: 'left', padding: 'var(--space-2) var(--space-3)' } as const
 
 export function ReleaseList({
   releases,
@@ -10,48 +8,42 @@ export function ReleaseList({
   releases: Release[]
   onSelect: (r: Release) => void
 }) {
-  if (releases.length === 0) return <p style={{ color: 'var(--text-muted)' }}>No releases.</p>
+  if (releases.length === 0) return <p className="text-sm text-zinc-500">No releases.</p>
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }} aria-label="Releases">
-      <thead>
-        <tr style={{ color: 'var(--text-muted)' }}>
-          {['Name', 'Namespace', 'Revision', 'Status', 'Chart', 'App version'].map((h) => (
-            <th key={h} style={cell}>
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {releases.map((r) => (
-          <tr key={`${r.namespace}/${r.name}`} style={{ borderTop: '1px solid var(--border)' }}>
-            <td style={cell}>
-              <button
-                type="button"
-                onClick={() => onSelect(r)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  color: 'var(--brand-600)',
-                  cursor: 'pointer',
-                }}
-              >
-                {r.name}
-              </button>
-            </td>
-            <td style={cell}>{r.namespace}</td>
-            <td style={cell}>{r.revision}</td>
-            <td style={cell}>
-              <StatusPill value={r.status} />
-            </td>
-            <td style={cell}>
+    <Table
+      aria-label="Releases"
+      headers={['Name', 'Chart', 'Version', 'Status', 'Namespace', 'App version']}
+    >
+      {releases.map((r) => (
+        <TR key={`${r.namespace}/${r.name}`}>
+          <TD>
+            <button
+              type="button"
+              onClick={() => onSelect(r)}
+              className="bg-transparent border-0 p-0 cursor-pointer hover:underline"
+            >
+              <Mono>{r.name}</Mono>
+            </button>
+          </TD>
+          <TD>
+            <span className="text-xs font-mono text-zinc-400">
               {r.chart}-{r.chartVersion}
-            </td>
-            <td style={cell}>{r.appVersion}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+            </span>
+          </TD>
+          <TD>
+            <span className="text-xs tabular-nums text-zinc-300">{r.revision}</span>
+          </TD>
+          <TD>
+            <StatusBadge status={r.status} />
+          </TD>
+          <TD>
+            <span className="text-xs text-zinc-400">{r.namespace}</span>
+          </TD>
+          <TD>
+            <span className="text-xs text-zinc-500">{r.appVersion}</span>
+          </TD>
+        </TR>
+      ))}
+    </Table>
   )
 }

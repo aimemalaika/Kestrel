@@ -66,6 +66,94 @@ const CATALOG: CatalogEntry[] = [
     namespaced: false,
     verbs: ['get', 'list', 'watch'],
   },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'services',
+    kind: 'Service',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'configmaps',
+    kind: 'ConfigMap',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'secrets',
+    kind: 'Secret',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'persistentvolumes',
+    kind: 'PersistentVolume',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'persistentvolumeclaims',
+    kind: 'PersistentVolumeClaim',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'storage.k8s.io',
+    version: 'v1',
+    resource: 'storageclasses',
+    kind: 'StorageClass',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'serviceaccounts',
+    kind: 'ServiceAccount',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'rbac.authorization.k8s.io',
+    version: 'v1',
+    resource: 'roles',
+    kind: 'Role',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'rbac.authorization.k8s.io',
+    version: 'v1',
+    resource: 'rolebindings',
+    kind: 'RoleBinding',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'route.openshift.io',
+    version: 'v1',
+    resource: 'routes',
+    kind: 'Route',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'core',
+    version: 'v1',
+    resource: 'resourcequotas',
+    kind: 'ResourceQuota',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
 ]
 
 interface MockTask {
@@ -214,6 +302,80 @@ function ns(name: string): K8sObject {
   }
 }
 
+function gen(
+  apiVersion: string,
+  kind: string,
+  name: string,
+  namespace: string | undefined,
+  extra: Record<string, unknown> = {},
+): K8sObject {
+  return {
+    apiVersion,
+    kind,
+    metadata: {
+      name,
+      ...(namespace ? { namespace } : {}),
+      uid: `${kind}/${namespace ?? '-'}/${name}`,
+      creationTimestamp: '2026-09-15T00:00:00Z',
+    },
+    ...extra,
+  } as K8sObject
+}
+
+function quota(ns: string, hard: Record<string, string>, used: Record<string, string>): K8sObject {
+  return gen('v1', 'ResourceQuota', `${ns}-quota`, ns, { spec: { hard }, status: { hard, used } })
+}
+
+function genSeeds(): [string, K8sObject][] {
+  const objs: K8sObject[] = [
+    gen('v1', 'Service', 'web', 'default', {
+      spec: { type: 'ClusterIP', clusterIP: '10.0.0.11', ports: [{ port: 80, protocol: 'TCP' }] },
+    }),
+    gen('v1', 'Service', 'cart', 'shop', {
+      spec: {
+        type: 'LoadBalancer',
+        clusterIP: '10.0.0.21',
+        ports: [{ port: 443, protocol: 'TCP' }],
+      },
+    }),
+    gen('v1', 'ConfigMap', 'app-config', 'default', { data: { LOG_LEVEL: 'info' } }),
+    gen('v1', 'ConfigMap', 'payments-config', 'shop', { data: { REGION: 'eu' } }),
+    gen('v1', 'Secret', 'db-credentials', 'shop', { type: 'Opaque', data: { password: '' } }),
+    gen('v1', 'Secret', 'registry-pull', 'default', { type: 'kubernetes.io/dockerconfigjson' }),
+    gen('v1', 'PersistentVolume', 'pv-data-1', undefined, {
+      spec: { capacity: { storage: '10Gi' }, storageClassName: 'fast' },
+      status: { phase: 'Bound' },
+    }),
+    gen('v1', 'PersistentVolumeClaim', 'data-search-0', 'shop', {
+      spec: { storageClassName: 'fast', volumeName: 'pv-data-1' },
+      status: { phase: 'Bound', capacity: { storage: '10Gi' } },
+    }),
+    gen('storage.k8s.io/v1', 'StorageClass', 'fast', undefined, {
+      provisioner: 'kubernetes.io/no-provisioner',
+      reclaimPolicy: 'Delete',
+    }),
+    gen('v1', 'ServiceAccount', 'default', 'default', {}),
+    gen('v1', 'ServiceAccount', 'deployer', 'shop', {}),
+    gen('rbac.authorization.k8s.io/v1', 'Role', 'pod-reader', 'default', {
+      rules: [{ apiGroups: [''], resources: ['pods'], verbs: ['get', 'list'] }],
+    }),
+    gen('rbac.authorization.k8s.io/v1', 'RoleBinding', 'read-pods', 'default', {
+      roleRef: { kind: 'Role', name: 'pod-reader' },
+      subjects: [{ kind: 'ServiceAccount', name: 'default' }],
+    }),
+    gen('route.openshift.io/v1', 'Route', 'shop-web', 'shop', {
+      spec: { host: 'shop.example.com', to: { kind: 'Service', name: 'cart' }, tls: {} },
+    }),
+    quota(
+      'shop',
+      { cpu: '4', memory: '8Gi', pods: '20' },
+      { cpu: '1.8', memory: '2300Mi', pods: '9' },
+    ),
+    quota('default', { cpu: '2', pods: '10' }, { cpu: '1900m', pods: '9' }),
+  ]
+  return objs.map((o) => [`gen/${o.kind}/${o.metadata.namespace ?? '-'}/${o.metadata.name}`, o])
+}
+
 export function createMockClient(opts: { tickMs?: number } = {}): Client {
   const tickMs = opts.tickMs ?? 2000
   const store = new Map<string, K8sObject>([
@@ -222,6 +384,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     ['ns/default', ns('default')],
     ['ns/kube-system', ns('kube-system')],
     ['ns/shop', ns('shop')],
+    ...genSeeds(),
     [
       'pr/build-101',
       pipelineRun(

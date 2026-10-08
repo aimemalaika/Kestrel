@@ -1,3 +1,4 @@
+import { Card } from '../ui'
 import type { K8sObject } from '../contract/types'
 import { useResourceStream } from '../table/useResourceStream'
 
@@ -11,21 +12,20 @@ export function EventsView({ object }: { object: K8sObject }) {
     })
     .sort((a, b) => String(b.lastTimestamp).localeCompare(String(a.lastTimestamp)))
 
-  if (!events.length) return <p style={{ color: 'var(--text-muted)' }}>No events.</p>
+  if (!events.length) return <p className="text-sm text-zinc-500">No events.</p>
   return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-      {events.map((e) => (
-        <li
-          key={e.metadata.uid ?? e.metadata.name}
-          style={{ padding: 'var(--space-3) 0', borderBottom: '1px solid var(--border)' }}
-        >
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <strong style={{ color: 'var(--text)' }}>{String(e.reason ?? '')}</strong>
-            <span style={{ color: 'var(--text-muted)' }}>{String(e.lastTimestamp ?? '')}</span>
-          </div>
-          <div style={{ color: 'var(--text-muted)' }}>{String(e.message ?? '')}</div>
-        </li>
-      ))}
-    </ul>
+    <Card>
+      <ul className="list-none p-0 m-0 divide-y divide-zinc-800/80">
+        {events.map((e) => (
+          <li key={e.metadata.uid ?? e.metadata.name} className="px-4 py-3">
+            <div className="flex gap-2 text-xs">
+              <strong className="text-zinc-100">{String(e.reason ?? '')}</strong>
+              <span className="text-zinc-500">{String(e.lastTimestamp ?? '')}</span>
+            </div>
+            <div className="mt-1 text-xs text-zinc-400">{String(e.message ?? '')}</div>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }

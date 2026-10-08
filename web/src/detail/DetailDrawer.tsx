@@ -12,6 +12,7 @@ import { useCanI } from '../write/useCanI'
 import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
 import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
+import { Icon } from '../ui'
 
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
 const Terminal = lazy(() => import('../streaming/Terminal'))
@@ -54,82 +55,43 @@ export function DetailDrawer() {
     <div
       role="dialog"
       aria-label={`${resource ?? ''} ${name ?? ''}`}
-      style={{
-        position: 'fixed',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        width: 'min(560px, 90vw)',
-        background: 'var(--surface)',
-        borderLeft: '1px solid var(--border)',
-        boxShadow: 'var(--shadow-card)',
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 10,
-      }}
+      className="fixed top-0 right-0 bottom-0 z-10 flex flex-col bg-[#161b27] border-l border-zinc-800/80 shadow-2xl w-[min(560px,90vw)]"
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: 'var(--space-4) var(--space-6)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-          <strong style={{ color: 'var(--text)' }}>{name}</strong>
+      <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800/80">
+        <div className="flex items-center gap-3 min-w-0">
+          <strong className="text-sm font-semibold text-zinc-100 truncate">{name}</strong>
           {objRef && <DeleteButton target={objRef} disabled={!canDelete} />}
         </div>
         <button
           type="button"
           onClick={() => navigate('..')}
           aria-label="Close"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--text-muted)',
-            fontSize: 18,
-          }}
+          className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded p-1.5 transition-colors"
         >
-          ×
+          <Icon name="close" className="w-4 h-4" />
         </button>
       </div>
-      <div
-        style={{
-          display: 'flex',
-          gap: 'var(--space-2)',
-          padding: '0 var(--space-6)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
+      <div className="flex flex-wrap gap-1 px-5 py-2.5 border-b border-zinc-800/80">
         {tabs.map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 'var(--space-3) var(--space-2)',
-              borderBottom: tab === t ? '2px solid var(--brand-600)' : '2px solid transparent',
-              color: tab === t ? 'var(--brand-600)' : 'var(--text-muted)',
-              textTransform: 'capitalize',
-            }}
+            className={`text-xs px-3 py-1 rounded capitalize transition-colors ${
+              tab === t
+                ? 'bg-brand/15 text-brand-fg border border-brand/30'
+                : 'text-zinc-400 hover:text-zinc-200 border border-transparent hover:bg-zinc-800'
+            }`}
           >
             {t}
           </button>
         ))}
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: 'var(--space-6)' }}>
-        {status === 'loading' && <p style={{ color: 'var(--text-muted)' }}>Loading…</p>}
-        {status === 'notfound' && (
-          <p style={{ color: 'var(--text-muted)' }}>{name} no longer exists.</p>
-        )}
+      <div className="flex-1 overflow-auto p-5">
+        {status === 'loading' && <p className="text-sm text-zinc-500">Loading…</p>}
+        {status === 'notfound' && <p className="text-sm text-zinc-500">{name} no longer exists.</p>}
         {status === 'error' && (
-          <p style={{ color: 'var(--text-muted)' }}>Stream interrupted — resyncing…</p>
+          <p className="text-sm text-zinc-500">Stream interrupted — resyncing…</p>
         )}
         {status === 'ready' && object && (
           <>
@@ -137,7 +99,7 @@ export function DetailDrawer() {
               <>
                 <DetailPanel object={object} />
                 {isPod && podRef && (
-                  <div style={{ marginTop: 'var(--space-4)' }}>
+                  <div className="mt-4">
                     <PortForwardButton target={podRef} />
                   </div>
                 )}
@@ -145,23 +107,18 @@ export function DetailDrawer() {
             )}
             {tab === 'yaml' && (
               <>
-                <button
-                  type="button"
-                  onClick={() => setEditing((v) => !v)}
-                  disabled={!canUpdate}
-                  style={{
-                    padding: '4px var(--space-3)',
-                    borderRadius: 'var(--r-badge)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--surface)',
-                    color: 'var(--text)',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {editing ? 'View' : 'Edit'}
-                </button>
+                <div className="mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditing((v) => !v)}
+                    disabled={!canUpdate}
+                    className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50"
+                  >
+                    {editing ? 'View' : 'Edit'}
+                  </button>
+                </div>
                 {editing && objRef ? (
-                  <Suspense fallback={<p>Loading editor…</p>}>
+                  <Suspense fallback={<p className="text-sm text-zinc-500">Loading editor…</p>}>
                     <YamlEditor object={object} />
                   </Suspense>
                 ) : (
@@ -175,7 +132,7 @@ export function DetailDrawer() {
             {tab === 'app' && isApplication && <ArgoRichView object={object} />}
             {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
             {tab === 'terminal' && isPod && podRef ? (
-              <Suspense fallback={<p>Loading terminal…</p>}>
+              <Suspense fallback={<p className="text-sm text-zinc-500">Loading terminal…</p>}>
                 <Terminal pod={podRef} />
               </Suspense>
             ) : null}
