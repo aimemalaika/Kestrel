@@ -29,7 +29,19 @@ export function AppShell() {
         >
           <span style={{ color: 'var(--text)' }}>{identity.user}</span>
           <span>{identity.role}</span>
-          <button type="button" onClick={signOut}>
+          <button
+            type="button"
+            onClick={signOut}
+            style={{
+              padding: '2px var(--space-3)',
+              borderRadius: 'var(--r-badge)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text)',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
             Sign out
           </button>
         </div>

@@ -24,7 +24,7 @@ export function LoginScreen() {
           minWidth: 320,
           background: 'var(--surface)',
           border: '1px solid var(--border)',
-          borderRadius: 8,
+          borderRadius: 'var(--r-card)',
         }}
       >
         <h1 style={{ margin: 0, fontSize: 18 }}>Sign in to Kestrel</h1>
@@ -40,7 +40,7 @@ export function LoginScreen() {
               background: 'var(--bg)',
               color: 'var(--text)',
               border: '1px solid var(--border)',
-              borderRadius: 6,
+              borderRadius: 'var(--r-badge)',
               cursor: 'pointer',
             }}
           >

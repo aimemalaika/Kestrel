@@ -29,14 +29,13 @@ export function CommandPalette() {
   const navigate = useNavigate()
   const match = useMatch('/ns/:namespace/:group/:version/:resource/*')
   const ns = match?.params.namespace
-  const gvr: GVR | undefined =
-    match?.params.group && match.params.version && match.params.resource
-      ? {
-          group: match.params.group,
-          version: match.params.version,
-          resource: match.params.resource,
-        }
-      : undefined
+  const g = match?.params.group
+  const v = match?.params.version
+  const r = match?.params.resource
+  const gvr: GVR | undefined = useMemo(
+    () => (g && v && r ? { group: g, version: v, resource: r } : undefined),
+    [g, v, r],
+  )
   const { rows } = useResourceStream(gvr, ns)
 
   const [open, setOpen] = useState(false)
@@ -137,7 +136,7 @@ export function CommandPalette() {
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.4)',
+        background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'flex-start',
@@ -156,7 +155,7 @@ export function CommandPalette() {
           color: 'var(--text)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--r-badge)',
-          boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
+          boxShadow: 'var(--shadow-card)',
           overflow: 'hidden',
         }}
       >
@@ -212,7 +211,7 @@ export function CommandPalette() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         background: idx === active ? 'var(--brand-600)' : 'transparent',
-                        color: idx === active ? '#fff' : 'var(--text)',
+                        color: idx === active ? 'var(--surface)' : 'var(--text)',
                       }}
                     >
                       <span>{it.label}</span>

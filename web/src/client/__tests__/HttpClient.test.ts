@@ -27,21 +27,21 @@ const ref = { group: 'core', version: 'v1', resource: 'pods', namespace: 'defaul
 
 describe('HttpClient', () => {
   const realFetch = globalThis.fetch
-  const realES = (globalThis as any).EventSource
-  const realWS = (globalThis as any).WebSocket
+  const realES = (globalThis as unknown as Record<string, unknown>).EventSource
+  const realWS = (globalThis as unknown as Record<string, unknown>).WebSocket
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     fetchMock = vi.fn(async () => ok({}))
     globalThis.fetch = fetchMock as unknown as typeof fetch
-    ;(globalThis as any).EventSource = FakeES
-    ;(globalThis as any).WebSocket = FakeWS
+    ;(globalThis as unknown as Record<string, unknown>).EventSource = FakeES
+    ;(globalThis as unknown as Record<string, unknown>).WebSocket = FakeWS
     setIdentity(null)
   })
   afterEach(() => {
     globalThis.fetch = realFetch
-    ;(globalThis as any).EventSource = realES
-    ;(globalThis as any).WebSocket = realWS
+    ;(globalThis as unknown as Record<string, unknown>).EventSource = realES
+    ;(globalThis as unknown as Record<string, unknown>).WebSocket = realWS
     setIdentity(null)
   })
 
@@ -52,9 +52,9 @@ describe('HttpClient', () => {
     expect(fetchMock.mock.calls[0][1].method).toBe('GET')
   })
 
-  it('get maps core to empty group', async () => {
+  it('get keeps core literal in the path (backend maps it)', async () => {
     await createHttpClient().get(ref)
-    expect(fetchMock.mock.calls[0][0]).toBe('/api//v1/namespaces/default/pods/p1')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/core/v1/namespaces/default/pods/p1')
     await createHttpClient().get({ ...ref, group: 'apps', resource: 'deployments' })
     expect(fetchMock.mock.calls[1][0]).toBe('/api/apps/v1/namespaces/default/deployments/p1')
   })
@@ -71,7 +71,7 @@ describe('HttpClient', () => {
   it('delete DELETEs the path', async () => {
     await createHttpClient().delete(ref)
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe('/api//v1/namespaces/default/pods/p1')
+    expect(url).toBe('/api/core/v1/namespaces/default/pods/p1')
     expect(init.method).toBe('DELETE')
   })
 
@@ -114,7 +114,7 @@ describe('HttpClient', () => {
       { namespace: 'default' },
       onEvent,
     )
-    expect(FakeES.last.url).toBe('/api/stream//v1/namespaces/default/pods')
+    expect(FakeES.last.url).toBe('/api/stream/core/v1/namespaces/default/pods')
     const env = { type: 'bookmark', resourceVersion: '1' }
     FakeES.last.onmessage!({ data: JSON.stringify(env) })
     expect(onEvent).toHaveBeenCalledWith(env)
@@ -127,7 +127,7 @@ describe('HttpClient', () => {
   it('logs forwards lines', () => {
     const onLine = vi.fn()
     const un = createHttpClient().logs(ref, onLine)
-    expect(FakeES.last.url).toBe('/api/logs//v1/namespaces/default/pods/p1')
+    expect(FakeES.last.url).toBe('/api/logs/core/v1/namespaces/default/pods/p1')
     FakeES.last.onmessage!({ data: 'hello' })
     expect(onLine).toHaveBeenCalledWith('hello')
     un()
@@ -136,7 +136,9 @@ describe('HttpClient', () => {
 
   it('exec wires WebSocket', () => {
     const s = createHttpClient().exec(ref)
-    expect(FakeWS.last.url).toMatch(/^ws:\/\/.*\/api\/exec\/\/v1\/namespaces\/default\/pods\/p1$/)
+    expect(FakeWS.last.url).toMatch(
+      /^ws:\/\/.*\/api\/exec\/core\/v1\/namespaces\/default\/pods\/p1$/,
+    )
     const cb = vi.fn()
     s.onData(cb)
     FakeWS.last.onmessage!({ data: 'out' })

@@ -83,6 +83,12 @@ export function ResourceTable() {
   const first = total === 0 ? 0 : safeIndex * pageSize + 1
   const last = Math.min(total, (safeIndex + 1) * pageSize)
 
+  // A live `deleted` delta can drop the row count below the current page.
+  // Clamp pageIndex back into range so the body never strands on a blank page.
+  useEffect(() => {
+    if (pageIndex > pageCount - 1) setPageIndex(Math.max(0, pageCount - 1))
+  }, [pageCount, pageIndex])
+
   if (!gvr) return <Hint>Select a resource type from the sidebar.</Hint>
   if (status === 'loading') return <Hint>Loading…</Hint>
   if (status === 'error') return <Hint>Stream interrupted — resyncing…</Hint>
