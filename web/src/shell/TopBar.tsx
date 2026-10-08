@@ -1,3 +1,5 @@
+import { NamespacePicker } from './NamespacePicker'
+
 export function TopBar() {
   return (
     <header
@@ -11,7 +13,7 @@ export function TopBar() {
         borderBottom: '1px solid var(--border)',
       }}
     >
-      {/* NamespacePicker mounts here in Task 5 */}
+      <NamespacePicker />
       <strong style={{ color: 'var(--text)' }}>Kestrel</strong>
     </header>
   )

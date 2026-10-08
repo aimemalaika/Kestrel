@@ -1,3 +1,5 @@
+import { NavTree } from '../nav/NavTree'
+
 export function Sidebar() {
   return (
     <aside
@@ -11,7 +13,7 @@ export function Sidebar() {
       <div style={{ fontWeight: 700, color: 'var(--brand-600)', marginBottom: 'var(--space-4)' }}>
         Kestrel
       </div>
-      {/* NavTree mounts here in Task 4 */}
+      <NavTree />
     </aside>
   )
 }
