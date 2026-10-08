@@ -203,14 +203,17 @@ describe('MockClient U7 seeds', () => {
   it('nodes carry conditions and at least one taint', () => {
     type NodeShape = {
       spec: { taints: unknown[] }
-      status: { conditions: unknown[] }
+      status: { conditions: unknown[]; usage: { cpu: string; memory: string } }
     }
     const nodes = collect({ group: 'core', version: 'v1', resource: 'nodes' }).map(
       (e) => (e as unknown as { object: NodeShape }).object,
     )
-    expect(nodes.length).toBeGreaterThanOrEqual(2)
+    expect(nodes).toHaveLength(6)
     expect(nodes.every((n) => n.status.conditions.length > 0)).toBe(true)
     expect(nodes.some((n) => n.spec.taints.length > 0)).toBe(true)
+    expect(
+      nodes.every((n) => Number(n.status.usage.cpu) >= 0 && Number(n.status.usage.memory) >= 0),
+    ).toBe(true)
   })
 })
 

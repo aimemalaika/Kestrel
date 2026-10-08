@@ -101,8 +101,8 @@ export function ViewHeader({
   onTab?: (t: string) => void
 }) {
   return (
-    <div className="flex items-center justify-between mb-5">
-      <div className="flex items-center gap-3">
+    <div className="flex items-center justify-between flex-wrap gap-2 mb-5">
+      <div className="flex items-center gap-3 flex-wrap">
         <h2 className="text-base font-semibold text-zinc-100">{title}</h2>
         {count !== undefined && (
           <span className="text-xs text-zinc-500 bg-zinc-800 border border-zinc-700 rounded px-2 py-0.5">
@@ -117,7 +117,7 @@ export function ViewHeader({
                 type="button"
                 aria-pressed={activeTab === t}
                 onClick={() => onTab?.(t)}
-                className={`text-xs px-3 py-1 rounded transition-colors ${
+                className={`text-xs px-3 py-1 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
                   activeTab === t
                     ? 'bg-brand/15 text-brand-fg border border-brand/30'
                     : 'text-zinc-400 hover:text-zinc-200 border border-transparent hover:bg-zinc-800'
@@ -148,7 +148,7 @@ export function PrimaryBtn({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex items-center gap-1.5 text-xs bg-brand hover:bg-red-600 text-white px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50"
+      className="flex items-center gap-1.5 text-xs bg-brand hover:bg-red-600 text-white px-3.5 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
     >
       {children}
     </button>
@@ -169,7 +169,7 @@ export function SecondaryBtn({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50"
+      className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
     >
       {children}
     </button>
@@ -232,7 +232,7 @@ export function FilterBar({
               type="button"
               aria-pressed={statusFilter === s}
               onClick={() => onStatus(s)}
-              className={`text-xs px-2.5 py-1 rounded-md border transition-colors ${
+              className={`text-xs px-2.5 py-1 rounded-md border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 ${
                 statusFilter === s
                   ? 'bg-brand/15 text-brand-fg border-brand/30'
                   : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-zinc-200'

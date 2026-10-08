@@ -261,37 +261,128 @@ function argoApp(
   }
 }
 
-function node(
-  name: string,
-  ready: boolean,
-  taints: { key: string; value: string; effect: string }[],
-  cpu: string,
-  memory: string,
-): K8sObject {
+interface NodeSeed {
+  name: string
+  role: 'control-plane' | 'worker'
+  ready: boolean
+  cpu: number
+  memory: number
+  pods: number
+  zone: string
+  instanceType: string
+  taints: { key: string; value: string; effect: string }[]
+}
+
+// Sample metrics live at status.usage (integer-percent strings + pod count). A real
+// backend without metrics-server omits status.usage and the UI shows "n/a".
+function node(s: NodeSeed): K8sObject {
+  const big = s.instanceType.includes('4xlarge')
+  const cpu = big ? '16' : '8'
+  const memory = big ? '64Gi' : '32Gi'
   return {
     apiVersion: 'v1',
     kind: 'Node',
-    metadata: { name, uid: `node/${name}`, creationTimestamp: '2026-09-01T00:00:00Z' },
-    spec: { taints },
+    metadata: {
+      name: s.name,
+      uid: `node/${s.name}`,
+      creationTimestamp: '2026-09-01T00:00:00Z',
+      labels: {
+        [`node-role.kubernetes.io/${s.role}`]: '',
+        'topology.kubernetes.io/zone': s.zone,
+        'node.kubernetes.io/instance-type': s.instanceType,
+      },
+    },
+    spec: { taints: s.taints },
     status: {
       conditions: [
         {
           type: 'Ready',
-          status: ready ? 'True' : 'False',
-          reason: ready ? 'KubeletReady' : 'KubeletNotReady',
+          status: s.ready ? 'True' : 'False',
+          reason: s.ready ? 'KubeletReady' : 'KubeletNotReady',
         },
         { type: 'MemoryPressure', status: 'False', reason: 'KubeletHasSufficientMemory' },
         {
           type: 'DiskPressure',
-          status: ready ? 'False' : 'True',
+          status: s.ready ? 'False' : 'True',
           reason: 'KubeletHasDiskPressure',
         },
       ],
       capacity: { cpu, memory, pods: '110' },
       allocatable: { cpu, memory, pods: '110' },
+      nodeInfo: { osImage: 'Linux 9.2', kubeletVersion: 'v1.29.3', architecture: 'amd64' },
+      usage: { cpu: String(s.cpu), memory: String(s.memory), pods: String(s.pods) },
     },
   }
 }
+
+const NODE_SEEDS: NodeSeed[] = [
+  {
+    name: 'master-01',
+    role: 'control-plane',
+    ready: true,
+    cpu: 12,
+    memory: 43,
+    pods: 14,
+    zone: 'us-east-1a',
+    instanceType: 'm6i.2xlarge',
+    taints: [{ key: 'node-role.kubernetes.io/control-plane', value: '', effect: 'NoSchedule' }],
+  },
+  {
+    name: 'master-02',
+    role: 'control-plane',
+    ready: true,
+    cpu: 15,
+    memory: 49,
+    pods: 16,
+    zone: 'us-east-1b',
+    instanceType: 'm6i.2xlarge',
+    taints: [],
+  },
+  {
+    name: 'master-03',
+    role: 'control-plane',
+    ready: true,
+    cpu: 11,
+    memory: 44,
+    pods: 13,
+    zone: 'us-east-1c',
+    instanceType: 'm6i.2xlarge',
+    taints: [],
+  },
+  {
+    name: 'worker-01',
+    role: 'worker',
+    ready: true,
+    cpu: 67,
+    memory: 71,
+    pods: 32,
+    zone: 'us-east-1b',
+    instanceType: 'm6i.4xlarge',
+    taints: [],
+  },
+  {
+    name: 'worker-02',
+    role: 'worker',
+    ready: true,
+    cpu: 45,
+    memory: 58,
+    pods: 28,
+    zone: 'us-east-1c',
+    instanceType: 'm6i.4xlarge',
+    taints: [],
+  },
+  {
+    name: 'worker-03',
+    role: 'worker',
+    ready: false,
+    cpu: 91,
+    memory: 87,
+    pods: 19,
+    zone: 'us-east-1a',
+    instanceType: 'm6i.4xlarge',
+    taints: [{ key: 'dedicated', value: 'gpu', effect: 'NoSchedule' }],
+  },
+]
 
 function ns(name: string): K8sObject {
   return {
@@ -510,17 +601,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         },
       ]),
     ],
-    ['node/node-1', node('node-1', true, [], '4', '16Gi')],
-    [
-      'node/node-2',
-      node(
-        'node-2',
-        false,
-        [{ key: 'dedicated', value: 'gpu', effect: 'NoSchedule' }],
-        '8',
-        '32Gi',
-      ),
-    ],
+    ...NODE_SEEDS.map((n): [string, K8sObject] => [`node/${n.name}`, node(n)]),
     [
       'ev/shop-oom',
       event(

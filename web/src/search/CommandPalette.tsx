@@ -133,31 +133,14 @@ export function CommandPalette() {
   return (
     <div
       onClick={() => setOpen(false)}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'var(--scrim)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingTop: '12vh',
-        zIndex: 1000,
-      }}
+      className="fixed inset-0 z-[1000] flex justify-center items-start pt-[12vh] bg-black/60"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(560px, 92vw)',
-          background: 'var(--surface)',
-          color: 'var(--text)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r-badge)',
-          boxShadow: 'var(--shadow-card)',
-          overflow: 'hidden',
-        }}
+        className="w-[min(560px,92vw)] bg-surface text-zinc-200 border border-zinc-800/80 rounded-lg shadow-2xl overflow-hidden"
       >
         <input
           ref={inputRef}
@@ -169,33 +152,15 @@ export function CommandPalette() {
             setActive(0)
           }}
           onKeyDown={onInputKey}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: 'var(--space-4)',
-            border: 'none',
-            borderBottom: '1px solid var(--border)',
-            background: 'var(--surface)',
-            color: 'var(--text)',
-            outline: 'none',
-          }}
+          className="w-full box-border px-4 py-3 bg-surface text-zinc-200 placeholder-zinc-600 border-0 border-b border-zinc-800/80 outline-none"
         />
-        <div role="listbox" style={{ maxHeight: 360, overflowY: 'auto' }}>
-          {items.length === 0 && (
-            <div style={{ padding: 'var(--space-4)', color: 'var(--text-muted)' }}>No results</div>
-          )}
+        <div role="listbox" className="max-h-90 overflow-y-auto">
+          {items.length === 0 && <div className="px-4 py-3 text-zinc-500">No results</div>}
           {groups.map(
             ({ g, list }) =>
               list.length > 0 && (
                 <div key={g}>
-                  <div
-                    style={{
-                      padding: 'var(--space-2) var(--space-4)',
-                      fontSize: 12,
-                      textTransform: 'uppercase',
-                      color: 'var(--text-muted)',
-                    }}
-                  >
+                  <div className="px-4 py-1.5 text-[10px] uppercase tracking-widest text-zinc-500">
                     {g}
                   </div>
                   {list.map(({ it, idx }) => (
@@ -205,17 +170,12 @@ export function CommandPalette() {
                       aria-selected={idx === active}
                       onClick={() => choose(it)}
                       onMouseEnter={() => setActive(idx)}
-                      style={{
-                        padding: 'var(--space-2) var(--space-4)',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        background: idx === active ? 'var(--brand-600)' : 'transparent',
-                        color: idx === active ? 'var(--surface)' : 'var(--text)',
-                      }}
+                      className={`px-4 py-1.5 cursor-pointer flex justify-between ${
+                        idx === active ? 'bg-brand/20 text-brand-fg' : 'text-zinc-300'
+                      }`}
                     >
                       <span>{it.label}</span>
-                      <span style={{ opacity: 0.7 }}>{it.hint}</span>
+                      <span className="text-zinc-500">{it.hint}</span>
                     </div>
                   ))}
                 </div>
