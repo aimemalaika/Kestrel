@@ -8,19 +8,39 @@ import (
 	"net/http"
 
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
+	"github.com/aimemalaika/Kestrel/internal/k8s"
+	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/web"
 )
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
+	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig (default: in-cluster, $KUBECONFIG, ~/.kube/config)")
+	mock := flag.Bool("mock", false, "serve stub data instead of connecting to a cluster")
 	flag.Parse()
 
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
 		log.Fatal(err)
 	}
+	deps := httpapi.DefaultDeps()
+	if !*mock {
+		cfg, err := k8s.LoadConfig(*kubeconfig)
+		if err != nil {
+			// Fail fast: a silently broken cluster connection is worse than no start.
+			log.Fatalf("cannot connect to a cluster: %v (use --mock for stub data, or --kubeconfig)", err)
+		}
+		acc, err := k8s.NewAccessor(cfg)
+		if err != nil {
+			log.Fatalf("cluster clients: %v", err)
+		}
+		deps.Resources = resource.NewService(k8s.NewReal(acc))
+		log.Printf("connected to cluster %s", cfg.Host)
+	} else {
+		log.Printf("running with --mock stub data")
+	}
 	mux := http.NewServeMux()
-	mux.Handle("/api/", httpapi.New(httpapi.DefaultDeps()))
+	mux.Handle("/api/", httpapi.New(deps))
 	mux.Handle("/", httpapi.SPA(dist))
 
 	log.Printf("kestrel listening on %s", *addr)

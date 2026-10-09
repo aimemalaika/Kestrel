@@ -15,12 +15,21 @@ type Identity struct {
 
 type ctxKey struct{}
 
-// FromRequest extracts the caller identity (stub: Impersonate-User/-Group).
+// Operator is the default single-operator identity: the user/service account
+// Kestrel's own credentials represent when no Impersonate-* header is sent.
+const Operator = "kestrel-operator"
+
+// FromRequest extracts the caller identity from Impersonate-User/-Group,
+// defaulting to the single operator.
 func FromRequest(r *http.Request) Identity {
-	return Identity{
+	id := Identity{
 		User:   r.Header.Get("Impersonate-User"),
 		Groups: r.Header.Values("Impersonate-Group"),
 	}
+	if id.User == "" {
+		id.User = Operator
+	}
+	return id
 }
 
 // Middleware stores the identity on the request context.
