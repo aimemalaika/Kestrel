@@ -312,14 +312,17 @@ func TestLogsSSE(t *testing.T) {
 	}
 }
 
+// Exec and port-forward are now live WebSocket endpoints. A plain (non-upgrade)
+// GET no longer returns 501: the exec route fails the WS handshake with 400, and
+// port-forward rejects the missing local/remote ports with a 400 before upgrade.
 func TestWebSocketRoutesRegistered(t *testing.T) {
 	for _, p := range []string{"/api/exec/core/v1/namespaces/d/pods/p", "/api/port-forward/core/v1/namespaces/d/pods/p"} {
 		rec := do(t, handler(), "GET", p, "")
-		if rec.Code != 501 {
-			t.Errorf("%s: want 501, got %d", p, rec.Code)
+		if rec.Code == 501 {
+			t.Errorf("%s: still returns 501 (not implemented)", p)
 		}
-		if b := decode[httpapi.ErrorBody](t, rec); b.Code != 501 || b.Reason == "" {
-			t.Errorf("%s: bad error body %+v", p, b)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: want 400 for a non-websocket GET, got %d", p, rec.Code)
 		}
 	}
 }
