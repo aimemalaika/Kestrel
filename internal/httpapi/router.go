@@ -2,9 +2,13 @@
 package httpapi
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
-	"fmt"
+	"io"
+	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/aimemalaika/Kestrel/internal/auth"
@@ -18,11 +22,12 @@ import (
 type Deps struct {
 	Resources *resource.Service
 	Stream    stream.Source
+	Logs      k8s.LogStreamer
 }
 
 // DefaultDeps wires the B0 stubs.
 func DefaultDeps() Deps {
-	return Deps{Resources: resource.NewService(k8s.Stub{}), Stream: stream.StubSource{}}
+	return Deps{Resources: resource.NewService(k8s.Stub{}), Stream: stream.StubSource{}, Logs: k8s.StubLogs{}}
 }
 
 // New returns the API handler. It expects full request paths (/api/...).
@@ -205,17 +210,55 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request, segs []string) {
 
 func (a *api) logs(w http.ResponseWriter, r *http.Request) {
 	segs := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/logs"), "/"), "/")
-	if _, ok := parseRef(segs); !ok {
+	ref, ok := parseRef(segs)
+	if !ok || ref.Resource != "pods" || ref.Name == "" || ref.Namespace == "" {
 		writeStatus(w, 404, "NotFound", "unknown logs path "+r.URL.Path)
 		return
 	}
+	q := r.URL.Query()
+	opts := k8s.LogOptions{Container: q.Get("container"), Follow: q.Get("follow") != "false"}
+	for _, p := range []struct {
+		key string
+		dst **int64
+	}{{"tailLines", &opts.TailLines}, {"sinceSeconds", &opts.SinceSeconds}} {
+		if v := q.Get(p.key); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil || n < 0 {
+				writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid "+p.key+": "+v)
+				return
+			}
+			*p.dst = &n
+		}
+	}
+	body, err := a.d.Logs.Stream(r.Context(), ref.Namespace, ref.Name, opts)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	defer body.Close()
 	sw := stream.Begin(w)
 	if sw == nil {
 		writeStatus(w, 500, "InternalError", "streaming unsupported")
 		return
 	}
-	for i := 1; i <= 3; i++ {
-		if sw.Raw(fmt.Sprintf("stub log line %d", i)) != nil {
+	// Closing the upstream on disconnect unblocks the scanner's pending Read,
+	// so the loop below always terminates and nothing leaks.
+	stop := context.AfterFunc(r.Context(), func() { body.Close() })
+	defer stop()
+	// ReadString (not Scanner) so an arbitrarily long log line is never dropped
+	// by a token-size cap, and a real read error is surfaced rather than swallowed.
+	br := bufio.NewReader(body)
+	for {
+		line, err := br.ReadString('\n')
+		if len(line) > 0 {
+			if sw.Raw(strings.TrimRight(line, "\r\n")) != nil {
+				return
+			}
+		}
+		if err != nil {
+			if err != io.EOF && r.Context().Err() == nil {
+				log.Printf("log stream read error (%s/%s): %v", ref.Namespace, ref.Name, err)
+			}
 			return
 		}
 	}
