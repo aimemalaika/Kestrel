@@ -11,3 +11,8 @@
 /docs
 CLAUDE.md
 /ui
+# Go
+/kestrel
+/bin/
+*.test
+*.out
