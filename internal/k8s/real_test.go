@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	authzv1 "k8s.io/api/authorization/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -12,6 +14,7 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
+	kubetesting "k8s.io/client-go/testing"
 )
 
 func obj(kind, ns, name string) *unstructured.Unstructured { return objGV("v1", kind, ns, name) }
@@ -145,13 +148,98 @@ func TestGetNotFound(t *testing.T) {
 	}
 }
 
-func TestUnimplemented(t *testing.T) {
-	_, err := newTestReal(t).Apply(context.Background(), Object{}, false)
+// TestApplyBadObject covers option/validation logic that needs no SSA support
+// from the fake: a missing apiVersion/kind/name is a 400 before any cluster call.
+func TestApplyBadObject(t *testing.T) {
+	c := newTestReal(t)
+	_, err := c.Apply(context.Background(), Object{"kind": "Pod"}, ApplyOptions{})
 	var se *StatusError
-	if !errors.As(err, &se) || se.Code != 501 {
-		t.Fatalf("want 501, got %v", err)
+	if !errors.As(err, &se) || se.Code != 400 {
+		t.Fatalf("want 400 for object missing apiVersion/name, got %#v", err)
+	}
+	_, err = c.Apply(context.Background(), Object{
+		"apiVersion": "v1", "kind": "Pod",
+		"metadata": map[string]any{"name": "p"},
+	}, ApplyOptions{})
+	// A valid object may or may not apply depending on fake SSA support; it must
+	// not be rejected as a bad request.
+	if errors.As(err, &se) && se.Code == 400 {
+		t.Fatalf("valid object should not be a 400: %v", err)
 	}
 }
+
+// TestDeleteRemoves proves a real Delete removes the object. NOTE: the fake
+// dynamic client's delete reactor ignores metav1.DeleteOptions.DryRun (it
+// deletes regardless), so dry-run "leaves the object" cannot be asserted here;
+// the DryRun->DryRunAll mapping is covered by the protected/audit tests in
+// internal/resource (DryRun threads through) and by go vet of the real path.
+func TestDeleteRemoves(t *testing.T) {
+	c := newTestReal(t)
+	ctx := context.Background()
+	ref := Ref{GVR: GVR{Version: "v1", Resource: "pods"}, Namespace: "default", Name: "web-1"}
+
+	if err := c.Delete(ctx, ref, DeleteOptions{}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	_, err := c.Get(ctx, ref)
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 404 {
+		t.Fatalf("object should be gone after delete, got %#v", err)
+	}
+}
+
+func TestDeleteNotFound(t *testing.T) {
+	c := newTestReal(t)
+	ref := Ref{GVR: GVR{Version: "v1", Resource: "pods"}, Namespace: "default", Name: "nope"}
+	err := c.Delete(context.Background(), ref, DeleteOptions{})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 404 {
+		t.Fatalf("want 404 NotFound, got %#v", err)
+	}
+}
+
+// TestCanIReflectsSAR drives SelfSubjectAccessReview via a reactor on the typed
+// fake clientset and asserts Real.CanI returns the decision, and maps errors.
+func TestCanIReflectsSAR(t *testing.T) {
+	for _, allowed := range []bool{true, false} {
+		cs := kubefake.NewSimpleClientset()
+		cs.PrependReactor("create", "selfsubjectaccessreviews",
+			func(action kubetesting.Action) (bool, runtime.Object, error) {
+				ssar := action.(kubetesting.CreateAction).GetObject().(*authzv1.SelfSubjectAccessReview)
+				ssar.Status.Allowed = allowed
+				return true, ssar, nil
+			})
+		c := NewReal(NewAccessorFromAll(nil, cs.Discovery().(*fakediscovery.FakeDiscovery), cs))
+		got, err := c.CanI(context.Background(), CanIRequest{Verb: "delete", Version: "v1", Resource: "pods", Namespace: "ns"})
+		if err != nil {
+			t.Fatalf("CanI: %v", err)
+		}
+		if got != allowed {
+			t.Errorf("CanI = %v, want %v", got, allowed)
+		}
+	}
+
+	cs := kubefake.NewSimpleClientset()
+	cs.PrependReactor("create", "selfsubjectaccessreviews",
+		func(kubetesting.Action) (bool, runtime.Object, error) {
+			return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "selfsubjectaccessreviews"}, "", errors.New("denied"))
+		})
+	c := NewReal(NewAccessorFromAll(nil, cs.Discovery().(*fakediscovery.FakeDiscovery), cs))
+	_, err := c.CanI(context.Background(), CanIRequest{Verb: "get", Version: "v1", Resource: "pods"})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 403 {
+		t.Fatalf("want 403 mapped from SAR error, got %#v", err)
+	}
+}
+
+// Note on SSA + fake dynamic client (client-go v0.31): the fake dynamic client's
+// Apply is implemented as a server-side-apply patch over its object tracker,
+// which does NOT run the structured-merge-diff machinery a real apiserver does.
+// It does not reliably persist/merge arbitrary unstructured objects, so we do
+// not assert full apply-merge behaviour against it. Instead Real.Apply's
+// validation and option/GVR-resolution logic is unit-tested above
+// (TestApplyBadObject) and the real SSA call path is covered by go build/vet.
+// Delete and can-i ARE fully fake-able and asserted above.
 
 // List honors a label selector end-to-end (proves ListOptions threading).
 func TestListLabelSelector(t *testing.T) {

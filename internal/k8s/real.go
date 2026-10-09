@@ -7,9 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	authzv1 "k8s.io/api/authorization/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
@@ -17,8 +19,8 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/auth"
 )
 
-// Real is the client-go-backed Client. B1 implements Catalog, List and Get;
-// Apply, Delete and CanI return a 501 StatusError until later sprints.
+// Real is the client-go-backed Client implementing the full CRUD seam
+// (Catalog, List, Get, Apply, Delete, CanI).
 type Real struct{ acc ClusterAccessor }
 
 // NewReal returns a Client over the given cluster accessor.
@@ -27,10 +29,6 @@ func NewReal(acc ClusterAccessor) *Real { return &Real{acc: acc} }
 // Identity returns the identity carried by ctx (single-operator default when
 // none). B7 will use it for impersonation, can-i and audit.
 func (c *Real) Identity(ctx context.Context) auth.Identity { return auth.From(ctx) }
-
-func notImplemented(what string) *StatusError {
-	return &StatusError{Code: http.StatusNotImplemented, Reason: "NotImplemented", Message: what + " is not implemented in B1"}
-}
 
 func (c *Real) Catalog(context.Context) ([]CatalogEntry, error) {
 	lists, err := discovery.ServerPreferredResources(c.acc.Discovery())
@@ -103,12 +101,93 @@ func (c *Real) Get(ctx context.Context, ref Ref) (Object, error) {
 	return o.Object, nil
 }
 
-func (c *Real) Apply(context.Context, Object, bool) (Object, error) {
-	return nil, notImplemented("apply")
+// Apply performs a dynamic-client Server-Side Apply. It resolves the object's
+// GVR and scope from its apiVersion/kind via the RESTMapper, so no pre-built
+// Ref is needed. DryRun runs real admission (DryRunAll) and returns the merged
+// object without persisting. Force (default false) lets conflicts surface as
+// 409 unless the caller opts in.
+func (c *Real) Apply(ctx context.Context, obj Object, opts ApplyOptions) (Object, error) {
+	u := &unstructured.Unstructured{Object: obj}
+	apiVersion := u.GetAPIVersion()
+	kind := u.GetKind()
+	name := u.GetName()
+	if apiVersion == "" || kind == "" || name == "" {
+		return nil, &StatusError{Code: http.StatusBadRequest, Reason: "BadRequest",
+			Message: "apply requires apiVersion, kind and metadata.name"}
+	}
+	gv, err := schema.ParseGroupVersion(apiVersion)
+	if err != nil {
+		return nil, &StatusError{Code: http.StatusBadRequest, Reason: "BadRequest",
+			Message: "invalid apiVersion " + apiVersion + ": " + err.Error()}
+	}
+	mapping, err := c.acc.Mapper().RESTMapping(gv.WithKind(kind).GroupKind(), gv.Version)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	ri := c.acc.Dynamic().Resource(mapping.Resource)
+	var client dynamic.ResourceInterface = ri
+	if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		client = ri.Namespace(u.GetNamespace())
+	}
+
+	fm := opts.FieldManager
+	if fm == "" {
+		fm = DefaultFieldManager
+	}
+	var dryRun []string
+	if opts.DryRun {
+		dryRun = []string{metav1.DryRunAll}
+	}
+	applied, err := client.Apply(ctx, name, u, metav1.ApplyOptions{
+		FieldManager: fm,
+		Force:        opts.Force,
+		DryRun:       dryRun,
+	})
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	return applied.Object, nil
 }
-func (c *Real) Delete(context.Context, Ref, bool) error { return notImplemented("delete") }
-func (c *Real) CanI(context.Context, CanIRequest) (bool, error) {
-	return false, notImplemented("can-i")
+
+// Delete removes the referenced object with Background propagation (kubectl's
+// default). DryRun runs admission without removing anything.
+func (c *Real) Delete(ctx context.Context, ref Ref, opts DeleteOptions) error {
+	background := metav1.DeletePropagationBackground
+	var dryRun []string
+	if opts.DryRun {
+		dryRun = []string{metav1.DryRunAll}
+	}
+	err := c.resourceClient(ref).Delete(ctx, ref.Name, metav1.DeleteOptions{
+		PropagationPolicy: &background,
+		DryRun:            dryRun,
+	})
+	if err != nil {
+		return mapErr(err)
+	}
+	return nil
+}
+
+// CanI runs a SelfSubjectAccessReview against Kestrel's OWN token (no
+// impersonation — that trust is gated in B7). The Group arriving here is the
+// internal group ("" for core); resource.Service maps "core" before calling.
+func (c *Real) CanI(ctx context.Context, req CanIRequest) (bool, error) {
+	ssar := &authzv1.SelfSubjectAccessReview{
+		Spec: authzv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authzv1.ResourceAttributes{
+				Verb:      req.Verb,
+				Group:     req.Group,
+				Version:   req.Version,
+				Resource:  req.Resource,
+				Namespace: req.Namespace,
+				Name:      req.Name,
+			},
+		},
+	}
+	res, err := c.acc.Kubernetes().AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, ssar, metav1.CreateOptions{})
+	if err != nil {
+		return false, mapErr(err)
+	}
+	return res.Status.Allowed, nil
 }
 
 // mapErr converts API errors to *StatusError with the real code and reason.

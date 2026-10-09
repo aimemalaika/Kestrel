@@ -46,10 +46,10 @@ func (Stub) Get(_ context.Context, ref Ref) (Object, error) {
 	return StubObject(ref), nil
 }
 
-func (Stub) Apply(_ context.Context, obj Object, _ bool) (Object, error) {
+func (Stub) Apply(_ context.Context, obj Object, _ ApplyOptions) (Object, error) {
 	return obj, nil
 }
 
-func (Stub) Delete(context.Context, Ref, bool) error { return nil }
+func (Stub) Delete(context.Context, Ref, DeleteOptions) error { return nil }
 
 func (Stub) CanI(context.Context, CanIRequest) (bool, error) { return true, nil }

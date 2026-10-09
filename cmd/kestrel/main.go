@@ -6,7 +6,9 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 
+	"github.com/aimemalaika/Kestrel/internal/audit"
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/resource"
@@ -18,7 +20,12 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig (default: in-cluster, $KUBECONFIG, ~/.kube/config)")
 	mock := flag.Bool("mock", false, "serve stub data instead of connecting to a cluster")
+	protectedNS := flag.String("protected-namespaces", strings.Join(resource.DefaultProtectedNamespaces, ","),
+		"comma-separated namespaces hard-blocked for apply/delete (empty disables the guard)")
 	flag.Parse()
+
+	protected := resource.ProtectedSet(strings.Split(*protectedNS, ","))
+	auditor := audit.NewStdoutAuditor(nil) // one JSON line per mutation to stdout
 
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
@@ -35,7 +42,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("cluster clients: %v", err)
 		}
-		deps.Resources = resource.NewService(k8s.NewReal(acc))
+		deps.Resources = resource.NewServiceWith(k8s.NewReal(acc), protected, auditor)
 		hub := stream.NewHubFromAccessor(acc)
 		defer hub.Close()
 		deps.Stream = hub
@@ -44,6 +51,7 @@ func main() {
 		deps.PortForward = k8s.NewRealPortForward(acc)
 		log.Printf("connected to cluster %s", cfg.Host)
 	} else {
+		deps.Resources = resource.NewServiceWith(k8s.Stub{}, protected, auditor)
 		log.Printf("running with --mock stub data")
 	}
 	mux := http.NewServeMux()

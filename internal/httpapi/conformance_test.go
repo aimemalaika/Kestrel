@@ -147,15 +147,18 @@ func TestApplyEchoesAndHonorsDryRun(t *testing.T) {
 
 type dryRunSpy struct {
 	k8s.Stub
-	apply, del *bool
+	apply, del, force *bool
 }
 
-func (s dryRunSpy) Apply(_ context.Context, o k8s.Object, dry bool) (k8s.Object, error) {
-	*s.apply = dry
+func (s dryRunSpy) Apply(_ context.Context, o k8s.Object, opts k8s.ApplyOptions) (k8s.Object, error) {
+	*s.apply = opts.DryRun
+	if s.force != nil {
+		*s.force = opts.Force
+	}
 	return o, nil
 }
-func (s dryRunSpy) Delete(_ context.Context, _ k8s.Ref, dry bool) error {
-	*s.del = dry
+func (s dryRunSpy) Delete(_ context.Context, _ k8s.Ref, opts k8s.DeleteOptions) error {
+	*s.del = opts.DryRun
 	return nil
 }
 
@@ -174,6 +177,25 @@ func TestDryRunReachesClient(t *testing.T) {
 	do(t, h, "DELETE", "/api/core/v1/namespaces/default/pods/p", "")
 	if a || d {
 		t.Errorf("dryRun should default to false: apply=%v delete=%v", a, d)
+	}
+}
+
+// Force is the write-safety knob: without ?force the client must receive
+// Force=false (so a field-manager conflict surfaces as 409); ?force=true opts
+// into overwrite.
+func TestForceReachesClient(t *testing.T) {
+	var a, d, f bool
+	deps := httpapi.DefaultDeps()
+	deps.Resources = resource.NewService(dryRunSpy{apply: &a, del: &d, force: &f})
+	h := httpapi.New(deps)
+
+	do(t, h, "PUT", "/api/apply", `{"kind":"X"}`)
+	if f {
+		t.Error("Force must default to false")
+	}
+	do(t, h, "PUT", "/api/apply?force=true", `{"kind":"X"}`)
+	if !f {
+		t.Error("?force=true must reach the client as Force=true")
 	}
 }
 
