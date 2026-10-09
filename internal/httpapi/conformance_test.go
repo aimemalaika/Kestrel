@@ -352,12 +352,19 @@ func TestWebSocketRoutesRegistered(t *testing.T) {
 
 func TestModulePrefixes(t *testing.T) {
 	h := handler()
-	// helm/argo are still B0 stubs returning a JSON placeholder map.
-	for _, p := range []string{"/api/helm/releases", "/api/argo/apps"} {
+	// argo is still a B0 stub returning a JSON placeholder map.
+	if rec := do(t, h, "GET", "/api/argo/apps", ""); rec.Code != 200 {
+		t.Errorf("/api/argo/apps: %d", rec.Code)
+	} else {
+		decode[map[string]any](t, rec)
+	}
+	// helm is now a real handler; with DefaultDeps (no cluster client) listReleases
+	// returns an empty 200 []Release, and listRepos an empty 200 [].
+	for _, p := range []string{"/api/helm/releases", "/api/helm/repos"} {
 		if rec := do(t, h, "GET", p, ""); rec.Code != 200 {
 			t.Errorf("%s: %d", p, rec.Code)
 		} else {
-			decode[map[string]any](t, rec)
+			decode[[]map[string]any](t, rec)
 		}
 	}
 	// registry is now a real handler; with DefaultDeps it is unconfigured and

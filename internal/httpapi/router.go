@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/aimemalaika/Kestrel/internal/auth"
+	"github.com/aimemalaika/Kestrel/internal/helm"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/modules"
 	"github.com/aimemalaika/Kestrel/internal/registry"
@@ -27,6 +28,7 @@ type Deps struct {
 	Exec        k8s.ExecStreamer
 	PortForward k8s.PortForwarder
 	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
+	Helm        http.Handler // /api/helm/* (releases + chart repos)
 }
 
 // DefaultDeps wires the B0 stubs.
@@ -38,6 +40,10 @@ func DefaultDeps() Deps {
 		Exec:        k8s.StubExec{},
 		PortForward: k8s.StubPortForward{},
 		Registry:    registry.NewHandler(registry.Config{}), // unconfigured ⇒ 503
+		// Helm over a no-client accessor: with no forwarded token (DefaultDeps /
+		// --mock), UserClientset returns the nil SA client and listReleases yields
+		// an empty list rather than panicking. No repos configured ⇒ repos empty.
+		Helm: helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{}),
 	}
 }
 
@@ -47,6 +53,9 @@ func DefaultDeps() Deps {
 func New(d Deps) http.Handler {
 	if d.Registry == nil {
 		d.Registry = registry.NewHandler(registry.Config{}) // unconfigured ⇒ 503
+	}
+	if d.Helm == nil {
+		d.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{})
 	}
 	a := &api{d: d, pf: newPFRegistry()}
 	return auth.Middleware(http.HandlerFunc(a.route))
@@ -83,7 +92,11 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 		// Registry has its own handler (OCI v2 proxy) and allows DELETE for
 		// deleteByDigest, so it owns method handling rather than going through only().
 		a.d.Registry.ServeHTTP(w, r)
-	case "helm", "argo":
+	case "helm":
+		// Helm has its own multi-route handler (releases + chart repos) and owns
+		// method handling, like registry.
+		a.d.Helm.ServeHTTP(w, r)
+	case "argo":
 		a.only(w, r, http.MethodGet, modules.Handler(segs[0]).ServeHTTP)
 	case "servicemap":
 		modules.ServiceMap().ServeHTTP(w, r)
