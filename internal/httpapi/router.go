@@ -20,25 +20,36 @@ import (
 
 // Deps are the collaborators the API needs.
 type Deps struct {
-	Resources *resource.Service
-	Stream    stream.Source
-	Logs      k8s.LogStreamer
+	Resources   *resource.Service
+	Stream      stream.Source
+	Logs        k8s.LogStreamer
+	Exec        k8s.ExecStreamer
+	PortForward k8s.PortForwarder
 }
 
 // DefaultDeps wires the B0 stubs.
 func DefaultDeps() Deps {
-	return Deps{Resources: resource.NewService(k8s.Stub{}), Stream: stream.StubSource{}, Logs: k8s.StubLogs{}}
+	return Deps{
+		Resources:   resource.NewService(k8s.Stub{}),
+		Stream:      stream.StubSource{},
+		Logs:        k8s.StubLogs{},
+		Exec:        k8s.StubExec{},
+		PortForward: k8s.StubPortForward{},
+	}
 }
 
 // New returns the API handler. It expects full request paths (/api/...).
 // Routing is hand-rolled because resource paths (/api/{group}/{version}/...)
 // would otherwise conflict with the fixed prefixes under ServeMux.
 func New(d Deps) http.Handler {
-	a := &api{d: d}
+	a := &api{d: d, pf: newPFRegistry()}
 	return auth.Middleware(http.HandlerFunc(a.route))
 }
 
-type api struct{ d Deps }
+type api struct {
+	d  Deps
+	pf *pfRegistry
+}
 
 func (a *api) route(w http.ResponseWriter, r *http.Request) {
 	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api"), "/")
@@ -58,8 +69,10 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 		a.only(w, r, http.MethodGet, func(w http.ResponseWriter, r *http.Request) { a.stream(w, r, segs[1:]) })
 	case "logs":
 		a.only(w, r, http.MethodGet, a.logs)
-	case "exec", "port-forward":
-		a.only(w, r, http.MethodGet, notImplementedWS)
+	case "exec":
+		a.only(w, r, http.MethodGet, a.exec)
+	case "port-forward":
+		a.only(w, r, http.MethodGet, a.portForward)
 	case "registry", "helm", "argo":
 		a.only(w, r, http.MethodGet, modules.Handler(segs[0]).ServeHTTP)
 	case "servicemap":
@@ -209,9 +222,8 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request, segs []string) {
 }
 
 func (a *api) logs(w http.ResponseWriter, r *http.Request) {
-	segs := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/logs"), "/"), "/")
-	ref, ok := parseRef(segs)
-	if !ok || ref.Resource != "pods" || ref.Name == "" || ref.Namespace == "" {
+	ref, ok := podRef(r, "/api/logs")
+	if !ok {
 		writeStatus(w, 404, "NotFound", "unknown logs path "+r.URL.Path)
 		return
 	}
@@ -262,11 +274,4 @@ func (a *api) logs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-}
-
-// notImplementedWS: exec and port-forward are WebSocket endpoints. B0 avoids a
-// websocket dependency; the routes are registered and answer 501 with the
-// contract error body. Real upgrade handling lands with B-series exec work.
-func notImplementedWS(w http.ResponseWriter, r *http.Request) {
-	writeStatus(w, http.StatusNotImplemented, "NotImplemented", "websocket endpoint not implemented in B0")
 }

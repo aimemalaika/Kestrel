@@ -40,6 +40,8 @@ func main() {
 		defer hub.Close()
 		deps.Stream = hub
 		deps.Logs = k8s.NewRealLogs(acc)
+		deps.Exec = k8s.NewRealExec(acc)
+		deps.PortForward = k8s.NewRealPortForward(acc)
 		log.Printf("connected to cluster %s", cfg.Host)
 	} else {
 		log.Printf("running with --mock stub data")

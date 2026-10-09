@@ -21,6 +21,10 @@ type ClusterAccessor interface {
 	// Kubernetes returns the typed clientset (pod logs etc.). It may be nil for
 	// accessors built via NewAccessorFrom (tests that only need dynamic/discovery).
 	Kubernetes() kubernetes.Interface
+	// RESTConfig returns the config used to build the clients. Exec and
+	// port-forward need it to build SPDY round-trippers. It is nil for accessors
+	// built via NewAccessorFrom* (tests), which have no rest.Config.
+	RESTConfig() *rest.Config
 }
 
 type restAccessor struct {
@@ -28,9 +32,11 @@ type restAccessor struct {
 	disc   discovery.DiscoveryInterface
 	mapper meta.RESTMapper
 	kube   kubernetes.Interface
+	cfg    *rest.Config
 }
 
 func (a *restAccessor) Kubernetes() kubernetes.Interface { return a.kube }
+func (a *restAccessor) RESTConfig() *rest.Config         { return a.cfg }
 
 func (a *restAccessor) Dynamic() dynamic.Interface              { return a.dyn }
 func (a *restAccessor) Discovery() discovery.DiscoveryInterface { return a.disc }
@@ -50,7 +56,9 @@ func NewAccessor(cfg *rest.Config) (ClusterAccessor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes clientset: %w", err)
 	}
-	return NewAccessorFromAll(dyn, disc, kube), nil
+	acc := NewAccessorFromAll(dyn, disc, kube).(*restAccessor)
+	acc.cfg = cfg
+	return acc, nil
 }
 
 // NewAccessorFrom assembles an accessor from existing clients (used by tests
