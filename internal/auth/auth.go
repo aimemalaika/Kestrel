@@ -32,10 +32,15 @@ func FromRequest(r *http.Request) Identity {
 	return id
 }
 
+// WithIdentity returns a context carrying id (used by Middleware and tests).
+func WithIdentity(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, ctxKey{}, id)
+}
+
 // Middleware stores the identity on the request context.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), ctxKey{}, FromRequest(r))
+		ctx := WithIdentity(r.Context(), FromRequest(r))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

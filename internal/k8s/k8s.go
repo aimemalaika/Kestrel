@@ -78,14 +78,33 @@ type ListOptions struct {
 	FieldSelector string
 }
 
+// ApplyOptions tunes a Server-Side Apply. DryRun runs real admission without
+// persisting; Force takes ownership of conflicting fields (default false, so a
+// conflict surfaces as 409). FieldManager defaults to "kestrel" when empty.
+type ApplyOptions struct {
+	DryRun       bool
+	Force        bool
+	FieldManager string
+}
+
+// DeleteOptions tunes a Delete. DryRun runs admission without removing the
+// object; the propagation policy is always Background (kubectl's default) and
+// is kept internal to the implementation.
+type DeleteOptions struct {
+	DryRun bool
+}
+
+// DefaultFieldManager is the SSA field manager Kestrel claims ownership under.
+const DefaultFieldManager = "kestrel"
+
 // Client is the cluster seam. Implementations must return *StatusError for
 // API errors so the HTTP layer can map them to real statuses.
 type Client interface {
 	Catalog(ctx context.Context) ([]CatalogEntry, error)
 	List(ctx context.Context, ref Ref, opts ListOptions) ([]Object, error)
 	Get(ctx context.Context, ref Ref) (Object, error)
-	// Apply performs Server-Side Apply; dryRun must not persist.
-	Apply(ctx context.Context, obj Object, dryRun bool) (Object, error)
-	Delete(ctx context.Context, ref Ref, dryRun bool) error
+	// Apply performs Server-Side Apply; DryRun must not persist.
+	Apply(ctx context.Context, obj Object, opts ApplyOptions) (Object, error)
+	Delete(ctx context.Context, ref Ref, opts DeleteOptions) error
 	CanI(ctx context.Context, req CanIRequest) (bool, error)
 }

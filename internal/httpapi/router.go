@@ -151,7 +151,7 @@ func (a *api) resource(w http.ResponseWriter, r *http.Request, segs []string) {
 			writeStatus(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "delete requires a resource name")
 			return
 		}
-		if err := a.d.Resources.Delete(r.Context(), ref, dry); err != nil {
+		if err := a.d.Resources.Delete(r.Context(), ref, k8s.DeleteOptions{DryRun: dry}); err != nil {
 			WriteError(w, err)
 			return
 		}
@@ -168,7 +168,10 @@ func (a *api) apply(w http.ResponseWriter, r *http.Request) {
 		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid JSON body: "+err.Error())
 		return
 	}
-	out, err := a.d.Resources.Apply(r.Context(), obj, r.URL.Query().Get("dryRun") == "true")
+	out, err := a.d.Resources.Apply(r.Context(), obj, k8s.ApplyOptions{
+		DryRun: r.URL.Query().Get("dryRun") == "true",
+		Force:  r.URL.Query().Get("force") == "true",
+	})
 	if err != nil {
 		WriteError(w, err)
 		return
