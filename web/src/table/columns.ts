@@ -1,20 +1,268 @@
 import type { K8sObject } from '../contract/types'
 
+export type CellKind =
+  | 'text'
+  | 'status'
+  | 'restarts'
+  | 'mono'
+  | 'podsquares'
+  | 'scale'
+  | 'readyfrac'
+  | 'strategy'
+  | 'svctype'
+  | 'tls'
+  | 'routehost'
+  | 'keys'
+  | 'rolekind'
+  | 'rolemono'
+  | 'check'
+
 export interface ColumnHint {
   header: string
+  /** Dot path; also the column id. */
   path: string
   /** Right-align (numeric) column. */
   numeric?: boolean
+  /** Cell renderer kind (default 'text'). */
+  cell?: CellKind
+  /** Derived value; falls back to getPath(path) when omitted. */
+  derive?: (o: K8sObject) => string | undefined
 }
+
+type Rec = Record<string, unknown>
+const arr = (v: unknown): Rec[] => (Array.isArray(v) ? (v as Rec[]) : [])
+const num = (v: unknown): number => (typeof v === 'number' ? v : Number(v) || 0)
+
+function podReady(o: K8sObject): string {
+  const total = arr(getPath(o, 'spec.containers')).length
+  const cs = arr(getPath(o, 'status.containerStatuses'))
+  const ready = cs.length
+    ? cs.filter((c) => c.ready === true).length
+    : getPath(o, 'status.phase') === 'Running'
+      ? total
+      : 0
+  return `${ready}/${total}`
+}
+
+function podRestarts(o: K8sObject): string {
+  return String(
+    arr(getPath(o, 'status.containerStatuses')).reduce((n, c) => n + num(c.restartCount), 0),
+  )
+}
+
+/** Pod usage lives at status.usage.{cpu,memory} as raw quantities (e.g. "124m", "256Mi"),
+ *  shown verbatim like the design. Absent (real backend w/o metrics) → "n/a". */
+function usage(field: 'cpu' | 'memory') {
+  return (o: K8sObject): string => {
+    const v = getPath(o, `status.usage.${field}`)
+    return v === undefined || v === null || v === '' ? 'n/a' : String(v)
+  }
+}
+
+function deployReady(o: K8sObject): string {
+  return `${num(getPath(o, 'status.readyReplicas'))}/${num(getPath(o, 'spec.replicas') ?? getPath(o, 'status.replicas'))}`
+}
+
+function deployDesired(o: K8sObject): string {
+  return String(num(getPath(o, 'spec.replicas') ?? getPath(o, 'status.replicas')))
+}
+
+function dash(v: unknown): string | undefined {
+  return v === undefined || v === null || v === '' ? undefined : String(v)
+}
+
+function svcPorts(o: K8sObject): string | undefined {
+  const ports = arr(getPath(o, 'spec.ports'))
+  if (!ports.length) return undefined
+  return ports
+    .map((p) => {
+      const target = p.targetPort !== undefined && p.targetPort !== null ? `:${p.targetPort}` : ''
+      const node = p.nodePort ? `:${p.nodePort}` : ''
+      return `${p.port}${target}${node}/${p.protocol ?? 'TCP'}`
+    })
+    .join(', ')
+}
+
+function routeStatus(o: K8sObject): string | undefined {
+  const ingress = arr(getPath(o, 'status.ingress'))
+  if (!ingress.length) return undefined
+  const conds = ingress.flatMap((i) => arr(i.conditions)).filter((c) => c.type === 'Admitted')
+  if (conds.some((c) => c.status === 'False')) return 'Rejected'
+  return 'Accepted'
+}
+
+const count = (path: string) => (o: K8sObject) => {
+  const v = getPath(o, path)
+  return String(Array.isArray(v) ? v.length : 0)
+}
+
+function pvClaim(o: K8sObject): string | undefined {
+  const ref = getPath(o, 'spec.claimRef') as Rec | undefined
+  if (!ref || !ref.name) return undefined
+  return ref.namespace ? `${ref.namespace}/${ref.name}` : String(ref.name)
+}
+
+// Access modes abbreviated like kubectl (ReadWriteOnce → RWO).
+const ACCESS_ABBR: Record<string, string> = {
+  ReadWriteOnce: 'RWO',
+  ReadWriteMany: 'RWX',
+  ReadOnlyMany: 'ROX',
+  ReadWriteOncePod: 'RWOP',
+}
+function accessMode(o: K8sObject): string | undefined {
+  const v = getPath(o, 'spec.accessModes')
+  const m = Array.isArray(v) ? String(v[0]) : undefined
+  return m ? (ACCESS_ABBR[m] ?? m) : undefined
+}
+
+// PVC capacity: bound PVCs report status.capacity; pending ones only a request.
+function pvcCapacity(o: K8sObject): string | undefined {
+  return dash(
+    getPath(o, 'status.capacity.storage') ?? getPath(o, 'spec.resources.requests.storage'),
+  )
+}
+
+export const DEFAULT_SC_ANNOTATION = 'storageclass.kubernetes.io/is-default-class'
+export function isDefaultStorageClass(o: K8sObject): boolean {
+  const a = o.metadata.annotations as Record<string, string> | undefined
+  return a?.[DEFAULT_SC_ANNOTATION] === 'true'
+}
+
+/** Kinds that have no meaningful status: they get no Status column. */
+const NO_STATUS_KINDS = new Set([
+  'Deployment',
+  'ConfigMap',
+  'Secret',
+  'ServiceAccount',
+  'Role',
+  'ClusterRole',
+  'RoleBinding',
+  'ClusterRoleBinding',
+  'Service',
+  'StorageClass',
+])
+
+/** Kinds whose Status column sits right after Name/Namespace. */
+const STATUS_FIRST_KINDS = new Set(['PersistentVolumeClaim', 'PersistentVolume'])
+
+export function hasStatusColumn(kind: string): boolean {
+  return !NO_STATUS_KINDS.has(kind)
+}
+
+const ROLE_HINTS: ColumnHint[] = [
+  {
+    header: 'Type',
+    path: 'roleKind',
+    cell: 'rolekind',
+    derive: (o) => (o.kind === 'ClusterRole' ? 'ClusterRole' : 'Role'),
+  },
+  { header: 'Rules', path: 'rules', numeric: true, derive: count('rules') },
+]
+
+const BINDING_HINTS: ColumnHint[] = [
+  { header: 'Role Ref', path: 'roleRef.name', cell: 'rolemono' },
+  {
+    header: 'Subject',
+    path: 'subject',
+    cell: 'mono',
+    derive: (o) => dash(arr(getPath(o, 'subjects'))[0]?.name),
+  },
+]
 
 export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   Pod: [
     { header: 'Phase', path: 'status.phase' },
+    { header: 'Ready', path: 'ready', numeric: true, derive: podReady },
+    { header: 'Restarts', path: 'restarts', numeric: true, cell: 'restarts', derive: podRestarts },
+    { header: 'CPU', path: 'status.usage.cpu', numeric: true, derive: usage('cpu') },
+    { header: 'Memory', path: 'status.usage.memory', numeric: true, derive: usage('memory') },
     { header: 'Node', path: 'spec.nodeName' },
   ],
   Deployment: [
-    { header: 'Ready', path: 'status.readyReplicas', numeric: true },
-    { header: 'Available', path: 'status.availableReplicas', numeric: true },
+    { header: 'Pods', path: 'pods', cell: 'podsquares', derive: deployReady },
+    { header: 'Ready', path: 'ready', numeric: true, cell: 'readyfrac', derive: deployReady },
+    {
+      header: 'Replicas',
+      path: 'spec.replicas',
+      numeric: true,
+      cell: 'scale',
+      derive: deployDesired,
+    },
+    { header: 'Strategy', path: 'spec.strategy.type', cell: 'strategy' },
+    {
+      header: 'Image',
+      path: 'image',
+      cell: 'mono',
+      derive: (o) => dash(arr(getPath(o, 'spec.template.spec.containers'))[0]?.image),
+    },
+  ],
+  Service: [
+    { header: 'Type', path: 'spec.type', cell: 'svctype' },
+    { header: 'ClusterIP', path: 'spec.clusterIP', cell: 'mono' },
+    { header: 'Ports', path: 'ports', cell: 'mono', derive: svcPorts },
+  ],
+  Route: [
+    { header: 'Host', path: 'spec.host', cell: 'routehost' },
+    { header: 'Service', path: 'spec.to.name', cell: 'mono' },
+    { header: 'Port', path: 'spec.port.targetPort', numeric: true },
+    {
+      header: 'TLS',
+      path: 'spec.tls',
+      cell: 'tls',
+      derive: (o) => {
+        const t = getPath(o, 'spec.tls')
+        if (!t) return 'None'
+        return dash((t as Rec).termination) ?? 'Enabled'
+      },
+    },
+  ],
+  ConfigMap: [
+    {
+      header: 'Keys',
+      path: 'data',
+      cell: 'keys',
+      derive: (o) => {
+        const d = getPath(o, 'data')
+        return String(d && typeof d === 'object' ? Object.keys(d).length : 0)
+      },
+    },
+  ],
+  Secret: [{ header: 'Type', path: 'type', cell: 'mono' }],
+  ServiceAccount: [
+    { header: 'Secrets', path: 'secrets', numeric: true, derive: count('secrets') },
+    {
+      header: 'Image Pull Secrets',
+      path: 'imagePullSecrets',
+      numeric: true,
+      derive: count('imagePullSecrets'),
+    },
+  ],
+  Role: ROLE_HINTS,
+  ClusterRole: ROLE_HINTS,
+  RoleBinding: BINDING_HINTS,
+  ClusterRoleBinding: BINDING_HINTS,
+  PersistentVolumeClaim: [
+    { header: 'Capacity', path: 'status.capacity.storage', derive: pvcCapacity },
+    { header: 'Access Mode', path: 'spec.accessModes', derive: accessMode },
+    { header: 'StorageClass', path: 'spec.storageClassName' },
+  ],
+  PersistentVolume: [
+    { header: 'Capacity', path: 'spec.capacity.storage' },
+    { header: 'Access Mode', path: 'spec.accessModes', derive: accessMode },
+    { header: 'Reclaim', path: 'spec.persistentVolumeReclaimPolicy' },
+    { header: 'Claim', path: 'spec.claimRef', cell: 'mono', derive: pvClaim },
+    { header: 'StorageClass', path: 'spec.storageClassName' },
+  ],
+  StorageClass: [
+    { header: 'Provisioner', path: 'provisioner', cell: 'mono' },
+    { header: 'Reclaim Policy', path: 'reclaimPolicy' },
+    { header: 'Volume Binding', path: 'volumeBindingMode' },
+    {
+      header: 'Default',
+      path: 'default',
+      cell: 'check',
+      derive: (o) => (isDefaultStorageClass(o) ? 'true' : 'false'),
+    },
   ],
 }
 
@@ -71,7 +319,7 @@ export function scanSummary(object: K8sObject): ScanCounts | undefined {
 export interface ColumnSpec {
   id: string
   header: string
-  kind: 'text' | 'age' | 'status' | 'scan'
+  kind: CellKind | 'age' | 'scan'
   align?: 'right'
   value: (o: K8sObject) => string
 }
@@ -88,13 +336,22 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       value: (o) => str(o.metadata.namespace),
     })
   }
+  const statusCol: ColumnSpec = {
+    id: 'status',
+    header: 'Status',
+    kind: 'status',
+    value: (o) =>
+      str(getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+  }
+  const statusEarly = hasStatusColumn(kind) && STATUS_FIRST_KINDS.has(kind)
+  if (statusEarly) cols.push(statusCol)
   for (const h of COLUMN_HINTS[kind] ?? []) {
     cols.push({
       id: h.path,
       header: h.header,
-      kind: 'text',
+      kind: h.cell ?? 'text',
       align: h.numeric ? 'right' : undefined,
-      value: (o) => str(getPath(o, h.path)),
+      value: (o) => str(h.derive ? h.derive(o) : getPath(o, h.path)),
     })
   }
   if (kind === 'PipelineRun') {
@@ -105,12 +362,7 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       value: (o) => JSON.stringify(scanSummary(o) ?? {}),
     })
   }
-  cols.push({
-    id: 'status',
-    header: 'Status',
-    kind: 'status',
-    value: (o) => str(getPath(o, 'status.phase')),
-  })
+  if (hasStatusColumn(kind) && !statusEarly) cols.push(statusCol)
   cols.push({
     id: 'age',
     header: 'Age',

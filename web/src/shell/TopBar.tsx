@@ -5,6 +5,7 @@ import { Icon } from '../ui'
 import { useAuth } from '../auth/AuthProvider'
 import { useSelection } from '../state/selection'
 import type { Perspective } from '../nav/categoryMap'
+import { firingAlerts } from '../modules/alerts/alertsMock'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -161,9 +162,6 @@ function PerspectiveToggle({
   )
 }
 
-// No notification source yet: the list is empty and the badge hides at zero.
-const NOTIFICATIONS: { id: string; title: string; detail: string }[] = []
-
 function NotificationBell() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -176,7 +174,8 @@ function NotificationBell() {
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
-  const count = NOTIFICATIONS.length
+  const firing = firingAlerts()
+  const count = firing.length
   return (
     <div
       ref={ref}
@@ -218,10 +217,12 @@ function NotificationBell() {
             <p className="px-4 py-6 text-center text-xs text-zinc-500">No notifications</p>
           ) : (
             <div className="divide-y divide-zinc-800/60 max-h-72 overflow-y-auto">
-              {NOTIFICATIONS.map((n) => (
+              {firing.map((n) => (
                 <div key={n.id} className="px-4 py-2.5">
-                  <p className="text-xs font-medium text-zinc-200">{n.title}</p>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">{n.detail}</p>
+                  <p className="text-xs font-medium text-zinc-200">
+                    {n.name} <span className="text-[10px] text-zinc-500">({n.severity})</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5">{n.message}</p>
                 </div>
               ))}
             </div>

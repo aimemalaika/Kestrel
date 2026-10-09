@@ -29,6 +29,7 @@ const STATUS_TONE: Record<string, Tone> = {
   Complete: 'ok',
   CrashLoopBackOff: 'risk',
   Pending: 'warn',
+  Installing: 'info',
   Terminating: 'warn',
   ContainerCreating: 'warn',
   OOMKilled: 'risk',

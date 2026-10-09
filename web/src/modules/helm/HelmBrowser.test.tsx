@@ -15,25 +15,25 @@ function setup() {
 describe('HelmBrowser', () => {
   it('renders releases', async () => {
     setup()
-    expect(await screen.findByRole('button', { name: 'postgres' })).toBeInTheDocument()
-    expect(screen.getByText('deployed')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'orders-db' })).toBeInTheDocument()
+    expect(screen.getAllByText('deployed').length).toBeGreaterThan(1)
     expect(screen.getByText('failed')).toBeInTheDocument()
   })
 
   it('drills into a release detail', async () => {
     setup()
-    fireEvent.click(await screen.findByRole('button', { name: 'ingress-nginx' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'edge-proxy' }))
     expect(await screen.findByText('Revision')).toBeInTheDocument()
     expect(screen.getByText('4')).toBeInTheDocument()
-    expect(screen.getByText('ingress-nginx-4.11.2')).toBeInTheDocument()
+    expect(screen.getByText('edge-proxy-4.11.2')).toBeInTheDocument()
     expect(screen.getByText(/replicaCount: 2/)).toBeInTheDocument()
   })
 
   it('browses a chart repo', async () => {
     setup()
     fireEvent.click(screen.getByRole('tab', { name: 'Chart repos' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'bitnami' }))
-    expect(await screen.findByText('redis')).toBeInTheDocument()
-    expect(screen.getByText('PostgreSQL relational database')).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole('button', { name: 'stable' }))
+    expect(await screen.findByText('cache')).toBeInTheDocument()
+    expect(screen.getByText('Relational database')).toBeInTheDocument()
   })
 })

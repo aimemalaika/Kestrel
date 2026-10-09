@@ -38,7 +38,9 @@ export function NavTree({
     }
   }, [])
 
-  const ns = namespace ?? 'default'
+  // Default resource links to All Namespaces so lists aren't empty when seeds
+  // live outside the `default` namespace.
+  const ns = namespace ?? '_all'
   const isOpen = (s: string) => expanded[s] ?? DEFAULT_OPEN.has(s)
 
   // Resolve an item to a link target + active flag, or undefined when not available.
@@ -46,7 +48,9 @@ export function NavTree({
     const t = item.target
     if (!t) return undefined
     if ('route' in t) {
-      return { to: t.route, active: pathname === t.route || pathname.startsWith(t.route + '/') }
+      // Exact match so a parent route (e.g. /cluster) doesn't also light up when a
+      // more specific sibling (/cluster/settings) is active.
+      return { to: t.route, active: pathname === t.route }
     }
     const e = catalog.find((c) => c.resource === t.resource)
     if (!e) return undefined

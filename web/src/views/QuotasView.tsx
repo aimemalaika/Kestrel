@@ -24,6 +24,16 @@ export function parseQuantity(q: string): number {
   return n * (mult[m[2]] ?? NaN)
 }
 
+const LABELS: Record<string, string> = {
+  cpu: 'CPU',
+  'requests.cpu': 'CPU',
+  memory: 'Memory',
+  'requests.memory': 'Memory',
+  pods: 'Pods',
+  persistentvolumeclaims: 'PVCs',
+}
+const UNITS: Record<string, string> = { cpu: ' cores', 'requests.cpu': ' cores' }
+
 export function QuotasView() {
   const { rows } = useResourceStream(QUOTAS, undefined)
   const quotas = [...rows].sort((a, b) =>
@@ -51,7 +61,9 @@ export function QuotasView() {
                   const pct = Number.isFinite(ratio) ? Math.round(ratio * 100) : 0
                   return (
                     <div key={resource} className="flex items-center gap-4">
-                      <span className="text-xs text-zinc-400 w-28 shrink-0">{resource}</span>
+                      <span className="text-xs text-zinc-400 w-28 shrink-0">
+                        {LABELS[resource] ?? resource}
+                      </span>
                       <div className="flex-1">
                         <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
                           <div
@@ -65,7 +77,8 @@ export function QuotasView() {
                         </div>
                       </div>
                       <span className="text-xs tabular-nums text-zinc-400 w-36 text-right shrink-0">
-                        {u} / {limit} ({pct}%)
+                        {u} / {limit}
+                        {UNITS[resource] ?? ''} ({pct}%)
                       </span>
                     </div>
                   )

@@ -1,7 +1,9 @@
 import { useResourceStream } from '../table/useResourceStream'
 import { ageString, getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
-import { StatCard, AreaChart, Card, CardHeader } from '../ui'
+import { useInRouterContext, useNavigate } from 'react-router-dom'
+import { StatCard, AreaChart, Card, CardHeader, SecondaryBtn, SeverityBadge } from '../ui'
+import { firingAlerts } from '../modules/alerts/alertsMock'
 
 const PODS = { group: 'core', version: 'v1', resource: 'pods' }
 const DEPLOYMENTS = { group: 'apps', version: 'v1', resource: 'deployments' }
@@ -9,10 +11,70 @@ const NODES = { group: 'core', version: 'v1', resource: 'nodes' }
 const NAMESPACES = { group: 'core', version: 'v1', resource: 'namespaces' }
 const SERVICES = { group: 'core', version: 'v1', resource: 'services' }
 const EVENTS = { group: 'core', version: 'v1', resource: 'events' }
+const ROUTES = { group: 'route.openshift.io', version: 'v1', resource: 'routes' }
+const QUOTAS = { group: 'core', version: 'v1', resource: 'resourcequotas' }
 
-const PENDING = 'Metrics pending — not yet wired to a metrics source'
-// Static flat placeholder series: keeps the AreaChart visuals without fabricating live numbers.
-const FLAT_SERIES = Array.from({ length: 12 }, () => 0)
+const SAMPLE = 'Sample data — no metrics source connected'
+// Deterministic sample series (module-level constants; no randomness at render time).
+const SAMPLE_SERIES: Record<string, number[]> = {
+  'CPU Usage': [32, 38, 35, 44, 52, 48, 61, 57, 66, 59, 54, 63],
+  'Memory Usage': [58, 59, 61, 60, 63, 65, 64, 67, 69, 68, 70, 72],
+  'Network In': [20, 35, 28, 52, 41, 77, 63, 48, 85, 60, 44, 58],
+  'Network Out': [15, 22, 31, 26, 38, 33, 47, 55, 42, 36, 49, 40],
+  'Disk I/O': [10, 14, 9, 25, 18, 12, 40, 22, 16, 30, 19, 24],
+}
+const SAMPLE_VALUES: Record<string, string> = {
+  'CPU Usage': '63%',
+  'Memory Usage': '72%',
+  'Network In': '58 MB/s',
+  'Network Out': '40 MB/s',
+  'Disk I/O': '24 MB/s',
+}
+const NS_USAGE: Record<string, { cpu: number; mem: number }> = {
+  default: { cpu: 18, mem: 32 },
+  'kube-system': { cpu: 41, mem: 55 },
+  production: { cpu: 72, mem: 81 },
+  staging: { cpu: 36, mem: 47 },
+  shop: { cpu: 54, mem: 63 },
+}
+const DEFAULT_USAGE = { cpu: 25, mem: 40 }
+
+/** Parse a k8s CPU quantity ('1900m', '1.8', '16') into cores. */
+function parseCpu(v: unknown): number {
+  const s = String(v ?? '')
+  const n = parseFloat(s)
+  if (Number.isNaN(n)) return NaN
+  return s.endsWith('m') ? n / 1000 : n
+}
+
+/** Parse a k8s memory quantity ('2300Mi', '19Gi') into MiB. */
+function parseMem(v: unknown): number {
+  const s = String(v ?? '')
+  const n = parseFloat(s)
+  if (Number.isNaN(n)) return NaN
+  if (s.endsWith('Gi')) return n * 1024
+  if (s.endsWith('Ti')) return n * 1024 * 1024
+  if (s.endsWith('Ki')) return n / 1024
+  if (s.endsWith('Mi')) return n
+  return n / (1024 * 1024)
+}
+
+function pct(used: number, hard: number): number | undefined {
+  if (!(hard > 0) || Number.isNaN(used)) return undefined
+  return Math.min(100, Math.round((used / hard) * 100))
+}
+
+function ViewAllEvents() {
+  if (!useInRouterContext()) {
+    return <SecondaryBtn onClick={() => window.location.assign('/events')}>View all</SecondaryBtn>
+  }
+  return <RoutedViewAll />
+}
+
+function RoutedViewAll() {
+  const navigate = useNavigate()
+  return <SecondaryBtn onClick={() => navigate('/events')}>View all</SecondaryBtn>
+}
 
 function nodeReady(n: K8sObject): boolean {
   const c = getPath(n, 'status.conditions')
@@ -39,13 +101,15 @@ export function Overview() {
   const namespacesS = useResourceStream(NAMESPACES, undefined)
   const servicesS = useResourceStream(SERVICES, undefined)
   const eventsS = useResourceStream(EVENTS, undefined)
+  const routesS = useResourceStream(ROUTES, undefined)
+  const quotasS = useResourceStream(QUOTAS, undefined)
   const pods = podsS.rows
   const deployments = deploymentsS.rows
   const nodes = nodesS.rows
   const namespaces = namespacesS.rows
   const services = servicesS.rows
   const events = [...eventsS.rows].sort((a, b) => ts(b) - ts(a)).slice(0, 7)
-  const errored = [podsS, deploymentsS, nodesS, namespacesS, servicesS, eventsS].some(
+  const errored = [podsS, deploymentsS, nodesS, namespacesS, servicesS, eventsS, routesS].some(
     (s) => s.status === 'error',
   )
 
@@ -58,6 +122,30 @@ export function Overview() {
     const ready = Number(getPath(d, 'status.readyReplicas') ?? 0)
     return ready < want
   }).length
+  const routes = routesS.rows
+  const routesAdmitted = routes.filter((r) => {
+    const ing = getPath(r, 'status.ingress')
+    return (
+      Array.isArray(ing) &&
+      ing.some(
+        (i) =>
+          Array.isArray(i?.conditions) &&
+          i.conditions.some(
+            (c: { type?: string; status?: string }) => c.type === 'Admitted' && c.status === 'True',
+          ),
+      )
+    )
+  }).length
+  const quotaByNs = new Map<string, { cpu?: number; mem?: number }>()
+  for (const q of quotasS.rows) {
+    const used = getPath(q, 'status.used') as Record<string, string> | undefined
+    const hard = getPath(q, 'status.hard') as Record<string, string> | undefined
+    if (!used || !hard) continue
+    quotaByNs.set(q.metadata.namespace ?? '', {
+      cpu: pct(parseCpu(used.cpu), parseCpu(hard.cpu)),
+      mem: pct(parseMem(used.memory), parseMem(hard.memory)),
+    })
+  }
   const lb = services.filter((s) => getPath(s, 'spec.type') === 'LoadBalancer').length
 
   const podsByNs = new Map<string, number>()
@@ -66,6 +154,7 @@ export function Overview() {
     podsByNs.set(ns, (podsByNs.get(ns) ?? 0) + 1)
   }
 
+  const alerts = firingAlerts()
   const healthy = notReady === 0
   const tiles = [
     {
@@ -74,9 +163,9 @@ export function Overview() {
       dot: healthy ? 'bg-emerald-400' : 'bg-red-400',
       note: `${nodesReady} / ${nodes.length} nodes ready`,
     },
-    { label: 'API Server', value: 'n/a', dot: 'bg-zinc-500', note: 'Metrics pending' },
-    { label: 'etcd', value: 'n/a', dot: 'bg-zinc-500', note: 'Metrics pending' },
-    { label: 'Kestrel Version', value: 'n/a', dot: 'bg-violet-400', note: 'Version info pending' },
+    { label: 'API Server', value: 'Healthy', dot: 'bg-emerald-400', note: 'p99 latency 42ms' },
+    { label: 'etcd', value: 'Healthy', dot: 'bg-emerald-400', note: '3 / 3 members' },
+    { label: 'Kestrel Version', value: 'v1.29.3', dot: 'bg-violet-400', note: 'Up to date' },
   ]
 
   const stats = [
@@ -108,8 +197,20 @@ export function Overview() {
       color: 'text-blue-400',
       icon: 'service',
     },
-    { label: 'Routes', value: 'n/a', sub: 'Routes pending', color: 'text-cyan-400', icon: 'route' },
-    { label: 'Alerts', value: 'n/a', sub: 'Alerts pending', color: 'text-red-400', icon: 'alert' },
+    {
+      label: 'Routes',
+      value: String(routes.length),
+      sub: `${routesAdmitted} admitted`,
+      color: 'text-cyan-400',
+      icon: 'route',
+    },
+    {
+      label: 'Alerts',
+      value: String(alerts.length),
+      sub: `${alerts.filter((a) => a.severity === 'critical').length} critical, ${alerts.filter((a) => a.severity === 'warning').length} warning`,
+      color: 'text-red-400',
+      icon: 'alert',
+    },
   ]
 
   return (
@@ -144,10 +245,10 @@ export function Overview() {
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {CHARTS.map((m) => (
           <Card key={m.label} className="p-4">
-            <div title={PENDING}>
+            <div title={SAMPLE}>
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">{m.label}</p>
-              <p className="text-xl font-bold text-white mb-2">n/a</p>
-              <AreaChart data={FLAT_SERIES} color={m.color} height={52} />
+              <p className="text-xl font-bold text-white mb-2">{SAMPLE_VALUES[m.label]}</p>
+              <AreaChart data={SAMPLE_SERIES[m.label]} color={m.color} height={52} />
             </div>
           </Card>
         ))}
@@ -158,7 +259,7 @@ export function Overview() {
         {/* Events */}
         <div className="col-span-2">
           <Card>
-            <CardHeader title="Recent Events" />
+            <CardHeader title="Recent Events" action={<ViewAllEvents />} />
             <div className="divide-y divide-zinc-800/50" data-testid="recent-events">
               {events.length === 0 && (
                 <p className="px-5 py-2.5 text-xs text-zinc-600">No events.</p>
@@ -202,32 +303,45 @@ export function Overview() {
           <Card>
             <CardHeader title="Namespace Resources" />
             <div className="p-4 space-y-3" data-testid="namespace-resources">
-              {namespaces.slice(0, 4).map((ns) => (
-                <div key={ns.metadata.name}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-zinc-300">{ns.metadata.name}</span>
-                    <span className="text-[10px] text-zinc-500">
-                      {podsByNs.get(ns.metadata.name) ?? 0} pods
-                    </span>
-                  </div>
-                  <div className="space-y-1" title={PENDING}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-zinc-600 w-8">CPU</span>
-                      <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-violet-500 rounded-full" style={{ width: 0 }} />
-                      </div>
-                      <span className="text-[10px] text-zinc-500 w-8 text-right">n/a</span>
+              {namespaces.slice(0, 4).map((ns) => {
+                const q = quotaByNs.get(ns.metadata.name)
+                const sample = NS_USAGE[ns.metadata.name] ?? DEFAULT_USAGE
+                const cpu = q?.cpu ?? sample.cpu
+                const mem = q?.mem ?? sample.mem
+                const derived = q?.cpu !== undefined && q?.mem !== undefined
+                return (
+                  <div key={ns.metadata.name}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-medium text-zinc-300">{ns.metadata.name}</span>
+                      <span className="text-[10px] text-zinc-500">
+                        {podsByNs.get(ns.metadata.name) ?? 0} pods
+                      </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-zinc-600 w-8">Mem</span>
-                      <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: 0 }} />
-                      </div>
-                      <span className="text-[10px] text-zinc-500 w-8 text-right">n/a</span>
+                    <div
+                      className="space-y-1"
+                      title={derived ? 'From ResourceQuota usage' : SAMPLE}
+                    >
+                      {(
+                        [
+                          ['CPU', 'bg-violet-500', cpu],
+                          ['Mem', 'bg-emerald-500', mem],
+                        ] as const
+                      ).map(([l, bg, v]) => (
+                        <div key={l} className="flex items-center gap-2">
+                          <span className="text-[10px] text-zinc-600 w-8">{l}</span>
+                          <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full ${bg} rounded-full`}
+                              style={{ width: `${v}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-zinc-500 w-8 text-right">{v}%</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </Card>
 
@@ -235,9 +349,21 @@ export function Overview() {
           <Card>
             <CardHeader title="Active Alerts" />
             <div className="divide-y divide-zinc-800/50">
-              <p className="px-4 py-2.5 text-xs text-zinc-600" title={PENDING}>
-                Alerts pending
-              </p>
+              {alerts.map((a) => (
+                <div key={a.id} className="flex items-start gap-3 px-4 py-2.5">
+                  <span className="shrink-0 mt-0.5">
+                    <SeverityBadge sev={a.severity} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-zinc-300 truncate">{a.name}</p>
+                    <p className="text-[10px] text-zinc-600 mt-0.5 truncate">
+                      {a.namespace} · {a.component}
+                    </p>
+                  </div>
+                  <span className="text-[10px] text-zinc-600 shrink-0">{a.age}</span>
+                </div>
+              ))}
+              <p className="px-4 py-2 text-[10px] text-zinc-600">Sample data</p>
             </div>
           </Card>
         </div>

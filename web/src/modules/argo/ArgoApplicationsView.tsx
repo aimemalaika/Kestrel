@@ -1,5 +1,5 @@
 import { useResourceStream } from '../../table/useResourceStream'
-import { ViewHeader, EmptyState, Card } from '../../ui'
+import { ViewHeader, EmptyState, Card, PrimaryBtn, Icon } from '../../ui'
 import { ArgoAppGrid } from './ArgoRichView'
 
 const GVR = { group: 'argoproj.io', version: 'v1alpha1', resource: 'applications' }
@@ -9,7 +9,16 @@ export function ArgoApplicationsView() {
   const { rows, status } = useResourceStream(GVR, 'argocd')
   return (
     <div className="p-6">
-      <ViewHeader title="Applications" count={rows.length} />
+      <ViewHeader
+        title="Applications"
+        count={rows.length}
+        action={
+          <PrimaryBtn>
+            <Icon name="plus" className="w-3.5 h-3.5" />
+            Create Application
+          </PrimaryBtn>
+        }
+      />
       {status === 'loading' && (
         <Card>
           <EmptyState title="Loading…" icon="refresh" />
