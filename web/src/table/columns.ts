@@ -96,15 +96,30 @@ const count = (path: string) => (o: K8sObject) => {
   return String(Array.isArray(v) ? v.length : 0)
 }
 
-const first = (path: string) => (o: K8sObject) => {
-  const v = getPath(o, path)
-  return Array.isArray(v) ? dash(v[0]) : undefined
-}
-
 function pvClaim(o: K8sObject): string | undefined {
   const ref = getPath(o, 'spec.claimRef') as Rec | undefined
   if (!ref || !ref.name) return undefined
   return ref.namespace ? `${ref.namespace}/${ref.name}` : String(ref.name)
+}
+
+// Access modes abbreviated like kubectl (ReadWriteOnce → RWO).
+const ACCESS_ABBR: Record<string, string> = {
+  ReadWriteOnce: 'RWO',
+  ReadWriteMany: 'RWX',
+  ReadOnlyMany: 'ROX',
+  ReadWriteOncePod: 'RWOP',
+}
+function accessMode(o: K8sObject): string | undefined {
+  const v = getPath(o, 'spec.accessModes')
+  const m = Array.isArray(v) ? String(v[0]) : undefined
+  return m ? (ACCESS_ABBR[m] ?? m) : undefined
+}
+
+// PVC capacity: bound PVCs report status.capacity; pending ones only a request.
+function pvcCapacity(o: K8sObject): string | undefined {
+  return dash(
+    getPath(o, 'status.capacity.storage') ?? getPath(o, 'spec.resources.requests.storage'),
+  )
 }
 
 export const DEFAULT_SC_ANNOTATION = 'storageclass.kubernetes.io/is-default-class'
@@ -188,8 +203,8 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   ],
   Route: [
     { header: 'Host', path: 'spec.host', cell: 'routehost' },
-    { header: 'Service', path: 'spec.to.name' },
-    { header: 'Port', path: 'spec.port.targetPort' },
+    { header: 'Service', path: 'spec.to.name', cell: 'mono' },
+    { header: 'Port', path: 'spec.port.targetPort', numeric: true },
     {
       header: 'TLS',
       path: 'spec.tls',
@@ -227,13 +242,13 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   RoleBinding: BINDING_HINTS,
   ClusterRoleBinding: BINDING_HINTS,
   PersistentVolumeClaim: [
-    { header: 'Capacity', path: 'status.capacity.storage' },
-    { header: 'Access Mode', path: 'spec.accessModes', derive: first('spec.accessModes') },
+    { header: 'Capacity', path: 'status.capacity.storage', derive: pvcCapacity },
+    { header: 'Access Mode', path: 'spec.accessModes', derive: accessMode },
     { header: 'StorageClass', path: 'spec.storageClassName' },
   ],
   PersistentVolume: [
     { header: 'Capacity', path: 'spec.capacity.storage' },
-    { header: 'Access Mode', path: 'spec.accessModes', derive: first('spec.accessModes') },
+    { header: 'Access Mode', path: 'spec.accessModes', derive: accessMode },
     { header: 'Reclaim', path: 'spec.persistentVolumeReclaimPolicy' },
     { header: 'Claim', path: 'spec.claimRef', cell: 'mono', derive: pvClaim },
     { header: 'StorageClass', path: 'spec.storageClassName' },

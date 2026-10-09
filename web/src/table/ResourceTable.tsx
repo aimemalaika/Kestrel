@@ -115,6 +115,7 @@ function RouteHost({ value }: { value: string }) {
 const TLS_TONE: Record<string, string> = {
   edge: 'text-emerald-400',
   reencrypt: 'text-emerald-400',
+  passthrough: 'text-emerald-400',
   Enabled: 'text-emerald-400',
 }
 

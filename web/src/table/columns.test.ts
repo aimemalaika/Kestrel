@@ -216,6 +216,6 @@ describe('per-kind rich columns', () => {
       spec: { claimRef: { namespace: 'ns', name: 'c1' }, accessModes: ['ReadWriteOnce'] },
     }
     expect(val('PersistentVolume', 'Claim', pv)).toBe('ns/c1')
-    expect(val('PersistentVolume', 'Access Mode', pv)).toBe('ReadWriteOnce')
+    expect(val('PersistentVolume', 'Access Mode', pv)).toBe('RWO')
   })
 })
