@@ -1,0 +1,35 @@
+# Kestrel — single-operator values (minimal, in-cluster, NO login).
+#
+# Everyone who can reach the Service gets the same full operator view, using the
+# pod ServiceAccount's cluster-wide read grant. There is NO OIDC login here.
+# Only run this way behind strong network controls (no Ingress; reach it with
+# `kubectl port-forward`). For multi-user access use values-oidc.yaml.
+#
+#   helm install kestrel ../../deploy/chart/kestrel \
+#     --set image.tag=1.0.0 \
+#     -f values-single-operator.yaml
+
+image:
+  repository: ghcr.io/aimemalaika/kestrel
+  tag: "1.0.0"        # pin a real tag; empty defaults to the chart appVersion
+
+replicaCount: 1
+
+# Broad cluster read for the informer/SSE cache is on by default (rbac.create +
+# rbac.clusterRead both default true), so nothing to set here. The ClusterRole is
+# get/list/watch only — no impersonate, no serviceaccounts/token.
+
+config:
+  logLevel: "info"
+  # OIDC left empty => single-operator mode (no login). This is the default.
+  # Rate limiting defaults (20 req/s, burst 40) are fine.
+  # trustedProxy stays false — there is no ingress in front rewriting XFF.
+
+# No Ingress: keep it unreachable from outside the cluster.
+#   kubectl port-forward svc/kestrel 8080:8080
+ingress:
+  enabled: false
+
+service:
+  type: ClusterIP
+  port: 8080

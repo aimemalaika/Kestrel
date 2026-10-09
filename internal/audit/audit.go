@@ -12,15 +12,9 @@ import (
 )
 
 // Event is a single audited mutation. One JSON line is emitted per Event.
-//
-// SECURITY: User is an UNAUTHENTICATED claim in B6. It comes from the
-// Impersonate-User request header (defaulting to the single operator) and is
-// not verified against any real identity, so a caller can set it arbitrarily.
-// B7 (OIDC + impersonation + RBAC) replaces it with an authenticated identity;
-// until then, treat the audit user as self-asserted.
 type Event struct {
 	Time      string `json:"time"`  // RFC3339
-	User      string `json:"user"`  // from auth.From(ctx); UNAUTHENTICATED until B7 (see above)
+	User      string `json:"user"`  // the authenticated session identity, from auth.From(ctx)
 	Verb      string `json:"verb"`  // apply | delete
 	Group     string `json:"group"` // internal group ("" for core)
 	Version   string `json:"version"`
