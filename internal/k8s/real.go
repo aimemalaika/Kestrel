@@ -80,8 +80,11 @@ func (c *Real) resourceClient(ref Ref) dynamic.ResourceInterface {
 	return ri.Namespace(ref.Namespace)
 }
 
-func (c *Real) List(ctx context.Context, ref Ref) ([]Object, error) {
-	l, err := c.resourceClient(ref).List(ctx, metav1.ListOptions{})
+func (c *Real) List(ctx context.Context, ref Ref, opts ListOptions) ([]Object, error) {
+	l, err := c.resourceClient(ref).List(ctx, metav1.ListOptions{
+		LabelSelector: opts.LabelSelector,
+		FieldSelector: opts.FieldSelector,
+	})
 	if err != nil {
 		return nil, mapErr(err)
 	}

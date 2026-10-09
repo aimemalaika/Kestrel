@@ -88,7 +88,7 @@ func TestGroupedResourceListGet(t *testing.T) {
 	c := newTestReal(t)
 	ctx := context.Background()
 	ref := Ref{GVR: GVR{Group: "apps", Version: "v1", Resource: "deployments"}, Namespace: "default"}
-	deps, err := c.List(ctx, ref)
+	deps, err := c.List(ctx, ref, ListOptions{})
 	if err != nil || len(deps) != 1 {
 		t.Fatalf("deployments: %v %d", err, len(deps))
 	}
@@ -117,12 +117,12 @@ func TestListGet(t *testing.T) {
 	c := newTestReal(t)
 	ctx := context.Background()
 	nsRef := Ref{GVR: GVR{Version: "v1", Resource: "namespaces"}}
-	nss, err := c.List(ctx, nsRef)
+	nss, err := c.List(ctx, nsRef, ListOptions{})
 	if err != nil || len(nss) != 2 {
 		t.Fatalf("namespaces: %v %d", err, len(nss))
 	}
 	podRef := Ref{GVR: GVR{Version: "v1", Resource: "pods"}, Namespace: "default"}
-	pods, err := c.List(ctx, podRef)
+	pods, err := c.List(ctx, podRef, ListOptions{})
 	if err != nil || len(pods) != 2 {
 		t.Fatalf("pods in default: %v %d", err, len(pods))
 	}
@@ -150,5 +150,33 @@ func TestUnimplemented(t *testing.T) {
 	var se *StatusError
 	if !errors.As(err, &se) || se.Code != 501 {
 		t.Fatalf("want 501, got %v", err)
+	}
+}
+
+// List honors a label selector end-to-end (proves ListOptions threading).
+func TestListLabelSelector(t *testing.T) {
+	keep := obj("Pod", "default", "keep")
+	keep.SetLabels(map[string]string{"app": "keep"})
+	dyn := dynfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(),
+		map[schema.GroupVersionResource]string{{Version: "v1", Resource: "pods"}: "PodList"},
+		keep, obj("Pod", "default", "drop"),
+	)
+	cs := kubefake.NewSimpleClientset()
+	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
+	fd.Resources = []*metav1.APIResourceList{{
+		GroupVersion: "v1",
+		APIResources: []metav1.APIResource{{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: []string{"get", "list"}}},
+	}}
+	c := NewReal(NewAccessorFrom(dyn, fd))
+	ref := Ref{GVR: GVR{Version: "v1", Resource: "pods"}, Namespace: "default"}
+	ctx := context.Background()
+
+	all, err := c.List(ctx, ref, ListOptions{})
+	if err != nil || len(all) != 2 {
+		t.Fatalf("unfiltered: %v %d", err, len(all))
+	}
+	filtered, err := c.List(ctx, ref, ListOptions{LabelSelector: "app=keep"})
+	if err != nil || len(filtered) != 1 {
+		t.Fatalf("label selector should filter to 1: %v %d", err, len(filtered))
 	}
 }

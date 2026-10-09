@@ -110,7 +110,11 @@ func (a *api) resource(w http.ResponseWriter, r *http.Request, segs []string) {
 	switch r.Method {
 	case http.MethodGet:
 		if ref.Name == "" {
-			items, err := a.d.Resources.List(r.Context(), ref)
+			opts := k8s.ListOptions{
+				LabelSelector: r.URL.Query().Get("labelSelector"),
+				FieldSelector: r.URL.Query().Get("fieldSelector"),
+			}
+			items, err := a.d.Resources.List(r.Context(), ref, opts)
 			if err != nil {
 				WriteError(w, err)
 				return

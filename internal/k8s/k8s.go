@@ -72,11 +72,17 @@ func Conflict(format string, a ...any) *StatusError {
 	return &StatusError{http.StatusConflict, "Conflict", fmt.Sprintf(format, a...)}
 }
 
+// ListOptions carries the standard k8s list selectors (empty = unfiltered).
+type ListOptions struct {
+	LabelSelector string
+	FieldSelector string
+}
+
 // Client is the cluster seam. Implementations must return *StatusError for
 // API errors so the HTTP layer can map them to real statuses.
 type Client interface {
 	Catalog(ctx context.Context) ([]CatalogEntry, error)
-	List(ctx context.Context, ref Ref) ([]Object, error)
+	List(ctx context.Context, ref Ref, opts ListOptions) ([]Object, error)
 	Get(ctx context.Context, ref Ref) (Object, error)
 	// Apply performs Server-Side Apply; dryRun must not persist.
 	Apply(ctx context.Context, obj Object, dryRun bool) (Object, error)

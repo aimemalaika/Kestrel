@@ -55,8 +55,8 @@ func Ref(group, version, ns, res, name string) k8s.Ref {
 	}
 }
 
-func (s *Service) List(ctx context.Context, ref k8s.Ref) ([]k8s.Object, error) {
-	items, err := s.K8s.List(ctx, ref)
+func (s *Service) List(ctx context.Context, ref k8s.Ref, opts k8s.ListOptions) ([]k8s.Object, error) {
+	items, err := s.K8s.List(ctx, ref, opts)
 	if items == nil {
 		items = []k8s.Object{}
 	}
