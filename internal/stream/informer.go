@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/aimemalaika/Kestrel/internal/auth"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 )
 
@@ -62,6 +63,7 @@ type Hub struct {
 	resolve    func(k8s.GVR) error
 	bufSize    int
 	syncTO     time.Duration
+	authz      Authorizer                              // nil ⇒ no per-user SSE read filter (#46)
 	newInforms func(k8s.GVR) cache.SharedIndexInformer // overridable; counts creations in tests
 
 	mu      sync.Mutex
@@ -86,6 +88,15 @@ func WithSubscriberBuffer(n int) HubOption {
 		}
 	}
 }
+
+// WithAuthorizer wires the per-user SSE read filter (#46). When set, every
+// object-bearing envelope a subscriber would receive — both the initial sync
+// snapshot and live watch deltas — is gated by a namespace-level CanList check
+// for the subscriber's own identity, so a shared informer watching as the
+// ServiceAccount cannot leak objects to a user whose RBAC forbids them. With no
+// authorizer (the default, and the --mock path) filtering is off: today's
+// behavior is preserved.
+func WithAuthorizer(a Authorizer) HubOption { return func(h *Hub) { h.authz = a } }
 
 // WithSyncTimeout sets the first-sync timeout.
 func WithSyncTimeout(d time.Duration) HubOption {
@@ -122,10 +133,12 @@ const metaNamespaceAll = "" // metav1.NamespaceAll
 // NewHubFromAccessor is the production constructor: the RESTMapper validates
 // that the requested GVR exists.
 //
-// #46: the shared informer hub watches as the ServiceAccount, so SSE reads are
-// NOT yet filtered per user — every subscriber sees the SA's view regardless of
-// their own RBAC. B7 forwards tokens only on the request/CRUD path; the
-// per-user cache + SSE read filter is issue #46 (next sprint).
+// #46: the shared informer hub watches as the ServiceAccount, but when an
+// Authorizer is wired (WithAuthorizer, the production path) the per-user SSE
+// read filter is applied in Hub.Watch — the initial sync snapshot and every
+// live delta are gated by a namespace-level CanList for the subscriber's own
+// identity, so a subscriber only ever sees objects their RBAC permits. With no
+// authorizer (tests/--mock) or no user token on ctx, filtering is off.
 func NewHubFromAccessor(acc k8s.ClusterAccessor, opts ...HubOption) *Hub {
 	mapper := acc.Mapper()
 	resolve := func(g k8s.GVR) error {
@@ -254,6 +267,32 @@ func (e *entry) dispatch(typ string, o any) {
 	}
 }
 
+// deliver routes one live envelope: object-bearing deltas (Added/Modified/
+// Deleted) go through the per-user filter by their object's namespace; Bookmark
+// and Error are always sent unfiltered. It returns false only when ctx was
+// cancelled mid-send.
+func deliver(env Envelope, sendObject func(string, Envelope) bool, send func(Envelope) bool) bool {
+	switch env.Type {
+	case Bookmark, Error:
+		// Only these two carry no object and are safe to pass unfiltered.
+		return send(env)
+	default:
+		// Added, Modified, Deleted — and, deliberately, any future object-bearing
+		// envelope type — go through the per-user filter. Failing closed here means
+		// a new type can never leak by default.
+		return sendObject(envNamespace(env), env)
+	}
+}
+
+// envNamespace reads metadata.namespace from an object-bearing envelope; "" for
+// cluster-scoped resources (or a malformed object, which then fails closed when
+// filtering is on).
+func envNamespace(env Envelope) string {
+	md, _ := env.Object["metadata"].(map[string]any)
+	ns, _ := md["namespace"].(string)
+	return ns
+}
+
 // Watch implements Source.
 func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 	if h.resolve != nil {
@@ -289,6 +328,31 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 	rv := e.informer.LastSyncResourceVersion()
 	e.mu.Unlock()
 
+	// Per-user SSE read filter (#46). Capture the subscriber's identity token once
+	// at Watch time. Filtering is ON only when an authorizer is wired AND this
+	// connection carries a user token; otherwise it is OFF and allow() is a no-op,
+	// which preserves today's behavior (no authorizer in tests/--mock; no token
+	// when OIDC is disabled / single-operator). The CanList check runs in THIS
+	// subscriber's own goroutine with its own ctx — never in the shared dispatch
+	// path — so the informer and other subscribers are unaffected. It FAILS CLOSED:
+	// on deny or any error the object is skipped and never sent.
+	filtering := h.authz != nil && auth.From(ctx).Token != ""
+	var logErr sync.Once
+	allow := func(ns string) bool {
+		if !filtering {
+			return true
+		}
+		ok, err := h.authz.CanList(ctx, ref.GVR, ns)
+		if err != nil {
+			logErr.Do(func() {
+				log.Printf("stream: authz check failed for %s/%s/%s in ns %q: %v (filtering out)",
+					ref.Group, ref.Version, ref.Resource, ns, err)
+			})
+			return false
+		}
+		return ok
+	}
+
 	out := make(chan Envelope)
 	go func() {
 		defer close(out)
@@ -306,24 +370,38 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 				return false
 			}
 		}
+		// sendObject gates an object-bearing envelope through the per-user filter:
+		// allowed ⇒ send; denied/error ⇒ skip (never sent). Returns false only when
+		// ctx was cancelled mid-send (so the caller stops).
+		sendObject := func(ns string, env Envelope) bool {
+			if !allow(ns) {
+				return true // skip: filtered OUT, but keep the stream running
+			}
+			return send(env)
+		}
 		var maxRV uint64
 		for _, o := range snapshot {
 			u, ok := o.(*unstructured.Unstructured)
 			if !ok || !s.match(u) {
 				continue
 			}
+			// Bump the bookmark RV before the RBAC filter so the bookmark reflects the
+			// resourceVersion the client has caught up to, independent of what it may
+			// see.
 			if n, err := strconv.ParseUint(u.GetResourceVersion(), 10, 64); err == nil && n > maxRV {
 				maxRV = n
 			}
 			// Deep-copy: the informer cache's object is shared across subscribers
 			// and must never be exposed to mutation (mirrors the dispatch path).
-			if !send(Envelope{Type: Added, Object: u.DeepCopy().Object}) {
+			if !sendObject(u.GetNamespace(), Envelope{Type: Added, Object: u.DeepCopy().Object}) {
 				return
 			}
 		}
 		if rv == "" {
 			rv = strconv.FormatUint(maxRV, 10)
 		}
+		// Bookmark is never filtered: it is metadata, carries no object, and keeps
+		// the client's resync position consistent.
 		if !send(Envelope{Type: Bookmark, ResourceVersion: rv}) {
 			return
 		}
@@ -332,7 +410,7 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 			case <-ctx.Done():
 				return
 			case env := <-s.in:
-				if !send(env) {
+				if !deliver(env, sendObject, send) {
 					return
 				}
 			case <-s.kick:
@@ -340,10 +418,11 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 				for {
 					select {
 					case env := <-s.in:
-						if !send(env) {
+						if !deliver(env, sendObject, send) {
 							return
 						}
 					default:
+						// Error is never filtered: the client must learn it has to resync.
 						send(Envelope{Type: Error, Message: "subscriber too slow; reconnect to resync"})
 						return
 					}
