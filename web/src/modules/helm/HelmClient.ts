@@ -1,4 +1,5 @@
 import { createMockHelm } from './helmMock'
+import { createHttpHelm } from './httpHelm'
 
 export interface Release {
   name: string
@@ -38,8 +39,8 @@ export interface HelmClient {
 let shared: HelmClient | undefined
 
 export function createHelmClient(): HelmClient {
-  const impl = (import.meta.env.VITE_HELM as string | undefined) ?? 'mock'
-  if (impl !== 'mock') throw new Error(`Unknown helm client: ${impl}`)
-  shared ??= createMockHelm()
+  const impl = (import.meta.env.VITE_HELM as string | undefined) ?? 'http'
+  if (impl !== 'mock' && impl !== 'http') throw new Error(`Unknown helm client: ${impl}`)
+  shared ??= impl === 'mock' ? createMockHelm() : createHttpHelm()
   return shared
 }
