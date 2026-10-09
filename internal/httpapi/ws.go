@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,11 +27,33 @@ const (
 	pingPeriod = (pongWait * 9) / 10
 )
 
-// wsUpgrader upgrades exec/port-forward GETs. CheckOrigin allows any origin
-// because the SPA is served same-origin behind this binary.
-// B7: tighten origin check under auth.
+// wsUpgrader upgrades exec/port-forward GETs. CheckOrigin enforces a same-origin
+// policy: a request with no Origin header (a non-browser client) is allowed; a
+// request carrying an Origin must match the request's scheme+host, so a browser
+// on another site cannot open a cross-origin WebSocket to these endpoints.
 var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: func(*http.Request) bool { return true },
+	CheckOrigin: checkSameOrigin,
+}
+
+// checkSameOrigin is the wsUpgrader origin policy; the authn middleware mirrors
+// it for the WS/SSE upgrade paths so the two agree.
+func checkSameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // non-browser client; no browser same-origin guarantee to enforce
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if !strings.EqualFold(u.Host, r.Host) {
+		return false
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return u.Scheme == "" || strings.EqualFold(u.Scheme, scheme)
 }
 
 // podRef parses a logs-style pod path under the given /api prefix and requires a

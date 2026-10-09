@@ -6,8 +6,11 @@ import (
 	"io"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
+
+	"github.com/aimemalaika/Kestrel/internal/auth"
 )
 
 // ExecOptions are the exec query options.
@@ -31,13 +34,30 @@ type RealExec struct{ acc ClusterAccessor }
 func NewRealExec(acc ClusterAccessor) *RealExec { return &RealExec{acc: acc} }
 
 func (e *RealExec) Stream(ctx context.Context, ns, pod string, o ExecOptions, stdin io.Reader, stdout io.Writer, resize <-chan remotecommand.TerminalSize) error {
-	kube := e.acc.Kubernetes()
-	if kube == nil {
-		return errors.New("typed kubernetes client not configured")
-	}
 	cfg := e.acc.RESTConfig()
 	if cfg == nil {
 		return errors.New("rest config not configured")
+	}
+	// B7: exec as the user on ctx. The SPDY executor's config carries auth, so it
+	// MUST be the per-user config when a token is present; the request URL is
+	// built from a matching clientset.
+	kube := e.acc.Kubernetes()
+	if token := auth.From(ctx).Token; token != "" {
+		cfg = userConfig(cfg, token)
+		k, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return mapErr(err)
+		}
+		kube = k
+	}
+	if kube == nil {
+		// No base clientset and no token: build one from the (SA) config so exec
+		// still works in single-operator mode.
+		k, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return mapErr(err)
+		}
+		kube = k
 	}
 	cmd := o.Command
 	if len(cmd) == 0 {

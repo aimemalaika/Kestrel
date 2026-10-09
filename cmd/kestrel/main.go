@@ -2,6 +2,8 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
 	"flag"
 	"io/fs"
 	"log"
@@ -9,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/aimemalaika/Kestrel/internal/audit"
+	"github.com/aimemalaika/Kestrel/internal/auth"
+	"github.com/aimemalaika/Kestrel/internal/authn"
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/resource"
@@ -22,6 +26,19 @@ func main() {
 	mock := flag.Bool("mock", false, "serve stub data instead of connecting to a cluster")
 	protectedNS := flag.String("protected-namespaces", strings.Join(resource.DefaultProtectedNamespaces, ","),
 		"comma-separated namespaces hard-blocked for apply/delete (empty disables the guard)")
+
+	// OIDC login + token forwarding. If --oidc-issuer is empty, OIDC is disabled
+	// and Kestrel runs as the single operator (its own ServiceAccount credentials).
+	oidcIssuer := flag.String("oidc-issuer", "", "OIDC issuer URL; empty disables login (single-operator mode)")
+	oidcClientID := flag.String("oidc-client-id", "", "OIDC client id")
+	oidcClientSecret := flag.String("oidc-client-secret", "", "OIDC client secret")
+	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback)")
+	oidcGroupsClaim := flag.String("oidc-groups-claim", "groups", "id_token claim carrying the user's groups")
+	oidcUsernameClaim := flag.String("oidc-username-claim", "email", "id_token claim used for the display username")
+	sessionKey := flag.String("session-key", "", "HMAC key for session cookies; empty generates a random key (sessions won't survive restart)")
+
+	tlsCert := flag.String("tls-cert", "", "TLS certificate file; with --tls-key, serve HTTPS")
+	tlsKey := flag.String("tls-key", "", "TLS key file; with --tls-cert, serve HTTPS")
 	flag.Parse()
 
 	protected := resource.ProtectedSet(strings.Split(*protectedNS, ","))
@@ -54,10 +71,74 @@ func main() {
 		deps.Resources = resource.NewServiceWith(k8s.Stub{}, protected, auditor)
 		log.Printf("running with --mock stub data")
 	}
+
 	mux := http.NewServeMux()
+
+	// authn is the outer middleware; nil when OIDC is disabled.
+	var authnMW func(http.Handler) http.Handler
+	if *oidcIssuer != "" {
+		key := sessionKeyBytes(*sessionKey)
+		authr, err := authn.NewAuthenticator(context.Background(), authn.Config{
+			Issuer:        *oidcIssuer,
+			ClientID:      *oidcClientID,
+			ClientSecret:  *oidcClientSecret,
+			RedirectURL:   *oidcRedirectURL,
+			GroupsClaim:   *oidcGroupsClaim,
+			UsernameClaim: *oidcUsernameClaim,
+		}, key)
+		if err != nil {
+			log.Fatalf("oidc setup: %v", err)
+		}
+		defer authr.Close() // stop the session janitor on shutdown
+		mux.HandleFunc("/auth/login", authr.Login)
+		mux.HandleFunc("/auth/callback", authr.Callback)
+		mux.HandleFunc("/auth/logout", authr.Logout)
+		authnMW = authr.Middleware
+		log.Printf("OIDC login enabled (issuer %s); forwarding user id_tokens to the apiserver", *oidcIssuer)
+		log.Printf("NOTE: the kube-apiserver must trust this SAME issuer for forwarded tokens to authenticate")
+	} else {
+		mux.Handle("/auth/", authn.NotConfiguredHandler())
+		log.Printf("WARNING: --oidc-issuer not set: OIDC DISABLED, running as single operator %q; "+
+			"all /api access uses Kestrel's own ServiceAccount credentials and no login is required", auth.Operator)
+	}
+
 	mux.Handle("/api/", httpapi.New(deps))
 	mux.Handle("/", httpapi.SPA(dist))
 
+	var handler http.Handler = mux
+	if authnMW != nil {
+		handler = authnMW(mux)
+	}
+
 	log.Printf("kestrel listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, mux))
+	if *tlsCert != "" && *tlsKey != "" {
+		log.Printf("serving HTTPS (TLS)")
+		log.Fatal(http.ListenAndServeTLS(*addr, *tlsCert, *tlsKey, handler))
+	} else {
+		log.Fatal(http.ListenAndServe(*addr, handler))
+	}
+}
+
+// minSessionKeyLen is the minimum accepted --session-key length. The key is an
+// HMAC-SHA256 secret, so a short/low-entropy key is forgeable; require at least
+// a full HMAC block's worth of bytes.
+const minSessionKeyLen = 32
+
+// sessionKeyBytes returns the HMAC key for session cookies. A provided
+// --session-key is used verbatim (and must be at least minSessionKeyLen bytes);
+// otherwise a random key is generated and a warning is logged (sessions won't
+// survive a restart).
+func sessionKeyBytes(flagVal string) []byte {
+	if flagVal != "" {
+		if len(flagVal) < minSessionKeyLen {
+			log.Fatalf("--session-key too short: %d bytes, need at least %d", len(flagVal), minSessionKeyLen)
+		}
+		return []byte(flagVal)
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatalf("generate session key: %v", err)
+	}
+	log.Printf("WARNING: --session-key not set: using a random key; sessions won't survive a restart")
+	return b
 }

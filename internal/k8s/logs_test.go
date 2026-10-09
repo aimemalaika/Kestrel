@@ -29,6 +29,22 @@ func TestRealLogsStreamsFromFakeClientset(t *testing.T) {
 	}
 }
 
+// TestRealLogsTokenWithoutRESTConfigFailsClosed covers FIX 2: when a user token
+// is present but the accessor has no rest.Config to build a per-user client, the
+// stream must FAIL CLOSED (error) rather than silently serve logs with the SA
+// clientset. (NewAccessorFromAll supplies a typed clientset but a nil cfg.)
+func TestRealLogsTokenWithoutRESTConfigFailsClosed(t *testing.T) {
+	kube := kubefake.NewSimpleClientset()
+	acc := NewAccessorFromAll(dynfake.NewSimpleDynamicClient(runtime.NewScheme()), &discfake.FakeDiscovery{}, kube)
+	if acc.RESTConfig() != nil {
+		t.Fatal("precondition: expected nil RESTConfig")
+	}
+	ctx := ctxTok("user-id-token")
+	if _, err := NewRealLogs(acc).Stream(ctx, "default", "web-1", LogOptions{Container: "c"}); err == nil {
+		t.Fatal("expected an error (fail closed) when a token is present but RESTConfig is nil")
+	}
+}
+
 func TestNewAccessorFromHasNilKube(t *testing.T) {
 	acc := NewAccessorFrom(dynfake.NewSimpleDynamicClient(runtime.NewScheme()), &discfake.FakeDiscovery{})
 	if acc.Kubernetes() != nil {
