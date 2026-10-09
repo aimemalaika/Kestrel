@@ -1,0 +1,17 @@
+apiVersion: v2
+name: kestrel
+description: Kestrel — a Kubernetes operations console (single Go binary serving an embedded SPA).
+type: application
+# Chart version (0.x while the chart stabilises). appVersion tracks the Kestrel release.
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - kubernetes
+  - console
+  - dashboard
+  - operations
+home: https://github.com/aimemalaika/Kestrel
+sources:
+  - https://github.com/aimemalaika/Kestrel
+maintainers:
+  - name: Kestrel maintainers

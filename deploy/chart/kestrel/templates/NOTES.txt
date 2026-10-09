@@ -1,0 +1,33 @@
+Kestrel {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+{{- if not .Values.config.oidc.issuer }}
+
+  MODE: single-operator (NO OIDC login configured).
+  Everyone who can reach the Service has full operator access using the pod
+  ServiceAccount's cluster-wide read view. Put it behind network controls, or
+  set config.oidc.issuer to require login. See the chart README.
+{{- else }}
+
+  MODE: OIDC login enabled (issuer {{ .Values.config.oidc.issuer }}).
+  IMPORTANT: the kube-apiserver MUST be configured to trust this SAME issuer —
+  Kestrel forwards each user's token to the apiserver (token forwarding).
+{{- end }}
+
+Access:
+{{- if .Values.ingress.enabled }}
+{{- if .Values.ingress.host }}
+  http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}{{ .Values.ingress.path }}
+{{- else }}
+  via the configured Ingress host(s).
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kestrel.fullname" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080
+{{- end }}
+
+{{- if not (include "kestrel.hasSecret" .) }}
+
+  NOTE: no session key configured — the binary will generate a random one at
+  startup. Sessions will NOT survive restarts or work across replicas. Set a
+  stable session key via existingSecret.name (or secret.create) for production.
+{{- end }}

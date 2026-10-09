@@ -1,0 +1,51 @@
+{{- if .Values.rbac.create }}
+# ---------------------------------------------------------------------------
+# Kestrel RBAC
+#
+# This ClusterRole grants CLUSTER-WIDE READ (get/list/watch) on all resources.
+#
+# WHY SO BROAD:
+#   Kestrel authorizes each user REQUEST by FORWARDING that user's own OIDC
+#   token to the apiserver (token forwarding, NOT impersonation). However, the
+#   shared informer / SSE cache watches the cluster AS THIS SERVICEACCOUNT, so
+#   the SA must be able to get/list/watch everything it caches — including
+#   Secrets. Per-user delivery over SSE is gated by the read filter (issue #46),
+#   which is what prevents cross-user leakage. The SA is deliberately broad-read.
+#
+# WHAT IS DELIBERATELY ABSENT:
+#   - NO `impersonate` (users, groups, serviceaccounts) — Kestrel never impersonates.
+#   - NO `serviceaccounts/token` — Kestrel never mints tokens.
+#   This is READ-ONLY: only get/list/watch, never create/update/delete.
+#
+# Set rbac.clusterRead=false to omit the broad grant (most read features break).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "kestrel.fullname" . }}
+  labels:
+    {{- include "kestrel.labels" . | nindent 4 }}
+rules:
+{{- if .Values.rbac.clusterRead }}
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+{{- end }}
+{{- with .Values.rbac.extraRules }}
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "kestrel.fullname" . }}
+  labels:
+    {{- include "kestrel.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "kestrel.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "kestrel.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
