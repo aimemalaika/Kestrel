@@ -10,6 +10,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/resource"
+	"github.com/aimemalaika/Kestrel/internal/stream"
 	"github.com/aimemalaika/Kestrel/web"
 )
 
@@ -35,6 +36,9 @@ func main() {
 			log.Fatalf("cluster clients: %v", err)
 		}
 		deps.Resources = resource.NewService(k8s.NewReal(acc))
+		hub := stream.NewHubFromAccessor(acc)
+		defer hub.Close()
+		deps.Stream = hub
 		log.Printf("connected to cluster %s", cfg.Host)
 	} else {
 		log.Printf("running with --mock stub data")
