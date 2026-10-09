@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -295,7 +295,8 @@ func (a *api) logs(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			if err != io.EOF && r.Context().Err() == nil {
-				log.Printf("log stream read error (%s/%s): %v", ref.Namespace, ref.Name, err)
+				slog.Warn("log stream read error",
+					slog.String("namespace", ref.Namespace), slog.String("name", ref.Name), slog.Any("error", err))
 			}
 			return
 		}

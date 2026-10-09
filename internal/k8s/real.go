@@ -3,7 +3,7 @@ package k8s
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -115,7 +115,7 @@ func (c *Real) clientsFor(ctx context.Context) (dynamic.Interface, kubernetes.In
 		// keep its TLS), but never silently fall back to the SA: failing closed is
 		// the safe choice for a security boundary. Return nil clients so the call
 		// surfaces an error rather than running with SA privileges.
-		log.Printf("per-user client build failed (dyn=%v kube=%v); failing closed", derr, kerr)
+		slog.Error("per-user client build failed; failing closed", slog.Any("dyn_err", derr), slog.Any("kube_err", kerr))
 		return nil, nil
 	}
 	// Bound the cache. The token rotates on every refresh, so entries orphan

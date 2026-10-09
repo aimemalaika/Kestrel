@@ -3,7 +3,7 @@ package stream
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -207,7 +207,8 @@ func (h *Hub) acquire(g k8s.GVR) (*entry, error) {
 		return nil, err
 	}
 	_ = e.informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
-		log.Printf("stream: watch %s/%s/%s: %v (reflector will retry/relist)", g.Group, g.Version, g.Resource, err)
+		slog.Warn("stream: watch error (reflector will retry/relist)",
+			slog.String("group", g.Group), slog.String("version", g.Version), slog.String("resource", g.Resource), slog.Any("error", err))
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
@@ -345,8 +346,9 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 		ok, err := h.authz.CanList(ctx, ref.GVR, ns)
 		if err != nil {
 			logErr.Do(func() {
-				log.Printf("stream: authz check failed for %s/%s/%s in ns %q: %v (filtering out)",
-					ref.Group, ref.Version, ref.Resource, ns, err)
+				slog.Warn("stream: authz check failed (filtering out)",
+					slog.String("group", ref.Group), slog.String("version", ref.Version),
+					slog.String("resource", ref.Resource), slog.String("namespace", ns), slog.Any("error", err))
 			})
 			return false
 		}
