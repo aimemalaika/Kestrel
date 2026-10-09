@@ -411,3 +411,27 @@ func TestStreamStopsOnCancel(t *testing.T) {
 		t.Fatal("stream handler did not return after context cancel (goroutine leak)")
 	}
 }
+
+// listSpy captures the ListOptions the resource layer receives.
+type listSpy struct {
+	k8s.Stub
+	got *k8s.ListOptions
+}
+
+func (s listSpy) List(_ context.Context, _ k8s.Ref, o k8s.ListOptions) ([]k8s.Object, error) {
+	*s.got = o
+	return nil, nil
+}
+
+// The list handler must forward ?labelSelector/?fieldSelector (how a client
+// fetches events for one object, e.g. fieldSelector=involvedObject.name=p1).
+func TestListSelectorsForwarded(t *testing.T) {
+	var got k8s.ListOptions
+	deps := httpapi.DefaultDeps()
+	deps.Resources = resource.NewService(listSpy{got: &got})
+	do(t, httpapi.New(deps), "GET",
+		"/api/core/v1/namespaces/default/events?fieldSelector=involvedObject.name%3Dp1&labelSelector=app%3Dx", "")
+	if got.FieldSelector != "involvedObject.name=p1" || got.LabelSelector != "app=x" {
+		t.Errorf("selectors not forwarded: %+v", got)
+	}
+}

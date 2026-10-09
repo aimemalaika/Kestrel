@@ -32,7 +32,7 @@ func StubObject(ref Ref) Object {
 	return Object{"apiVersion": apiVersion, "kind": "Stub", "metadata": meta}
 }
 
-func (Stub) List(_ context.Context, ref Ref) ([]Object, error) {
+func (Stub) List(_ context.Context, ref Ref, _ ListOptions) ([]Object, error) {
 	items := make([]Object, 0, 2)
 	for i := 1; i <= 2; i++ {
 		r := ref
