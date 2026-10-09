@@ -495,6 +495,14 @@ func (c *Client) fetchToken(ctx context.Context, ch *challenge) (string, error) 
 	if err != nil {
 		return "", errf(http.StatusBadGateway, "BadGateway", "registry auth: bad realm %q: %v", ch.realm, err)
 	}
+	// Require an https realm before making ANY token request (anonymous included).
+	// A hostile/compromised registry can point the realm at an internal http://
+	// host; fetching it would be a blind SSRF (and, in the credentialed case,
+	// leak creds). Refuse rather than contact a non-https realm at all.
+	if u.Scheme != "https" {
+		return "", errf(http.StatusBadGateway, "BadGateway",
+			"registry auth: refusing non-https token realm %q", ch.realm)
+	}
 	q := u.Query()
 	if ch.service != "" {
 		q.Set("service", ch.service)

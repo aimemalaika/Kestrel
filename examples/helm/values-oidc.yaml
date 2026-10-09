@@ -1,0 +1,91 @@
+# Kestrel — OIDC multi-user values (login + per-user token forwarding).
+#
+# Each user logs in via OIDC and Kestrel forwards THEIR id_token to the
+# kube-apiserver, so every read/write/logs/exec runs as that user under the
+# cluster's real RBAC.
+#
+#   >>> HARD REQUIREMENT <<<
+#   The kube-apiserver MUST be configured to trust the SAME OIDC issuer set in
+#   config.oidc.issuer below (apiserver --oidc-issuer-url / --oidc-client-id).
+#   Otherwise every forwarded user request is rejected. See ../oidc/.
+#
+# This example also turns on the registry + a chart repo, an Ingress with TLS,
+# and trusted-proxy (because the ingress rewrites X-Forwarded-For).
+#
+#   # Create the secret the chart will read (NOT committed to this file):
+#   kubectl create secret generic kestrel-secrets \
+#     --from-literal=oidc-client-secret='<oidc client secret>' \
+#     --from-literal=session-key="$(openssl rand -base64 48)" \
+#     --from-literal=registry-password='<registry password>'
+#
+#   helm install kestrel ../../deploy/chart/kestrel \
+#     --set image.tag=1.0.0 \
+#     -f values-oidc.yaml
+
+image:
+  repository: ghcr.io/aimemalaika/kestrel
+  tag: "1.0.0"
+
+replicaCount: 2        # stateless HTTP layer; a stable session-key is required
+                       # so sessions work across replicas (see existingSecret).
+
+config:
+  logLevel: "info"
+
+  # Behind the ingress below, trust X-Forwarded-For so per-caller rate limiting
+  # and request logging see the real client IP.
+  trustedProxy: true
+
+  oidc:
+    # The apiserver MUST trust this SAME issuer (see note at top).
+    issuer: "https://issuer.example.com"
+    clientId: "kestrel"
+    # …/auth/callback on the externally reachable host.
+    redirectUrl: "https://kestrel.example.com/auth/callback"
+    groupsClaim: "groups"      # id_token claim carrying the user's groups
+    usernameClaim: "email"     # id_token claim used for the display username
+    # The OIDC client secret is NOT set here — it comes from existingSecret below.
+
+  registry:
+    url: "https://registry.example.com"
+    username: "robot"
+    allowDelete: false
+    insecureSkipVerify: false  # never true in production
+    # registry password comes from existingSecret below.
+
+  # Chart repos for the Helm module — rendered to repeated --helm-repo name=url.
+  helmRepos:
+    - name: bitnami
+      url: https://charts.bitnami.com/bitnami
+
+# Read the three sensitive inputs (oidc client secret, session HMAC key, registry
+# password) from an existing Secret. Create it out-of-band (see the comment at
+# the top). These are injected as env vars and expanded into the flags.
+existingSecret:
+  name: kestrel-secrets
+  oidcClientSecretKey: oidc-client-secret
+  sessionKeyKey: session-key
+  registryPasswordKey: registry-password
+
+# Terminate TLS at the Ingress (recommended). cert-manager issues the cert here.
+ingress:
+  enabled: true
+  className: nginx
+  host: kestrel.example.com
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: kestrel-tls
+
+service:
+  type: ClusterIP
+  port: 8080
+  metrics: true              # expose the metrics port on the Service too
+
+# Scrape metrics with the Prometheus Operator (requires its CRDs).
+metrics:
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus      # match your Prometheus serviceMonitorSelector

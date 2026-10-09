@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -61,9 +62,35 @@ func New(d Deps) http.Handler {
 	return auth.Middleware(http.HandlerFunc(a.route))
 }
 
+// maxRequestBody caps the size of a JSON request body on the write endpoints
+// (/api/apply, /api/can-i). k8s manifests are small and the apiserver itself
+// caps request bodies at ~3 MiB, so 4 MiB is comfortably generous; the point is
+// to stop an arbitrarily large (unauthenticated in single-operator mode) body
+// from allocating unbounded memory.
+const maxRequestBody = 4 << 20 // 4 MiB
+
 type api struct {
 	d  Deps
 	pf *pfRegistry
+}
+
+// decodeBody caps r.Body at maxRequestBody and decodes JSON into dst. On a body
+// that exceeds the cap it writes a 413 contract error and returns false; on any
+// other decode error it writes a 400 and returns false. The caller proceeds
+// only when it returns true.
+func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeStatus(w, http.StatusRequestEntityTooLarge, "RequestEntityTooLarge",
+				"request body exceeds the limit of 4 MiB")
+			return false
+		}
+		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid JSON body: "+err.Error())
+		return false
+	}
+	return true
 }
 
 func (a *api) route(w http.ResponseWriter, r *http.Request) {
@@ -187,8 +214,7 @@ func (a *api) resource(w http.ResponseWriter, r *http.Request, segs []string) {
 
 func (a *api) apply(w http.ResponseWriter, r *http.Request) {
 	var obj k8s.Object
-	if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {
-		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid JSON body: "+err.Error())
+	if !decodeBody(w, r, &obj) {
 		return
 	}
 	out, err := a.d.Resources.Apply(r.Context(), obj, k8s.ApplyOptions{
@@ -204,8 +230,7 @@ func (a *api) apply(w http.ResponseWriter, r *http.Request) {
 
 func (a *api) canI(w http.ResponseWriter, r *http.Request) {
 	var req k8s.CanIRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeStatus(w, http.StatusBadRequest, "BadRequest", "invalid JSON body: "+err.Error())
+	if !decodeBody(w, r, &req) {
 		return
 	}
 	allowed, err := a.d.Resources.CanI(r.Context(), req)

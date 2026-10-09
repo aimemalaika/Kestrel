@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/aimemalaika/Kestrel/internal/k8s"
@@ -22,14 +23,18 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 // WriteError writes the contract error body with the real HTTP status.
-// *k8s.StatusError keeps its own status; anything else is a 500.
+// *k8s.StatusError values are already normalized (safe) and keep their own
+// status/message. Anything else is a 500 whose detail is LOGGED but NOT sent to
+// the client: a raw transport error (e.g. "dial tcp 10.x.x.x:443: connect
+// refused") would otherwise leak the internal apiserver host/IP.
 func WriteError(w http.ResponseWriter, err error) {
 	var se *k8s.StatusError
 	if errors.As(err, &se) {
 		writeStatus(w, se.Code, se.Reason, se.Message)
 		return
 	}
-	writeStatus(w, http.StatusInternalServerError, "InternalError", err.Error())
+	slog.Error("internal error serving request", slog.Any("error", err))
+	writeStatus(w, http.StatusInternalServerError, "InternalError", "internal error")
 }
 
 func writeStatus(w http.ResponseWriter, code int, reason, msg string) {

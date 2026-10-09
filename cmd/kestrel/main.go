@@ -158,7 +158,7 @@ func main() {
 	mux.Handle("/", httpapi.SPA(dist))
 
 	// Observability + protection middleware. Outermost→innermost:
-	//   recovery → request-logging → metrics → authn → rate-limit → mux
+	//   recovery → security-headers → request-logging → metrics → authn → rate-limit → mux
 	// Rate limiting is INNER of authn so the authenticated user is already on the
 	// context (keying per-user); authn 401s unauthenticated /api before it, while
 	// public paths (/auth/*, SPA) pass through authn and are limited by IP.
@@ -173,6 +173,11 @@ func main() {
 	}
 	handler = metrics.Middleware(handler)
 	handler = obs.RequestLogger(handler, *trustedProxy)
+	// SecurityHeaders is an OUTER middleware (just inside recovery) so baseline
+	// security headers apply to everything: the SPA and all of /api. It sets
+	// headers before delegating and does not wrap the ResponseWriter, so SSE/WS
+	// (Flusher/Hijacker) are unaffected.
+	handler = obs.SecurityHeaders(handler)
 	handler = obs.Recovery(handler)
 
 	// /metrics on a SEPARATE listener — NOT behind authn (a scraper has no

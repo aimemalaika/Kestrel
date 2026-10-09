@@ -283,9 +283,11 @@ func TestBearerChallengeFlow(t *testing.T) {
 			key("a/b", "t1"): {contentType: mtOCIManifest, digest: "sha256:x", body: mustJSON(t, m)},
 		},
 	}
-	// Token endpoint issues the token; assert it was asked with the scope.
+	// Token endpoint issues the token; assert it was asked with the scope. The
+	// realm must be https (non-https realms are refused outright), so use a TLS
+	// server and trust its self-signed cert via InsecureSkipVerify.
 	var tokenHits int
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	tokenSrv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenHits++
 		if r.URL.Query().Get("service") != "reg.test" {
 			t.Errorf("token req missing service, got %q", r.URL.RawQuery)
@@ -297,7 +299,7 @@ func TestBearerChallengeFlow(t *testing.T) {
 
 	srv := httptest.NewServer(f.handler())
 	defer srv.Close()
-	h := newHandler(t, srv.URL, nil)
+	h := newHandler(t, srv.URL, func(c *Config) { c.InsecureSkipVerify = true })
 
 	res, body := doReq(t, h, http.MethodGet, "/api/registry/repos")
 	if res.StatusCode != 200 {
@@ -451,19 +453,18 @@ func TestSameSite(t *testing.T) {
 // TestTokenCredWithheldFromHTTPRealm asserts that when the realm is http (not
 // https), the operator's basic-auth credentials are NOT forwarded to it, and
 // the handshake proceeds anonymously so the flow still completes.
-func TestTokenCredWithheldFromHTTPRealm(t *testing.T) {
+// TestTokenHTTPRealmRefused asserts that an http:// token realm is refused
+// outright — no request (anonymous or credentialed) is ever made to it — so a
+// hostile/compromised registry cannot drive a blind SSRF at an internal host.
+func TestTokenHTTPRealmRefused(t *testing.T) {
 	f := &fakeRegistry{
 		requireBearer: true,
 		issuedToken:   "tok-xyz",
 		catalog:       []string{"a/b"},
 	}
 	var tokenHits int32
-	var sawAuth int32
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&tokenHits, 1)
-		if r.Header.Get("Authorization") != "" {
-			atomic.StoreInt32(&sawAuth, 1)
-		}
 		writeJSON(w, 200, tokenResp{Token: "tok-xyz"})
 	}))
 	defer tokenSrv.Close()
@@ -474,14 +475,11 @@ func TestTokenCredWithheldFromHTTPRealm(t *testing.T) {
 	h := newHandler(t, srv.URL, func(c *Config) { c.Username, c.Password = "op", "s3cret" })
 
 	res, body := doReq(t, h, http.MethodGet, "/api/registry/repos")
-	if res.StatusCode != 200 {
-		t.Fatalf("repos status %d: %s", res.StatusCode, body)
+	if res.StatusCode != http.StatusBadGateway {
+		t.Fatalf("repos status %d, want 502 for a non-https token realm: %s", res.StatusCode, body)
 	}
-	if atomic.LoadInt32(&tokenHits) == 0 {
-		t.Fatal("token endpoint was never hit (anonymous flow should still proceed)")
-	}
-	if atomic.LoadInt32(&sawAuth) != 0 {
-		t.Fatal("credentials were forwarded to an http realm")
+	if n := atomic.LoadInt32(&tokenHits); n != 0 {
+		t.Fatalf("http token realm was contacted %d times, want 0 (must be refused before any request)", n)
 	}
 }
 
