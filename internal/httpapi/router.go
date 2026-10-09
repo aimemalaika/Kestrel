@@ -18,6 +18,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/modules"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
+	"github.com/aimemalaika/Kestrel/internal/servicemap"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 )
 
@@ -30,6 +31,7 @@ type Deps struct {
 	PortForward k8s.PortForwarder
 	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
 	Helm        http.Handler // /api/helm/* (releases + chart repos)
+	ServiceMap  http.Handler // /api/servicemap (store + validate; ConfigMap-backed)
 }
 
 // DefaultDeps wires the B0 stubs.
@@ -45,6 +47,10 @@ func DefaultDeps() Deps {
 		// --mock), UserClientset returns the nil SA client and listReleases yields
 		// an empty list rather than panicking. No repos configured ⇒ repos empty.
 		Helm: helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{}),
+		// ServiceMap over a no-client accessor: with no forwarded token UserClientset
+		// returns a nil clientset, so the handler uses its in-memory fallback store
+		// rather than needing a cluster.
+		ServiceMap: servicemap.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), servicemap.Config{}),
 	}
 }
 
@@ -57,6 +63,9 @@ func New(d Deps) http.Handler {
 	}
 	if d.Helm == nil {
 		d.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{})
+	}
+	if d.ServiceMap == nil {
+		d.ServiceMap = servicemap.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), servicemap.Config{})
 	}
 	a := &api{d: d, pf: newPFRegistry()}
 	return auth.Middleware(http.HandlerFunc(a.route))
@@ -126,7 +135,8 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 	case "argo":
 		a.only(w, r, http.MethodGet, modules.Handler(segs[0]).ServeHTTP)
 	case "servicemap":
-		modules.ServiceMap().ServeHTTP(w, r)
+		// ServiceMap owns its own method handling (GET/PUT, 405 otherwise).
+		a.d.ServiceMap.ServeHTTP(w, r)
 	default:
 		a.resource(w, r, segs)
 	}

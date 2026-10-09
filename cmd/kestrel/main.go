@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	"github.com/aimemalaika/Kestrel/internal/audit"
 	"github.com/aimemalaika/Kestrel/internal/auth"
 	"github.com/aimemalaika/Kestrel/internal/authn"
@@ -21,6 +23,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/obs"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
+	"github.com/aimemalaika/Kestrel/internal/servicemap"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 	"github.com/aimemalaika/Kestrel/web"
 )
@@ -64,6 +67,12 @@ func main() {
 	// comma-separated within one value: --helm-repo "stable=https://charts.example.com,bitnami=https://charts.bitnami.com".
 	var helmRepos helmRepoFlag
 	flag.Var(&helmRepos, "helm-repo", "chart repo as name=url (repeatable, or comma-separated name=url[,name=url...])")
+
+	// Service map module (B10). The uploaded services.yaml is persisted in this
+	// ConfigMap (data key services.yaml). Form: [namespace/]name; namespace
+	// defaults to the in-cluster ServiceAccount namespace, else "default".
+	servicemapCM := flag.String("servicemap-configmap", "kestrel-servicemap",
+		"ConfigMap for the service map as [namespace/]name; namespace defaults to the in-cluster SA namespace (else \"default\")")
 	flag.Parse()
 
 	obs.SetupLogger(*logLevel)
@@ -92,6 +101,9 @@ func main() {
 	if len(parsedRepos) > 0 {
 		slog.Info("helm module configured", slog.Int("repos", len(parsedRepos)))
 	}
+	smCfg := parseServiceMapConfig(*servicemapCM)
+	slog.Info("service map module configured",
+		slog.String("namespace", smCfg.Namespace), slog.String("configmap", smCfg.Name))
 	if !*mock {
 		cfg, err := k8s.LoadConfig(*kubeconfig)
 		if err != nil {
@@ -104,6 +116,8 @@ func main() {
 		}
 		// Helm releases are read AS THE USER (token forwarding) via this accessor.
 		deps.Helm = helm.NewHandler(acc, helm.Config{Repos: parsedRepos})
+		// Service map is read/written AS THE USER (token forwarding) via this accessor.
+		deps.ServiceMap = servicemap.NewHandler(acc, smCfg)
 		deps.Resources = resource.NewServiceWith(k8s.NewReal(acc), protected, auditor)
 		// #46: the per-user SSE read filter. The shared informer watches as the SA,
 		// so every snapshot object and live delta is gated by a namespace-level SSAR
@@ -120,6 +134,9 @@ func main() {
 		// --mock: no cluster, so releases come back empty (no typed client), but
 		// configured chart repos still resolve over HTTP.
 		deps.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{Repos: parsedRepos})
+		// --mock: no typed client, so the service map uses its in-memory fallback
+		// (PUT validates + stores in memory, GET returns it) — no cluster required.
+		deps.ServiceMap = servicemap.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), smCfg)
 		slog.Info("running with --mock stub data")
 	}
 
@@ -255,6 +272,43 @@ func (f *helmRepoFlag) repos() []helm.ChartRepo {
 		out = append(out, helm.ChartRepo{Name: name, URL: f.byName[name]})
 	}
 	return out
+}
+
+// parseServiceMapConfig parses the --servicemap-configmap value ([namespace/]name)
+// into a servicemap.Config. A missing namespace resolves to the in-cluster SA
+// namespace, falling back to "default"; a missing name falls back to the default.
+func parseServiceMapConfig(v string) servicemap.Config {
+	ns, name := "", strings.TrimSpace(v)
+	if i := strings.IndexByte(name, '/'); i >= 0 {
+		ns, name = strings.TrimSpace(name[:i]), strings.TrimSpace(name[i+1:])
+	}
+	if name == "" {
+		name = "kestrel-servicemap"
+	}
+	if ns == "" {
+		ns = currentNamespace()
+	}
+	// Fast-fail at startup on an invalid name/namespace rather than surfacing a
+	// k8s 422 on the first PUT/GET.
+	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
+		fatal("invalid --servicemap-configmap name", fmt.Errorf("%q: %s", name, strings.Join(errs, "; ")))
+	}
+	if errs := validation.IsDNS1123Label(ns); len(errs) > 0 {
+		fatal("invalid --servicemap-configmap namespace", fmt.Errorf("%q: %s", ns, strings.Join(errs, "; ")))
+	}
+	return servicemap.Config{Namespace: ns, Name: name}
+}
+
+// currentNamespace returns the Pod's ServiceAccount namespace (when running in a
+// cluster), falling back to "default" off-cluster.
+func currentNamespace() string {
+	const f = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	if b, err := os.ReadFile(f); err == nil {
+		if ns := strings.TrimSpace(string(b)); ns != "" {
+			return ns
+		}
+	}
+	return "default"
 }
 
 // minSessionKeyLen is the minimum accepted --session-key length. The key is an

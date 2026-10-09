@@ -377,11 +377,18 @@ func TestModulePrefixes(t *testing.T) {
 			t.Errorf("registry 503 missing contract error body: %v", eb)
 		}
 	}
+	// servicemap is now a real handler (store + validate). GET with nothing stored
+	// returns the empty model; PUT a valid tiny map returns the parsed model.
 	if rec := do(t, h, "GET", "/api/servicemap", ""); rec.Code != 200 {
 		t.Errorf("GET servicemap %d", rec.Code)
+	} else if m := decode[map[string]any](t, rec); m["services"] == nil {
+		t.Errorf("GET servicemap missing services: %v", m)
 	}
-	if rec := do(t, h, "PUT", "/api/servicemap", "services: []"); rec.Code != 200 {
-		t.Errorf("PUT servicemap %d", rec.Code)
+	validMap := "apiVersion: kestrel.dev/v1\nkind: ServiceMap\nservices: []\n"
+	if rec := do(t, h, "PUT", "/api/servicemap", validMap); rec.Code != 200 {
+		t.Errorf("PUT servicemap %d: %s", rec.Code, rec.Body.String())
+	} else if m := decode[map[string]any](t, rec); m["name"] != "service-map" {
+		t.Errorf("PUT servicemap model name = %v, want service-map", m["name"])
 	}
 }
 

@@ -19,22 +19,8 @@ func Handler(name string) http.Handler {
 	})
 }
 
-// ServiceMap serves GET (fetch stored map) and PUT (upload + validate).
-// Stub: PUT echoes acceptance; GET returns an empty map.
-func ServiceMap() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			writeJSON(w, http.StatusOK, map[string]any{"services": []any{}})
-		case http.MethodPut:
-			writeJSON(w, http.StatusOK, map[string]any{"valid": true, "errors": []string{}})
-		default:
-			w.Header().Set("Allow", "GET, PUT")
-			writeJSON(w, http.StatusMethodNotAllowed, map[string]any{
-				"error": "method not allowed", "code": 405, "reason": "MethodNotAllowed"})
-		}
-	})
-}
+// ServiceMap is now served by the internal/servicemap package (B10 #54); the B0
+// stub that lived here has been removed and wired through Deps.ServiceMap.
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
