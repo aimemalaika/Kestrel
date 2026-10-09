@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/audit"
 	"github.com/aimemalaika/Kestrel/internal/auth"
 	"github.com/aimemalaika/Kestrel/internal/authn"
+	"github.com/aimemalaika/Kestrel/internal/helm"
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/registry"
@@ -48,6 +50,11 @@ func main() {
 	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional)")
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
 	registryAllowDelete := flag.Bool("registry-allow-delete", false, "enable DELETE by digest on the registry (deletesEnabled)")
+
+	// Helm module chart repositories. Repeatable (--helm-repo each) and/or
+	// comma-separated within one value: --helm-repo "stable=https://charts.example.com,bitnami=https://charts.bitnami.com".
+	var helmRepos helmRepoFlag
+	flag.Var(&helmRepos, "helm-repo", "chart repo as name=url (repeatable, or comma-separated name=url[,name=url...])")
 	flag.Parse()
 
 	protected := resource.ProtectedSet(strings.Split(*protectedNS, ","))
@@ -70,6 +77,10 @@ func main() {
 	} else {
 		log.Printf("registry module enabled (%s); deletes=%v", *registryURL, *registryAllowDelete)
 	}
+	parsedRepos := helmRepos.repos()
+	if len(parsedRepos) > 0 {
+		log.Printf("helm module: %d chart repo(s) configured", len(parsedRepos))
+	}
 	if !*mock {
 		cfg, err := k8s.LoadConfig(*kubeconfig)
 		if err != nil {
@@ -80,6 +91,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("cluster clients: %v", err)
 		}
+		// Helm releases are read AS THE USER (token forwarding) via this accessor.
+		deps.Helm = helm.NewHandler(acc, helm.Config{Repos: parsedRepos})
 		deps.Resources = resource.NewServiceWith(k8s.NewReal(acc), protected, auditor)
 		// #46: the per-user SSE read filter. The shared informer watches as the SA,
 		// so every snapshot object and live delta is gated by a namespace-level SSAR
@@ -93,6 +106,9 @@ func main() {
 		log.Printf("connected to cluster %s", cfg.Host)
 	} else {
 		deps.Resources = resource.NewServiceWith(k8s.Stub{}, protected, auditor)
+		// --mock: no cluster, so releases come back empty (no typed client), but
+		// configured chart repos still resolve over HTTP.
+		deps.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{Repos: parsedRepos})
 		log.Printf("running with --mock stub data")
 	}
 
@@ -141,6 +157,47 @@ func main() {
 	} else {
 		log.Fatal(http.ListenAndServe(*addr, handler))
 	}
+}
+
+// helmRepoFlag collects repeated --helm-repo values. Each value is one or more
+// comma-separated name=url pairs. A later pair with the same name wins.
+type helmRepoFlag struct {
+	order  []string
+	byName map[string]string
+}
+
+func (f *helmRepoFlag) String() string { return strings.Join(f.order, ",") }
+
+func (f *helmRepoFlag) Set(v string) error {
+	if f.byName == nil {
+		f.byName = map[string]string{}
+	}
+	for _, pair := range strings.Split(v, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		name, url, ok := strings.Cut(pair, "=")
+		name = strings.TrimSpace(name)
+		url = strings.TrimSpace(url)
+		if !ok || name == "" || url == "" {
+			return fmt.Errorf("invalid --helm-repo %q: want name=url", pair)
+		}
+		if _, exists := f.byName[name]; !exists {
+			f.order = append(f.order, name)
+		}
+		f.byName[name] = url
+	}
+	return nil
+}
+
+// repos renders the collected repos in first-seen order.
+func (f *helmRepoFlag) repos() []helm.ChartRepo {
+	out := make([]helm.ChartRepo, 0, len(f.order))
+	for _, name := range f.order {
+		out = append(out, helm.ChartRepo{Name: name, URL: f.byName[name]})
+	}
+	return out
 }
 
 // minSessionKeyLen is the minimum accepted --session-key length. The key is an
