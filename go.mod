@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/gorilla/websocket v1.5.3
-	golang.org/x/oauth2 v0.24.0
+	golang.org/x/oauth2 v0.27.0
 	k8s.io/api v0.31.14
 	k8s.io/apimachinery v0.31.14
 	k8s.io/client-go v0.31.14
