@@ -121,6 +121,11 @@ const metaNamespaceAll = "" // metav1.NamespaceAll
 
 // NewHubFromAccessor is the production constructor: the RESTMapper validates
 // that the requested GVR exists.
+//
+// #46: the shared informer hub watches as the ServiceAccount, so SSE reads are
+// NOT yet filtered per user — every subscriber sees the SA's view regardless of
+// their own RBAC. B7 forwards tokens only on the request/CRUD path; the
+// per-user cache + SSE read filter is issue #46 (next sprint).
 func NewHubFromAccessor(acc k8s.ClusterAccessor, opts ...HubOption) *Hub {
 	mapper := acc.Mapper()
 	resolve := func(g k8s.GVR) error {

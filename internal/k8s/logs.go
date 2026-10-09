@@ -7,6 +7,9 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+
+	"github.com/aimemalaika/Kestrel/internal/auth"
 )
 
 // LogOptions are the pod-log query options.
@@ -30,7 +33,23 @@ type RealLogs struct{ acc ClusterAccessor }
 func NewRealLogs(acc ClusterAccessor) *RealLogs { return &RealLogs{acc: acc} }
 
 func (l *RealLogs) Stream(ctx context.Context, ns, pod string, o LogOptions) (io.ReadCloser, error) {
+	// B7: stream logs as the user on ctx (their forwarded token), falling back to
+	// the SA client only when no token is present (single-operator). With a token
+	// present we MUST build a per-user client and fail CLOSED if we cannot — never
+	// silently keep the SA client, which would leak SA privileges to the user
+	// (matches exec.go / portforward.go).
 	kube := l.acc.Kubernetes()
+	if token := auth.From(ctx).Token; token != "" {
+		cfg := l.acc.RESTConfig()
+		if cfg == nil {
+			return nil, errors.New("rest config not configured")
+		}
+		k, err := kubernetes.NewForConfig(userConfig(cfg, token))
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		kube = k
+	}
 	if kube == nil {
 		return nil, errors.New("typed kubernetes client not configured")
 	}

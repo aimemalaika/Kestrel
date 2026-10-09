@@ -7,8 +7,11 @@ import (
 	"io"
 	"net/http"
 
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+
+	"github.com/aimemalaika/Kestrel/internal/auth"
 )
 
 // ForwardOptions are the port-forward ports (host-side local, pod-side remote).
@@ -31,13 +34,27 @@ type RealPortForward struct{ acc ClusterAccessor }
 func NewRealPortForward(acc ClusterAccessor) *RealPortForward { return &RealPortForward{acc: acc} }
 
 func (p *RealPortForward) Forward(ctx context.Context, ns, pod string, o ForwardOptions, ready chan<- struct{}) error {
-	kube := p.acc.Kubernetes()
-	if kube == nil {
-		return errors.New("typed kubernetes client not configured")
-	}
 	cfg := p.acc.RESTConfig()
 	if cfg == nil {
 		return errors.New("rest config not configured")
+	}
+	// B7: port-forward as the user on ctx. The SPDY round-tripper carries auth, so
+	// it MUST be built from the per-user config when a token is present.
+	kube := p.acc.Kubernetes()
+	if token := auth.From(ctx).Token; token != "" {
+		cfg = userConfig(cfg, token)
+		k, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return mapErr(err)
+		}
+		kube = k
+	}
+	if kube == nil {
+		k, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return mapErr(err)
+		}
+		kube = k
 	}
 	rt, upgrader, err := spdy.RoundTripperFor(cfg)
 	if err != nil {
