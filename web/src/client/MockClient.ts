@@ -1135,12 +1135,13 @@ function clusterSeeds(): K8sObject[] {
     phase: string,
     channel: string,
     kinds: string[],
+    provider: string,
   ) =>
     aged(age, 'operators.coreos.com/v1alpha1', 'ClusterServiceVersion', name, ns, {
       spec: {
         displayName: display,
         version,
-        provider: { name: 'Example Org' },
+        provider: { name: provider },
         channel,
         customresourcedefinitions: { owned: kinds.map((kind) => ({ kind, name: `${kind.toLowerCase()}s.example.com`, version: 'v1' })) }, // prettier-ignore
       },
@@ -1174,11 +1175,11 @@ function clusterSeeds(): K8sObject[] {
         history: [{ state: 'Completed', version: 'v1.29.3', startedTime: daysAgo(30) }],
       },
     }),
-    csv(50, 'metrics-operator.v1.4.0', 'shop', 'Metrics Operator', '1.4.0', 'Succeeded', 'stable', ['MetricsConfig', 'Scraper']), // prettier-ignore
-    csv(20, 'backup-operator.v0.9.2', 'default', 'Backup Operator', '0.9.2', 'Installing', 'beta', ['BackupPolicy']), // prettier-ignore
-    csv(90, 'cert-operator.v2.1.0', 'production', 'Certificate Manager', '2.1.0', 'Succeeded', 'stable', ['Certificate', 'Issuer', 'ClusterIssuer']), // prettier-ignore
-    csv(65, 'db-operator.v3.0.1', 'production', 'Database Operator', '3.0.1', 'Failed', 'stable', ['DatabaseCluster', 'DatabaseBackup']), // prettier-ignore
-    csv(30, 'pipeline-operator.v1.12.0', 'staging', 'Pipeline Operator', '1.12.0', 'Succeeded', 'latest', ['Pipeline', 'Task', 'PipelineRun', 'TaskRun']), // prettier-ignore
+    csv(50, 'metrics-operator.v1.4.0', 'shop', 'Metrics Operator', '1.4.0', 'Succeeded', 'stable', ['MetricsConfig', 'Scraper'], 'Kestrel Labs'), // prettier-ignore
+    csv(20, 'backup-operator.v0.9.2', 'default', 'Backup Operator', '0.9.2', 'Installing', 'beta', ['BackupPolicy'], 'Nimbus Systems'), // prettier-ignore
+    csv(90, 'cert-operator.v2.1.0', 'production', 'Certificate Manager', '2.1.0', 'Succeeded', 'stable', ['Certificate', 'Issuer', 'ClusterIssuer'], 'Harbor Data'), // prettier-ignore
+    csv(65, 'db-operator.v3.0.1', 'production', 'Database Operator', '3.0.1', 'Failed', 'stable', ['DatabaseCluster', 'DatabaseBackup'], 'Acme Open Source'), // prettier-ignore
+    csv(30, 'pipeline-operator.v1.12.0', 'staging', 'Pipeline Operator', '1.12.0', 'Succeeded', 'latest', ['Pipeline', 'Task', 'PipelineRun', 'TaskRun'], 'Flux Collective'), // prettier-ignore
   ]
 }
 
@@ -1627,7 +1628,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         'web-1',
         'Scheduled',
         'Successfully assigned',
-        '2020-01-01T00:00:00Z',
+        new Date(Date.now() - 6 * 60_000).toISOString(),
       ),
     ],
     [
@@ -1638,7 +1639,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         'web-1',
         'Pulled',
         'Container image pulled',
-        '2020-01-01T00:01:00Z',
+        new Date(Date.now() - 5 * 60_000).toISOString(),
       ),
     ],
     [
@@ -1649,7 +1650,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         'web-2',
         'Scheduled',
         'Successfully assigned',
-        '2020-01-01T00:00:30Z',
+        new Date(Date.now() - 9 * 60_000).toISOString(),
       ),
     ],
   ])
