@@ -1,0 +1,32 @@
+# Keep the build context lean. The frontend is built inside the image,
+# and web/dist is produced there — never ship host artifacts.
+.git
+.github
+.gitignore
+
+# Node / frontend
+web/node_modules
+web/dist
+web/.vite
+npm-debug.log*
+
+# Go test / build artifacts
+*.test
+*.out
+coverage.*
+/kestrel
+/dist
+/bin
+
+# Deploy artifacts are not needed inside the image
+deploy
+
+# Editor / OS cruft
+.idea
+.vscode
+.DS_Store
+*.swp
+
+# Docs / local notes
+*.md
+!web/**/*.md

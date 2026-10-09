@@ -1,0 +1,179 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kestrel.fullname" . }}
+  labels:
+    {{- include "kestrel.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kestrel.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kestrel.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kestrel.serviceAccountName" . }}
+      # The in-cluster SA token is the credential the binary uses for API
+      # discovery and the shared informer/SSE watch cache — it MUST be mounted.
+      automountServiceAccountToken: true
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: kestrel
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --addr=:{{ .Values.service.port }}
+            - --metrics-addr=:{{ .Values.service.metricsPort }}
+            {{- with .Values.config.logLevel }}
+            - --log-level={{ . }}
+            {{- end }}
+            {{- if ne (.Values.config.rateLimit | float64) 20.0 }}
+            - --rate-limit={{ .Values.config.rateLimit }}
+            {{- end }}
+            {{- if ne (int .Values.config.rateBurst) 40 }}
+            - --rate-burst={{ .Values.config.rateBurst }}
+            {{- end }}
+            {{- if .Values.config.trustedProxy }}
+            - --trusted-proxy
+            {{- end }}
+            {{- with .Values.config.protectedNamespaces }}
+            - --protected-namespaces={{ . }}
+            {{- end }}
+            {{- if .Values.config.mock }}
+            - --mock
+            {{- end }}
+            {{- with .Values.config.oidc.issuer }}
+            - --oidc-issuer={{ . }}
+            {{- end }}
+            {{- with .Values.config.oidc.clientId }}
+            - --oidc-client-id={{ . }}
+            {{- end }}
+            {{- with .Values.config.oidc.redirectUrl }}
+            - --oidc-redirect-url={{ . }}
+            {{- end }}
+            {{- if and .Values.config.oidc.groupsClaim (ne .Values.config.oidc.groupsClaim "groups") }}
+            - --oidc-groups-claim={{ .Values.config.oidc.groupsClaim }}
+            {{- end }}
+            {{- if and .Values.config.oidc.usernameClaim (ne .Values.config.oidc.usernameClaim "email") }}
+            - --oidc-username-claim={{ .Values.config.oidc.usernameClaim }}
+            {{- end }}
+            {{- if .Values.config.oidc.issuer }}
+            {{- if include "kestrel.hasSecret" . }}
+            # Sourced from env (Secret) and expanded by Kubernetes $(VAR) — see env below.
+            - --oidc-client-secret=$(OIDC_CLIENT_SECRET)
+            {{- end }}
+            {{- end }}
+            {{- if include "kestrel.hasSecret" . }}
+            - --session-key=$(SESSION_KEY)
+            {{- end }}
+            {{- if .Values.config.tls.enabled }}
+            - --tls-cert={{ .Values.config.tls.certFile }}
+            - --tls-key={{ .Values.config.tls.keyFile }}
+            {{- end }}
+            {{- with .Values.config.registry.url }}
+            - --registry-url={{ . }}
+            {{- end }}
+            {{- if .Values.config.registry.url }}
+            {{- with .Values.config.registry.username }}
+            - --registry-username={{ . }}
+            {{- end }}
+            {{- if include "kestrel.hasSecret" . }}
+            - --registry-password=$(REGISTRY_PASSWORD)
+            {{- end }}
+            {{- if .Values.config.registry.insecureSkipVerify }}
+            - --registry-insecure-skip-verify
+            {{- end }}
+            {{- if .Values.config.registry.allowDelete }}
+            - --registry-allow-delete
+            {{- end }}
+            {{- end }}
+            {{- range .Values.config.helmRepos }}
+            - --helm-repo={{ .name }}={{ .url }}
+            {{- end }}
+          {{- if include "kestrel.hasSecret" . }}
+          env:
+            {{- if .Values.config.oidc.issuer }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kestrel.secretName" . }}
+                  key: {{ .Values.existingSecret.oidcClientSecretKey }}
+                  optional: true
+            {{- end }}
+            - name: SESSION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kestrel.secretName" . }}
+                  key: {{ .Values.existingSecret.sessionKeyKey }}
+                  optional: true
+            {{- if .Values.config.registry.url }}
+            - name: REGISTRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kestrel.secretName" . }}
+                  key: {{ .Values.existingSecret.registryPasswordKey }}
+                  optional: true
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.service.metricsPort }}
+              protocol: TCP
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            # readOnlyRootFilesystem is on; give the process a writable tmp.
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.config.tls.enabled }}
+            - name: tls
+              mountPath: {{ dir .Values.config.tls.certFile }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.config.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ required "config.tls.existingSecret is required when config.tls.enabled" .Values.config.tls.existingSecret }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

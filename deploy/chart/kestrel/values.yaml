@@ -1,0 +1,262 @@
+# Default values for the Kestrel chart.
+# This is a YAML-formatted file. Values are documented inline.
+
+# -- Number of Kestrel replicas. Kestrel is stateless at the HTTP layer, but
+# each pod maintains its own shared informer cache and SSE connections; scaling
+# out is fine. Sticky sessions are not required (session cookies are HMAC-signed).
+replicaCount: 1
+
+image:
+  # -- Container image repository.
+  repository: ghcr.io/aimemalaika/kestrel
+  # -- Image tag. Defaults to the chart's appVersion when empty.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets for private registries.
+imagePullSecrets: []
+
+# -- Override the chart name used in resource names.
+nameOverride: ""
+# -- Override the fully qualified release name used in resource names.
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a ServiceAccount. The in-cluster SA token is the credential the
+  # binary uses for API discovery and the shared informer/SSE watch cache.
+  create: true
+  # -- Name of the ServiceAccount. Generated from the release name when empty.
+  name: ""
+  # -- Extra annotations for the ServiceAccount (e.g. cloud IAM role bindings).
+  annotations: {}
+
+rbac:
+  # -- Create the ClusterRole + ClusterRoleBinding.
+  create: true
+  # -- Grant cluster-wide read (get/list/watch on all resources).
+  #
+  # WHY THIS IS BROAD: Kestrel uses TOKEN FORWARDING (not impersonation) for
+  # per-request authorization — each user's own OIDC token is forwarded to the
+  # apiserver. BUT the shared informer / SSE cache watches the cluster AS THE
+  # POD SERVICEACCOUNT, so the SA needs cluster-wide get/list/watch (including
+  # Secrets) to populate that cache. Per-user delivery is gated by the SSE read
+  # filter (issue #46), which is what prevents cross-user data leakage — the SA
+  # itself is deliberately broad-read.
+  #
+  # The ClusterRole grants ONLY get/list/watch. It does NOT grant `impersonate`
+  # and does NOT grant `serviceaccounts/token` — Kestrel needs neither.
+  #
+  # Set to false to withhold the broad read grant. The live catalog, generic
+  # tables and SSE streams will then be limited to whatever other RBAC the SA
+  # has; most of Kestrel's read surface will not work. Only do this if you will
+  # bind your own narrower ClusterRole/Roles to the SA out-of-band.
+  clusterRead: true
+  # -- Extra rules appended to the ClusterRole (e.g. non-resource URLs).
+  extraRules: []
+
+# Container command-line configuration. Each key maps to a CLI flag on the
+# kestrel binary. A flag is only emitted when its value differs from the binary
+# default, so an all-empty config yields a minimal, in-cluster, no-login
+# deployment (single-operator mode: NO OIDC login, NO registry, NO extra repos).
+config:
+  # -- Log level: debug | info | warn | error.
+  logLevel: "info"
+  # -- Per-caller request rate (req/sec); 0 disables rate limiting.
+  rateLimit: 20
+  # -- Per-caller burst size for the rate limiter.
+  rateBurst: 40
+  # -- Trust X-Forwarded-For/X-Real-Ip for the client IP. Enable ONLY behind a
+  # reverse proxy/ingress that rewrites these headers (recommended true when
+  # ingress.enabled).
+  trustedProxy: false
+  # -- Comma-separated namespaces treated as protected (empty = binary default).
+  protectedNamespaces: ""
+  # -- Serve stub data instead of connecting to a cluster (demos only).
+  mock: false
+
+  oidc:
+    # -- OIDC issuer URL. EMPTY disables login => single-operator mode (anyone
+    # who can reach the service has full operator access with the pod SA's view).
+    # When set, the kube-apiserver MUST be configured to trust this SAME issuer,
+    # because Kestrel forwards the user's token to the apiserver.
+    issuer: ""
+    # -- OIDC client id.
+    clientId: ""
+    # -- OIDC redirect URL (…/auth/callback).
+    redirectUrl: ""
+    # -- id_token claim carrying the user's groups.
+    groupsClaim: "groups"
+    # -- id_token claim used for the display username.
+    usernameClaim: "email"
+    # NOTE: the OIDC client secret is NOT set here — see the `secret` /
+    # `existingSecret` blocks below (it is injected via an env var).
+
+  tls:
+    # -- In-pod TLS. Usually left off; terminate TLS at the ingress instead.
+    # When enabled, provide cert/key via a secret mounted at the paths below.
+    enabled: false
+    # -- Path to the TLS certificate file inside the container.
+    certFile: "/tls/tls.crt"
+    # -- Path to the TLS key file inside the container.
+    keyFile: "/tls/tls.key"
+    # -- Name of an existing Secret (type kubernetes.io/tls) to mount for TLS.
+    existingSecret: ""
+
+  registry:
+    # -- OCI registry base URL incl. scheme (e.g. https://registry.example.com).
+    # EMPTY disables the registry module.
+    url: ""
+    # -- Registry basic-auth username (optional).
+    username: ""
+    # -- Skip TLS verification of the registry (do NOT use in production).
+    insecureSkipVerify: false
+    # -- Enable DELETE by digest on the registry.
+    allowDelete: false
+    # NOTE: the registry password is injected via an env var — see `secret` /
+    # `existingSecret` below.
+
+  # -- Chart repositories for the Helm module, as a list of {name, url}.
+  # Rendered to repeated --helm-repo name=url flags.
+  helmRepos: []
+  #  - name: bitnami
+  #    url: https://charts.bitnami.com/bitnami
+
+# Secret handling for the three sensitive inputs:
+#   - oidc client secret   (--oidc-client-secret)
+#   - session key          (--session-key)
+#   - registry password    (--registry-password)
+#
+# These are injected into the pod as environment variables (from a Secret) and
+# expanded into the flag values via Kubernetes $(VAR) arg expansion. Prefer
+# `existingSecret`. The inline `secret.create` path is for convenience/testing
+# only — values committed to a values file are NOT safe for production.
+#
+# FOLLOW-UP (hardening): the binary reads these as FLAGS today, so even when
+# sourced from a Secret via env the value still lands on the process command
+# line (visible in `ps`/the running container spec). Env-native secret reading
+# is tracked as a hardening follow-up; see the chart README.
+existingSecret:
+  # -- Name of an existing Secret to read sensitive values from. When set, the
+  # chart does NOT create its own secret.
+  name: ""
+  # -- Key in the existing Secret holding the OIDC client secret.
+  oidcClientSecretKey: "oidc-client-secret"
+  # -- Key in the existing Secret holding the session HMAC key.
+  sessionKeyKey: "session-key"
+  # -- Key in the existing Secret holding the registry password.
+  registryPasswordKey: "registry-password"
+
+secret:
+  # -- Create a Secret from the inline values below. Ignored when
+  # existingSecret.name is set. NOT for production — prefer existingSecret.
+  create: false
+  # -- OIDC client secret (inline — not for production).
+  oidcClientSecret: ""
+  # -- Session HMAC key for signing session cookies. Empty => the binary
+  # generates a random key at startup (sessions will not survive a restart and
+  # will break across replicas). Set a stable value in production.
+  sessionKey: ""
+  # -- Registry basic-auth password (inline — not for production).
+  registryPassword: ""
+
+service:
+  # -- Service type.
+  type: ClusterIP
+  # -- HTTP (app/API/SPA) port.
+  port: 8080
+  # -- Expose the metrics port on the Service too.
+  metrics: false
+  # -- Metrics port.
+  metricsPort: 9090
+  # -- Extra Service annotations.
+  annotations: {}
+
+ingress:
+  # -- Create an Ingress for the HTTP port.
+  enabled: false
+  # -- IngressClass name.
+  className: ""
+  # -- Ingress annotations (e.g. cert-manager, proxy settings).
+  annotations: {}
+  # -- Primary host. Convenience for a single-host ingress.
+  host: ""
+  # -- Path prefix.
+  path: /
+  # -- Path type.
+  pathType: Prefix
+  # -- Full hosts list; overrides `host` when non-empty.
+  # Each entry: {host, paths: [{path, pathType}]}.
+  hosts: []
+  tls:
+    # -- Enable TLS on the Ingress.
+    enabled: false
+    # -- Secret holding the TLS cert for the host(s).
+    secretName: ""
+    # -- Hosts covered by the TLS cert. Defaults to ingress.host when empty.
+    hosts: []
+
+metrics:
+  serviceMonitor:
+    # -- Create a Prometheus Operator ServiceMonitor for the metrics port.
+    # Requires the Prometheus Operator CRDs to be installed.
+    enabled: false
+    # -- Scrape interval.
+    interval: 30s
+    # -- Scrape timeout.
+    scrapeTimeout: 10s
+    # -- Extra labels for the ServiceMonitor (e.g. release: prometheus).
+    labels: {}
+    # -- Metrics path.
+    path: /metrics
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Pod-level security context (secure defaults).
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context (secure defaults).
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Liveness/readiness probes hit "/" over HTTP, which serves the SPA (200).
+# No dedicated /healthz endpoint exists yet (tracked as a follow-up).
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 3
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# -- Pod annotations.
+podAnnotations: {}
+# -- Pod labels.
+podLabels: {}
+
+# -- Scheduling passthrough.
+nodeSelector: {}
+tolerations: []
+affinity: {}
