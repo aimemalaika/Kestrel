@@ -15,6 +15,7 @@ import (
 
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
+	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 )
@@ -351,11 +352,22 @@ func TestWebSocketRoutesRegistered(t *testing.T) {
 
 func TestModulePrefixes(t *testing.T) {
 	h := handler()
-	for _, p := range []string{"/api/registry/repos", "/api/helm/releases", "/api/argo/apps"} {
+	// helm/argo are still B0 stubs returning a JSON placeholder map.
+	for _, p := range []string{"/api/helm/releases", "/api/argo/apps"} {
 		if rec := do(t, h, "GET", p, ""); rec.Code != 200 {
 			t.Errorf("%s: %d", p, rec.Code)
 		} else {
 			decode[map[string]any](t, rec)
+		}
+	}
+	// registry is now a real handler; with DefaultDeps it is unconfigured and
+	// returns 503 with the contract error body on every route.
+	if rec := do(t, h, "GET", "/api/registry/repos", ""); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("unconfigured registry: got %d want 503", rec.Code)
+	} else {
+		eb := decode[map[string]any](t, rec)
+		if eb["reason"] == nil || eb["code"] == nil {
+			t.Errorf("registry 503 missing contract error body: %v", eb)
 		}
 	}
 	if rec := do(t, h, "GET", "/api/servicemap", ""); rec.Code != 200 {
@@ -363,6 +375,32 @@ func TestModulePrefixes(t *testing.T) {
 	}
 	if rec := do(t, h, "PUT", "/api/servicemap", "services: []"); rec.Code != 200 {
 		t.Errorf("PUT servicemap %d", rec.Code)
+	}
+}
+
+// TestRegistryWiredIntoRouter checks a configured registry handler is reachable
+// through the full router (/api/registry/repos) backed by a fake OCI upstream.
+func TestRegistryWiredIntoRouter(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/_catalog" {
+			http.Error(w, "unexpected "+r.URL.Path, 404)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"repositories":["library/ubuntu"]}`))
+	}))
+	defer upstream.Close()
+
+	d := httpapi.DefaultDeps()
+	d.Registry = registry.NewHandler(registry.Config{URL: upstream.URL})
+	rec := do(t, httpapi.New(d), "GET", "/api/registry/repos", "")
+	if rec.Code != 200 {
+		t.Fatalf("registry repos via router: %d\n%s", rec.Code, rec.Body.String())
+	}
+	got := decode[map[string]any](t, rec)
+	repos, _ := got["repos"].([]any)
+	if len(repos) != 1 || repos[0] != "library/ubuntu" {
+		t.Fatalf("repos = %v", got["repos"])
 	}
 }
 

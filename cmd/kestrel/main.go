@@ -15,6 +15,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/authn"
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
+	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 	"github.com/aimemalaika/Kestrel/web"
@@ -39,6 +40,14 @@ func main() {
 
 	tlsCert := flag.String("tls-cert", "", "TLS certificate file; with --tls-key, serve HTTPS")
 	tlsKey := flag.String("tls-key", "", "TLS key file; with --tls-cert, serve HTTPS")
+
+	// Registry module (OCI Distribution v2 proxy). Empty --registry-url disables
+	// it: /api/registry/* returns 503 "registry not configured".
+	registryURL := flag.String("registry-url", "", "OCI registry base URL incl. scheme (e.g. https://registry.example.com); empty disables the registry module")
+	registryUser := flag.String("registry-username", "", "registry basic-auth username (optional)")
+	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional)")
+	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
+	registryAllowDelete := flag.Bool("registry-allow-delete", false, "enable DELETE by digest on the registry (deletesEnabled)")
 	flag.Parse()
 
 	protected := resource.ProtectedSet(strings.Split(*protectedNS, ","))
@@ -49,6 +58,18 @@ func main() {
 		log.Fatal(err)
 	}
 	deps := httpapi.DefaultDeps()
+	deps.Registry = registry.NewHandler(registry.Config{
+		URL:                *registryURL,
+		Username:           *registryUser,
+		Password:           *registryPass,
+		InsecureSkipVerify: *registryInsecure,
+		AllowDelete:        *registryAllowDelete,
+	})
+	if *registryURL == "" {
+		log.Printf("WARNING: --registry-url not set: registry module DISABLED, /api/registry returns 503")
+	} else {
+		log.Printf("registry module enabled (%s); deletes=%v", *registryURL, *registryAllowDelete)
+	}
 	if !*mock {
 		cfg, err := k8s.LoadConfig(*kubeconfig)
 		if err != nil {
