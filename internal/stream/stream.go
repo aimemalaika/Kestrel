@@ -27,6 +27,15 @@ type Envelope struct {
 	Message         string     `json:"message,omitempty"`
 }
 
+// Authorizer answers whether the user on ctx may list a resource in a
+// namespace. It is the per-user SSE read filter's RBAC seam (#46): the Hub
+// depends only on this interface, never on k8s auth details, so the security
+// decision lives in one place and cannot drift. A nil Authorizer on the Hub
+// disables filtering (see WithAuthorizer).
+type Authorizer interface {
+	CanList(ctx context.Context, gvr k8s.GVR, namespace string) (bool, error)
+}
+
 // Source produces envelopes for a watch.
 //
 // Contract for implementers (B1+): Watch MUST stop sending and close the returned

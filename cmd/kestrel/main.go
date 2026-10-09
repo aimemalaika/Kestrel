@@ -60,7 +60,10 @@ func main() {
 			log.Fatalf("cluster clients: %v", err)
 		}
 		deps.Resources = resource.NewServiceWith(k8s.NewReal(acc), protected, auditor)
-		hub := stream.NewHubFromAccessor(acc)
+		// #46: the per-user SSE read filter. The shared informer watches as the SA,
+		// so every snapshot object and live delta is gated by a namespace-level SSAR
+		// for the subscriber's own identity before it leaves the hub (fail closed).
+		hub := stream.NewHubFromAccessor(acc, stream.WithAuthorizer(k8s.NewSSARAuthorizer(acc)))
 		defer hub.Close()
 		deps.Stream = hub
 		deps.Logs = k8s.NewRealLogs(acc)
