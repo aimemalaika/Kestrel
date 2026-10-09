@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/gorilla/websocket v1.5.3
+	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.27.0
 	k8s.io/api v0.31.14
 	k8s.io/apimachinery v0.31.14
@@ -39,7 +40,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect

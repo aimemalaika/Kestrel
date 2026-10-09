@@ -14,6 +14,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/auth"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/modules"
+	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 )
@@ -25,6 +26,7 @@ type Deps struct {
 	Logs        k8s.LogStreamer
 	Exec        k8s.ExecStreamer
 	PortForward k8s.PortForwarder
+	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
 }
 
 // DefaultDeps wires the B0 stubs.
@@ -35,6 +37,7 @@ func DefaultDeps() Deps {
 		Logs:        k8s.StubLogs{},
 		Exec:        k8s.StubExec{},
 		PortForward: k8s.StubPortForward{},
+		Registry:    registry.NewHandler(registry.Config{}), // unconfigured ⇒ 503
 	}
 }
 
@@ -42,6 +45,9 @@ func DefaultDeps() Deps {
 // Routing is hand-rolled because resource paths (/api/{group}/{version}/...)
 // would otherwise conflict with the fixed prefixes under ServeMux.
 func New(d Deps) http.Handler {
+	if d.Registry == nil {
+		d.Registry = registry.NewHandler(registry.Config{}) // unconfigured ⇒ 503
+	}
 	a := &api{d: d, pf: newPFRegistry()}
 	return auth.Middleware(http.HandlerFunc(a.route))
 }
@@ -73,7 +79,11 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 		a.only(w, r, http.MethodGet, a.exec)
 	case "port-forward":
 		a.only(w, r, http.MethodGet, a.portForward)
-	case "registry", "helm", "argo":
+	case "registry":
+		// Registry has its own handler (OCI v2 proxy) and allows DELETE for
+		// deleteByDigest, so it owns method handling rather than going through only().
+		a.d.Registry.ServeHTTP(w, r)
+	case "helm", "argo":
 		a.only(w, r, http.MethodGet, modules.Handler(segs[0]).ServeHTTP)
 	case "servicemap":
 		modules.ServiceMap().ServeHTTP(w, r)
