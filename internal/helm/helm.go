@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -157,7 +157,7 @@ func (h *Handler) listReleases(w http.ResponseWriter, r *http.Request) {
 		rel, derr := decodeReleaseSecret(s.Data["release"])
 		if derr != nil {
 			// Never fail the whole list on one bad secret: skip and log.
-			log.Printf("helm: skipping release secret %s/%s: %v", s.Namespace, s.Name, derr)
+			slog.Warn("helm: skipping undecodable release secret", slog.String("namespace", s.Namespace), slog.String("name", s.Name), slog.Any("error", derr))
 			continue
 		}
 		ns := rel.Namespace
@@ -217,7 +217,7 @@ func (h *Handler) getRelease(w http.ResponseWriter, r *http.Request) {
 		s := &secrets.Items[i]
 		rel, derr := decodeReleaseSecret(s.Data["release"])
 		if derr != nil {
-			log.Printf("helm: skipping release secret %s/%s: %v", s.Namespace, s.Name, derr)
+			slog.Warn("helm: skipping undecodable release secret", slog.String("namespace", s.Namespace), slog.String("name", s.Name), slog.Any("error", derr))
 			continue
 		}
 		if best == nil || rel.Version > best.Version {

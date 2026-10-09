@@ -7,8 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/aimemalaika/Kestrel/internal/audit"
@@ -17,6 +18,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/helm"
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
+	"github.com/aimemalaika/Kestrel/internal/obs"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/stream"
@@ -29,6 +31,13 @@ func main() {
 	mock := flag.Bool("mock", false, "serve stub data instead of connecting to a cluster")
 	protectedNS := flag.String("protected-namespaces", strings.Join(resource.DefaultProtectedNamespaces, ","),
 		"comma-separated namespaces hard-blocked for apply/delete (empty disables the guard)")
+
+	// Observability + protection (B9).
+	metricsAddr := flag.String("metrics-addr", ":9090", "Prometheus /metrics listen address on a SEPARATE listener (empty disables)")
+	logLevel := flag.String("log-level", "info", "log level: debug|info|warn|error")
+	rateLimit := flag.Float64("rate-limit", 20, "per-caller request rate (req/sec); 0 disables rate limiting")
+	rateBurst := flag.Int("rate-burst", 40, "per-caller burst size for the rate limiter")
+	trustedProxy := flag.Bool("trusted-proxy", false, "trust X-Forwarded-For/X-Real-Ip for the client IP (enable ONLY behind a reverse proxy that rewrites these headers; default off is safe)")
 
 	// OIDC login + token forwarding. If --oidc-issuer is empty, OIDC is disabled
 	// and Kestrel runs as the single operator (its own ServiceAccount credentials).
@@ -57,12 +66,14 @@ func main() {
 	flag.Var(&helmRepos, "helm-repo", "chart repo as name=url (repeatable, or comma-separated name=url[,name=url...])")
 	flag.Parse()
 
+	obs.SetupLogger(*logLevel)
+
 	protected := resource.ProtectedSet(strings.Split(*protectedNS, ","))
 	auditor := audit.NewStdoutAuditor(nil) // one JSON line per mutation to stdout
 
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
-		log.Fatal(err)
+		fatal("embedded SPA assets", err)
 	}
 	deps := httpapi.DefaultDeps()
 	deps.Registry = registry.NewHandler(registry.Config{
@@ -73,23 +84,23 @@ func main() {
 		AllowDelete:        *registryAllowDelete,
 	})
 	if *registryURL == "" {
-		log.Printf("WARNING: --registry-url not set: registry module DISABLED, /api/registry returns 503")
+		slog.Warn("registry module disabled: --registry-url not set; /api/registry returns 503")
 	} else {
-		log.Printf("registry module enabled (%s); deletes=%v", *registryURL, *registryAllowDelete)
+		slog.Info("registry module enabled", slog.String("url", *registryURL), slog.Bool("deletes", *registryAllowDelete))
 	}
 	parsedRepos := helmRepos.repos()
 	if len(parsedRepos) > 0 {
-		log.Printf("helm module: %d chart repo(s) configured", len(parsedRepos))
+		slog.Info("helm module configured", slog.Int("repos", len(parsedRepos)))
 	}
 	if !*mock {
 		cfg, err := k8s.LoadConfig(*kubeconfig)
 		if err != nil {
 			// Fail fast: a silently broken cluster connection is worse than no start.
-			log.Fatalf("cannot connect to a cluster: %v (use --mock for stub data, or --kubeconfig)", err)
+			fatal("cannot connect to a cluster (use --mock for stub data, or --kubeconfig)", err)
 		}
 		acc, err := k8s.NewAccessor(cfg)
 		if err != nil {
-			log.Fatalf("cluster clients: %v", err)
+			fatal("cluster clients", err)
 		}
 		// Helm releases are read AS THE USER (token forwarding) via this accessor.
 		deps.Helm = helm.NewHandler(acc, helm.Config{Repos: parsedRepos})
@@ -103,13 +114,13 @@ func main() {
 		deps.Logs = k8s.NewRealLogs(acc)
 		deps.Exec = k8s.NewRealExec(acc)
 		deps.PortForward = k8s.NewRealPortForward(acc)
-		log.Printf("connected to cluster %s", cfg.Host)
+		slog.Info("connected to cluster", slog.String("host", cfg.Host))
 	} else {
 		deps.Resources = resource.NewServiceWith(k8s.Stub{}, protected, auditor)
 		// --mock: no cluster, so releases come back empty (no typed client), but
 		// configured chart repos still resolve over HTTP.
 		deps.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{Repos: parsedRepos})
-		log.Printf("running with --mock stub data")
+		slog.Info("running with --mock stub data")
 	}
 
 	mux := http.NewServeMux()
@@ -127,36 +138,77 @@ func main() {
 			UsernameClaim: *oidcUsernameClaim,
 		}, key)
 		if err != nil {
-			log.Fatalf("oidc setup: %v", err)
+			fatal("oidc setup", err)
 		}
 		defer authr.Close() // stop the session janitor on shutdown
 		mux.HandleFunc("/auth/login", authr.Login)
 		mux.HandleFunc("/auth/callback", authr.Callback)
 		mux.HandleFunc("/auth/logout", authr.Logout)
 		authnMW = authr.Middleware
-		log.Printf("OIDC login enabled (issuer %s); forwarding user id_tokens to the apiserver", *oidcIssuer)
-		log.Printf("NOTE: the kube-apiserver must trust this SAME issuer for forwarded tokens to authenticate")
+		slog.Info("OIDC login enabled; forwarding user id_tokens to the apiserver",
+			slog.String("issuer", *oidcIssuer))
+		slog.Info("NOTE: the kube-apiserver must trust this SAME issuer for forwarded tokens to authenticate")
 	} else {
 		mux.Handle("/auth/", authn.NotConfiguredHandler())
-		log.Printf("WARNING: --oidc-issuer not set: OIDC DISABLED, running as single operator %q; "+
-			"all /api access uses Kestrel's own ServiceAccount credentials and no login is required", auth.Operator)
+		slog.Warn("OIDC disabled: --oidc-issuer not set; running as single operator, all /api uses Kestrel's own ServiceAccount credentials and no login is required",
+			slog.String("operator", auth.Operator))
 	}
 
 	mux.Handle("/api/", httpapi.New(deps))
 	mux.Handle("/", httpapi.SPA(dist))
 
+	// Observability + protection middleware. Outermost→innermost:
+	//   recovery → request-logging → metrics → authn → rate-limit → mux
+	// Rate limiting is INNER of authn so the authenticated user is already on the
+	// context (keying per-user); authn 401s unauthenticated /api before it, while
+	// public paths (/auth/*, SPA) pass through authn and are limited by IP.
+	metrics := obs.NewMetrics()
+	limiter := obs.NewRateLimiter(*rateLimit, *rateBurst, *trustedProxy)
+	defer limiter.Close()
+
 	var handler http.Handler = mux
+	handler = limiter.Middleware(handler)
 	if authnMW != nil {
-		handler = authnMW(mux)
+		handler = authnMW(handler)
+	}
+	handler = metrics.Middleware(handler)
+	handler = obs.RequestLogger(handler, *trustedProxy)
+	handler = obs.Recovery(handler)
+
+	// /metrics on a SEPARATE listener — NOT behind authn (a scraper has no
+	// session). Empty --metrics-addr disables it.
+	if *metricsAddr != "" {
+		msrv := &http.Server{Addr: *metricsAddr, Handler: metricsMux(metrics)}
+		go func() {
+			slog.Info("metrics listening", slog.String("addr", *metricsAddr), slog.String("path", "/metrics"))
+			if err := msrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("metrics server stopped", slog.Any("error", err))
+			}
+		}()
 	}
 
-	log.Printf("kestrel listening on %s", *addr)
+	slog.Info("kestrel listening", slog.String("addr", *addr))
 	if *tlsCert != "" && *tlsKey != "" {
-		log.Printf("serving HTTPS (TLS)")
-		log.Fatal(http.ListenAndServeTLS(*addr, *tlsCert, *tlsKey, handler))
+		slog.Info("serving HTTPS (TLS)")
+		fatal("http server", http.ListenAndServeTLS(*addr, *tlsCert, *tlsKey, handler))
 	} else {
-		log.Fatal(http.ListenAndServe(*addr, handler))
+		fatal("http server", http.ListenAndServe(*addr, handler))
 	}
+}
+
+// metricsMux serves the Prometheus exposition at /metrics on the dedicated
+// listener.
+func metricsMux(m *obs.Metrics) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", m.Handler())
+	return mux
+}
+
+// fatal logs a fatal startup error via slog and exits non-zero (replacing the
+// old log.Fatal calls so all output is structured JSON).
+func fatal(msg string, err error) {
+	slog.Error(msg, slog.Any("error", err))
+	os.Exit(1)
 }
 
 // helmRepoFlag collects repeated --helm-repo values. Each value is one or more
@@ -212,14 +264,14 @@ const minSessionKeyLen = 32
 func sessionKeyBytes(flagVal string) []byte {
 	if flagVal != "" {
 		if len(flagVal) < minSessionKeyLen {
-			log.Fatalf("--session-key too short: %d bytes, need at least %d", len(flagVal), minSessionKeyLen)
+			fatal("session key", fmt.Errorf("--session-key too short: %d bytes, need at least %d", len(flagVal), minSessionKeyLen))
 		}
 		return []byte(flagVal)
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		log.Fatalf("generate session key: %v", err)
+		fatal("generate session key", err)
 	}
-	log.Printf("WARNING: --session-key not set: using a random key; sessions won't survive a restart")
+	slog.Warn("--session-key not set: using a random key; sessions won't survive a restart")
 	return b
 }
