@@ -11,3 +11,22 @@ jobs:
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
       - run: go test -race ./...
+
+  # Integration test for real Server-Side Apply against a live kube-apiserver
+  # booted by controller-runtime's envtest (kube-apiserver + etcd from
+  # downloaded binaries; no Docker). Kept as a SEPARATE job so a flaky run or an
+  # asset-download hiccup does not block the main build. Gated behind the
+  # `envtest` build tag, so the default `go test` (backend job) stays
+  # cluster-free.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - name: Install setup-envtest
+        run: go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.19
+      - name: Provision control-plane binaries
+        run: echo "KUBEBUILDER_ASSETS=$(setup-envtest use -p path 1.31.0)" >> "$GITHUB_ENV"
+      - name: Run SSA integration test
+        run: go test -tags envtest ./internal/k8s/ -run Integration -count=1
