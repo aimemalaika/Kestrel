@@ -1,4 +1,5 @@
 import type { ApiError } from '../contract/types'
+import { maybeRedirectUnauthorized } from '../auth/sessionRedirect'
 
 // Module clients (registry, helm) talk to the Go backend over same-origin
 // fetch so the OIDC session cookie rides along. Unlike the legacy HttpClient,
@@ -24,7 +25,10 @@ export async function getJSON<T>(url: string): Promise<T> {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
   })
-  if (!res.ok) throw await toApiError(res)
+  if (!res.ok) {
+    maybeRedirectUnauthorized(res)
+    throw await toApiError(res)
+  }
   return (await res.json()) as T
 }
 
@@ -34,7 +38,10 @@ export async function del(url: string): Promise<void> {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
   })
-  if (!res.ok) throw await toApiError(res)
+  if (!res.ok) {
+    maybeRedirectUnauthorized(res)
+    throw await toApiError(res)
+  }
 }
 
 export const q = encodeURIComponent
