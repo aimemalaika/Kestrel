@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -98,8 +99,31 @@ func NewHandler(acc k8s.ClusterAccessor, cfg Config) *Handler {
 	return &Handler{
 		acc:   acc,
 		repos: repos,
-		hc:    &http.Client{Timeout: 30 * time.Second},
+		hc:    &http.Client{Timeout: 30 * time.Second, CheckRedirect: refuseInternalRedirect},
 	}
+}
+
+// refuseInternalRedirect is the chart-repo HTTP client's redirect policy. The
+// initial request goes to the operator-configured repo URL (trusted), but a
+// compromised/misconfigured repo could 3xx-redirect the server-side fetch at an
+// internal address (cloud metadata, in-cluster service). We cap the redirect
+// chain and refuse any hop whose host resolves to a non-public IP
+// (loopback/private/link-local/unspecified), closing that SSRF vector.
+func refuseInternalRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 5 {
+		return errors.New("stopped after 5 redirects")
+	}
+	host := req.URL.Hostname()
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("refusing redirect: cannot resolve %q: %w", host, err)
+	}
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("refusing redirect to non-public host %q (%s)", host, ip)
+		}
+	}
+	return nil
 }
 
 // ---- HTTP routing ---------------------------------------------------------
@@ -144,7 +168,15 @@ func (h *Handler) listReleases(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, []Release{})
 		return
 	}
-	secrets, err := kube.CoreV1().Secrets("").List(r.Context(), metav1.ListOptions{LabelSelector: ownerSelector})
+	// Optional ?namespace= scopes the list to one namespace. Default (empty) is
+	// all namespaces, which needs cluster-wide secret list; a namespaced user
+	// without that RBAC should pass their namespace to avoid a 403.
+	listNS := r.URL.Query().Get("namespace")
+	if listNS != "" && !validName(listNS) {
+		writeErr(w, errf(http.StatusBadRequest, "BadRequest", "invalid namespace: %q", listNS))
+		return
+	}
+	secrets, err := kube.CoreV1().Secrets(listNS).List(r.Context(), metav1.ListOptions{LabelSelector: ownerSelector})
 	if err != nil {
 		writeErr(w, mapK8sErr(err))
 		return
