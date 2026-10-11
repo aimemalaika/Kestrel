@@ -63,12 +63,35 @@ unless you bind your own narrower roles to the SA out-of-band.
 `automountServiceAccountToken` is **true** on purpose: the SA token is the
 in-cluster credential the binary uses for API discovery and the informer cache.
 
+### Excluding Secrets
+
+Set `rbac.excludeSecrets: true` (opt-in, default `false`) to keep Secrets out of
+Kestrel's live watch cache. When enabled, the Deployment is started with
+`--no-watch-resources=secrets`, so the **shared informer never list/watches
+Secrets** — they are never cached in-process and never streamed over SSE.
+Secrets stay readable **per-user** via `get`/`list` (each request forwards the
+user's own OIDC token and is authorized by the apiserver).
+
+```yaml
+rbac:
+  excludeSecrets: true
+```
+
+> **RBAC limitation (important).** `excludeSecrets` is the *behavioral*
+> protection — it changes what Kestrel watches, not what the ServiceAccount is
+> *permitted* to read. The broad grant is a wildcard (`resources: ["*"]`), and
+> Kubernetes RBAC has **no deny verb** and no way to say "all resources except
+> secrets"; truly removing Secrets would require enumerating every resource,
+> which is infeasible and breaks for CRDs. So the SA technically *could* still
+> read Secrets via RBAC — Kestrel simply never does. To fully strip Secrets from
+> the SA's permissions, set `rbac.clusterRead: false` and bind your own narrower
+> `ClusterRole`/`Role`s to the SA out-of-band.
+
 ## Secrets
 
 Three sensitive inputs — the OIDC client secret, the session HMAC key, and the
 registry password — are injected from a Kubernetes Secret as **environment
-variables** and expanded into the corresponding flags via Kubernetes `$(VAR)`
-argument expansion. Prefer an existing Secret:
+variables** that the binary reads **natively**. Prefer an existing Secret:
 
 ```yaml
 existingSecret:
@@ -78,16 +101,20 @@ existingSecret:
   registryPasswordKey: registry-password
 ```
 
+The chart maps those Secret keys to the env vars `KESTREL_OIDC_CLIENT_SECRET`,
+`KESTREL_SESSION_KEY` and `KESTREL_REGISTRY_PASSWORD`. The binary uses each when
+the matching flag (`--oidc-client-secret`, `--session-key`,
+`--registry-password`) is empty — an explicit non-empty flag still wins.
+
 For quick testing you may let the chart create the Secret from inline values
 (`secret.create: true`, `secret.oidcClientSecret`, `secret.sessionKey`,
 `secret.registryPassword`) — **not for production**.
 
-> **Hardening follow-up:** the binary currently reads these as **flags**, so even
-> when sourced from a Secret via env the value still lands on the process command
-> line (visible in `ps` / the running container spec). Making the binary read
-> these secrets natively from env is a tracked hardening follow-up. The chart
-> keeps the plaintext out of the rendered manifests (it lives only in the Secret
-> and the injected env var) — acceptable for 1.0 with the follow-up flagged.
+> **Secrets stay off the command line.** The binary reads these env vars
+> directly, so (unlike the earlier flag/`$(VAR)` approach) the plaintext never
+> lands on the process command line — it is not visible in `ps` or the running
+> container spec, and it is not in the rendered manifests (it lives only in the
+> Secret and the injected env var).
 
 If no session key is provided the binary generates a random one at startup;
 sessions then won't survive restarts or work across replicas. Set a stable key
@@ -154,9 +181,11 @@ metrics:
 
 ## Probes
 
-Liveness and readiness probes do an HTTP GET on `/` (which serves the SPA, 200).
-There is no dedicated `/healthz` endpoint yet — adding one is a follow-up. Adjust
-or disable the probes via `livenessProbe` / `readinessProbe` in values.
+Liveness and readiness probes do an HTTP GET on `/healthz` — a trivial `200`
+`{"status":"ok"}` handler on the main serving port that is **exempt from authn
+and the rate limiter** (a kubelet probe carries no session and must never be
+throttled). It is liveness-only (no cluster call). Adjust or disable the probes
+via `livenessProbe` / `readinessProbe` in values.
 
 ## Security context
 

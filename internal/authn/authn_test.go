@@ -388,6 +388,26 @@ func TestMiddlewareUnauthenticatedAPI401(t *testing.T) {
 	}
 }
 
+// #113: the liveness probe path is exempt from authn. Even with OIDC enabled
+// (an authenticator installed), GET /healthz must pass through to the handler
+// with NO session and return 200 — a kubelet probe carries no session cookie.
+func TestMiddlewareHealthzBypassesAuth(t *testing.T) {
+	a := testAuth(nil, nil)
+	reached := false
+	h := a.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if !reached {
+		t.Fatal("/healthz did not reach the handler (authn should bypass it)")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200", rec.Code)
+	}
+}
+
 func TestMiddlewareValidSessionSetsIdentity(t *testing.T) {
 	a := testAuth(nil, nil)
 	cookie := newSessionCookie(a, "bob@example.com", "bobs-id-token")

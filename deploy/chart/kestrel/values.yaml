@@ -52,6 +52,22 @@ rbac:
   # has; most of Kestrel's read surface will not work. Only do this if you will
   # bind your own narrower ClusterRole/Roles to the SA out-of-band.
   clusterRead: true
+  # -- Exclude Secrets from Kestrel's live watch cache (SSE). OPT-IN, default
+  # false (no behavior change). When true, the Deployment is started with
+  # --no-watch-resources=secrets, so the shared informer NEVER list/watches
+  # Secrets: they are never cached or streamed over SSE. Secrets remain readable
+  # per-user via get/list (each request forwards the user's own OIDC token).
+  #
+  # LIMITATION — this does NOT remove Secrets from the ServiceAccount's
+  # ClusterRole. Kubernetes RBAC has no "deny", and the broad read grant uses
+  # wildcards (apiGroups: ["*"], resources: ["*"]) that inherently include
+  # Secrets; there is no way to express "all resources EXCEPT secrets" without
+  # enumerating every resource (infeasible, and it breaks for CRDs). So the flag
+  # is the behavioral protection (Kestrel's informer never touches Secrets);
+  # fully stripping Secrets from the SA's RBAC is left to the operator (set
+  # rbac.clusterRead=false and bind your own narrower Role out-of-band). See the
+  # chart README section "Excluding Secrets".
+  excludeSecrets: false
   # -- Extra rules appended to the ClusterRole (e.g. non-resource URLs).
   extraRules: []
 
@@ -127,15 +143,13 @@ config:
 #   - session key          (--session-key)
 #   - registry password    (--registry-password)
 #
-# These are injected into the pod as environment variables (from a Secret) and
-# expanded into the flag values via Kubernetes $(VAR) arg expansion. Prefer
-# `existingSecret`. The inline `secret.create` path is for convenience/testing
-# only — values committed to a values file are NOT safe for production.
-#
-# FOLLOW-UP (hardening): the binary reads these as FLAGS today, so even when
-# sourced from a Secret via env the value still lands on the process command
-# line (visible in `ps`/the running container spec). Env-native secret reading
-# is tracked as a hardening follow-up; see the chart README.
+# These are injected into the pod as environment variables (from a Secret). The
+# binary reads them ENV-NATIVELY: KESTREL_OIDC_CLIENT_SECRET, KESTREL_SESSION_KEY
+# and KESTREL_REGISTRY_PASSWORD are used directly when the matching flag is
+# empty, so the secret value never lands on the process command line (not
+# visible in `ps` or the container spec). Prefer `existingSecret`. The inline
+# `secret.create` path is for convenience/testing only — values committed to a
+# values file are NOT safe for production.
 existingSecret:
   # -- Name of an existing Secret to read sensitive values from. When set, the
   # chart does NOT create its own secret.
@@ -232,11 +246,12 @@ securityContext:
     drop:
       - ALL
 
-# -- Liveness/readiness probes hit "/" over HTTP, which serves the SPA (200).
-# No dedicated /healthz endpoint exists yet (tracked as a follow-up).
+# -- Liveness/readiness probes hit "/healthz" over HTTP: a trivial 200 handler
+# that is exempt from authn and the rate limiter, so probes never hit the SPA
+# and never depend on a session or get throttled. Liveness only (no cluster call).
 livenessProbe:
   httpGet:
-    path: /
+    path: /healthz
     port: http
   initialDelaySeconds: 10
   periodSeconds: 20
@@ -244,7 +259,7 @@ livenessProbe:
   failureThreshold: 3
 readinessProbe:
   httpGet:
-    path: /
+    path: /healthz
     port: http
   initialDelaySeconds: 5
   periodSeconds: 10
