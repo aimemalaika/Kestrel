@@ -22,7 +22,7 @@ type fakeAuthz struct {
 	err   error
 }
 
-func (f *fakeAuthz) CanList(ctx context.Context, _ k8s.GVR, ns string) (bool, error) {
+func (f *fakeAuthz) CanWatch(ctx context.Context, _ k8s.GVR, ns string) (bool, error) {
 	if f.err != nil {
 		return false, f.err
 	}

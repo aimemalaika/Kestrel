@@ -129,7 +129,7 @@ func (h *Hub) denied(g k8s.GVR) bool {
 
 // WithAuthorizer wires the per-user SSE read filter (#46). When set, every
 // object-bearing envelope a subscriber would receive — both the initial sync
-// snapshot and live watch deltas — is gated by a namespace-level CanList check
+// snapshot and live watch deltas — is gated by a namespace-level CanWatch check
 // for the subscriber's own identity, so a shared informer watching as the
 // ServiceAccount cannot leak objects to a user whose RBAC forbids them. With no
 // authorizer (the default, and the --mock path) filtering is off: today's
@@ -174,7 +174,7 @@ const metaNamespaceAll = "" // metav1.NamespaceAll
 // #46: the shared informer hub watches as the ServiceAccount, but when an
 // Authorizer is wired (WithAuthorizer, the production path) the per-user SSE
 // read filter is applied in Hub.Watch — the initial sync snapshot and every
-// live delta are gated by a namespace-level CanList for the subscriber's own
+// live delta are gated by a namespace-level CanWatch for the subscriber's own
 // identity, so a subscriber only ever sees objects their RBAC permits. With no
 // authorizer (tests/--mock) or no user token on ctx, filtering is off.
 func NewHubFromAccessor(acc k8s.ClusterAccessor, opts ...HubOption) *Hub {
@@ -376,7 +376,7 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 	// at Watch time. Filtering is ON only when an authorizer is wired AND this
 	// connection carries a user token; otherwise it is OFF and allow() is a no-op,
 	// which preserves today's behavior (no authorizer in tests/--mock; no token
-	// when OIDC is disabled / single-operator). The CanList check runs in THIS
+	// when OIDC is disabled / single-operator). The CanWatch check runs in THIS
 	// subscriber's own goroutine with its own ctx — never in the shared dispatch
 	// path — so the informer and other subscribers are unaffected. It FAILS CLOSED:
 	// on deny or any error the object is skipped and never sent.
@@ -386,7 +386,7 @@ func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
 		if !filtering {
 			return true
 		}
-		ok, err := h.authz.CanList(ctx, ref.GVR, ns)
+		ok, err := h.authz.CanWatch(ctx, ref.GVR, ns)
 		if err != nil {
 			logErr.Do(func() {
 				slog.Warn("stream: authz check failed (filtering out)",
