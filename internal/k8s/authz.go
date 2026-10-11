@@ -27,14 +27,14 @@ const maxSARCache = 4096
 // SSARAuthorizer answers "may THIS user list <gvr> in <namespace>" via a
 // SelfSubjectAccessReview created with the user's own forwarded token, caching
 // each decision for a short TTL. It structurally satisfies stream.Authorizer
-// (CanList), so the stream package depends only on its own interface and k8s
+// (CanWatch), so the stream package depends only on its own interface and k8s
 // never imports stream (no cycle).
 //
 // Security posture:
 //   - FAIL CLOSED: on any error building the per-user client or running the
-//     SSAR, CanList returns (false, err) — the caller (the hub) skips the
+//     SSAR, CanWatch returns (false, err) — the caller (the hub) skips the
 //     object. Errors are NOT cached, so a transient failure is retried.
-//   - HEDGE: with no user token on ctx (OIDC off / single-operator) CanList
+//   - HEDGE: with no user token on ctx (OIDC off / single-operator) CanWatch
 //     returns (true, nil) — no filtering, today's behavior.
 //
 // It reuses userConfig (the anti-credential-leak boundary in real.go) to build
@@ -81,8 +81,18 @@ func (a *SSARAuthorizer) buildClient(token string) (kubernetes.Interface, error)
 	return kube, nil
 }
 
-// CanList reports whether the user on ctx may `list` gvr in namespace.
-func (a *SSARAuthorizer) CanList(ctx context.Context, gvr GVR, namespace string) (bool, error) {
+// CanWatch reports whether the user on ctx may `watch` gvr in namespace, via a
+// SelfSubjectAccessReview with that user's own token. The SSE stream is a watch,
+// so `watch` (not `list`) is the authorizing verb.
+//
+// Namespace granularity is correct here, not a limitation: Kubernetes RBAC
+// `resourceNames` scopes only the individual-object verbs (get/update/patch/
+// delete), never list/watch/create/deletecollection. A watch therefore cannot be
+// resourceNames-restricted — it is all-or-nothing per (resource, namespace) — so
+// a per-object check would add nothing. A user with only a resourceNames get
+// grant (no watch) is correctly denied the live stream here and still reads their
+// named objects through the per-user get path.
+func (a *SSARAuthorizer) CanWatch(ctx context.Context, gvr GVR, namespace string) (bool, error) {
 	id := auth.From(ctx)
 	if id.Token == "" {
 		// Hedge: no forwarded token ⇒ single-operator / OIDC off ⇒ do not filter.
@@ -118,7 +128,7 @@ func (a *SSARAuthorizer) CanList(ctx context.Context, gvr GVR, namespace string)
 	ssar := &authzv1.SelfSubjectAccessReview{
 		Spec: authzv1.SelfSubjectAccessReviewSpec{
 			ResourceAttributes: &authzv1.ResourceAttributes{
-				Verb:      "list",
+				Verb:      "watch",
 				Group:     gvr.Group,
 				Version:   gvr.Version,
 				Resource:  gvr.Resource,

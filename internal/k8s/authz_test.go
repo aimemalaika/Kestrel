@@ -41,33 +41,33 @@ func tokCtx(user, token string) context.Context {
 	return auth.WithIdentity(context.Background(), auth.Identity{User: user, Token: token})
 }
 
-// TestCanListReflectsSSAR: CanList returns the apiserver's decision for both
+// TestCanWatchReflectsSSAR: CanWatch returns the apiserver's decision for both
 // allow and deny, per namespace.
-func TestCanListReflectsSSAR(t *testing.T) {
+func TestCanWatchReflectsSSAR(t *testing.T) {
 	a, _ := sarRig(t, defaultSARTTL, func(ns string) bool { return ns == "team-a" })
 	ctx := tokCtx("alice", "tok")
 
-	if ok, err := a.CanList(ctx, gvrCM(), "team-a"); err != nil || !ok {
+	if ok, err := a.CanWatch(ctx, gvrCM(), "team-a"); err != nil || !ok {
 		t.Fatalf("team-a: got (%v,%v), want (true,nil)", ok, err)
 	}
-	if ok, err := a.CanList(ctx, gvrCM(), "team-b"); err != nil || ok {
+	if ok, err := a.CanWatch(ctx, gvrCM(), "team-b"); err != nil || ok {
 		t.Fatalf("team-b: got (%v,%v), want (false,nil)", ok, err)
 	}
 }
 
-// TestCanListTTLCacheHit: a repeated query inside the TTL reuses the decision —
+// TestCanWatchTTLCacheHit: a repeated query inside the TTL reuses the decision —
 // no second SSAR. Both allow and deny decisions are cached.
-func TestCanListTTLCacheHit(t *testing.T) {
+func TestCanWatchTTLCacheHit(t *testing.T) {
 	a, count := sarRig(t, time.Hour, func(ns string) bool { return ns == "team-a" })
 	ctx := tokCtx("alice", "tok")
 
 	for i := 0; i < 3; i++ {
-		if ok, err := a.CanList(ctx, gvrCM(), "team-a"); err != nil || !ok {
+		if ok, err := a.CanWatch(ctx, gvrCM(), "team-a"); err != nil || !ok {
 			t.Fatalf("allow #%d: (%v,%v)", i, ok, err)
 		}
 	}
 	for i := 0; i < 3; i++ {
-		if ok, err := a.CanList(ctx, gvrCM(), "team-b"); err != nil || ok {
+		if ok, err := a.CanWatch(ctx, gvrCM(), "team-b"); err != nil || ok {
 			t.Fatalf("deny #%d: (%v,%v)", i, ok, err)
 		}
 	}
@@ -77,16 +77,16 @@ func TestCanListTTLCacheHit(t *testing.T) {
 	}
 }
 
-// TestCanListTTLExpiry: once the TTL lapses, a fresh SSAR is issued.
-func TestCanListTTLExpiry(t *testing.T) {
+// TestCanWatchTTLExpiry: once the TTL lapses, a fresh SSAR is issued.
+func TestCanWatchTTLExpiry(t *testing.T) {
 	a, count := sarRig(t, time.Millisecond, func(string) bool { return true })
 	ctx := tokCtx("alice", "tok")
 
-	if _, err := a.CanList(ctx, gvrCM(), "team-a"); err != nil {
+	if _, err := a.CanWatch(ctx, gvrCM(), "team-a"); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(10 * time.Millisecond)
-	if _, err := a.CanList(ctx, gvrCM(), "team-a"); err != nil {
+	if _, err := a.CanWatch(ctx, gvrCM(), "team-a"); err != nil {
 		t.Fatal(err)
 	}
 	if n := atomic.LoadInt32(count); n != 2 {
@@ -94,11 +94,11 @@ func TestCanListTTLExpiry(t *testing.T) {
 	}
 }
 
-// TestCanListEmptyTokenHedge: no token ⇒ (true,nil) with NO SSAR (single
+// TestCanWatchEmptyTokenHedge: no token ⇒ (true,nil) with NO SSAR (single
 // operator / OIDC off).
-func TestCanListEmptyTokenHedge(t *testing.T) {
+func TestCanWatchEmptyTokenHedge(t *testing.T) {
 	a, count := sarRig(t, defaultSARTTL, func(string) bool { return false })
-	if ok, err := a.CanList(tokCtx("alice", ""), gvrCM(), "team-a"); err != nil || !ok {
+	if ok, err := a.CanWatch(tokCtx("alice", ""), gvrCM(), "team-a"); err != nil || !ok {
 		t.Fatalf("empty token: got (%v,%v), want (true,nil)", ok, err)
 	}
 	if n := atomic.LoadInt32(count); n != 0 {
@@ -106,10 +106,10 @@ func TestCanListEmptyTokenHedge(t *testing.T) {
 	}
 }
 
-// TestCanListDifferentUsersDoNotShareCache: alice allowed, bob denied for the
+// TestCanWatchDifferentUsersDoNotShareCache: alice allowed, bob denied for the
 // SAME namespace — the cache key includes the user, so bob is not served alice's
 // decision.
-func TestCanListDifferentUsersDoNotShareCache(t *testing.T) {
+func TestCanWatchDifferentUsersDoNotShareCache(t *testing.T) {
 	// The clientFor builder returns a per-user fake clientset: alice's always
 	// allows, bob's always denies. Because the cache key includes the user, bob's
 	// query for the SAME namespace cannot be served alice's cached allow.
@@ -133,10 +133,10 @@ func TestCanListDifferentUsersDoNotShareCache(t *testing.T) {
 	az := &SSARAuthorizer{ttl: time.Hour, cache: map[string]sarDecision{}}
 	az.clientFor = build
 
-	if ok, err := az.CanList(tokCtx("alice", "tok-alice"), gvrCM(), "shared"); err != nil || !ok {
+	if ok, err := az.CanWatch(tokCtx("alice", "tok-alice"), gvrCM(), "shared"); err != nil || !ok {
 		t.Fatalf("alice: got (%v,%v), want (true,nil)", ok, err)
 	}
-	if ok, err := az.CanList(tokCtx("bob", "tok-bob"), gvrCM(), "shared"); err != nil || ok {
+	if ok, err := az.CanWatch(tokCtx("bob", "tok-bob"), gvrCM(), "shared"); err != nil || ok {
 		t.Fatalf("bob: got (%v,%v), want (false,nil) — bob must not inherit alice's allow", ok, err)
 	}
 	if atomic.LoadInt32(&alice) != 1 || atomic.LoadInt32(&bob) != 1 {
@@ -144,14 +144,14 @@ func TestCanListDifferentUsersDoNotShareCache(t *testing.T) {
 	}
 }
 
-// TestCanListNilRESTConfigFailsClosed: with a token present but no rest.Config,
+// TestCanWatchNilRESTConfigFailsClosed: with a token present but no rest.Config,
 // the default client builder fails CLOSED (false, err) rather than falling back
 // to the ServiceAccount.
-func TestCanListNilRESTConfigFailsClosed(t *testing.T) {
+func TestCanWatchNilRESTConfigFailsClosed(t *testing.T) {
 	// Accessor with no rest.Config (NewAccessorFrom leaves it nil).
 	acc := NewAccessorFrom(nil, nil)
 	a := NewSSARAuthorizer(acc) // uses the real buildClient
-	ok, err := a.CanList(tokCtx("alice", "tok"), gvrCM(), "team-a")
+	ok, err := a.CanWatch(tokCtx("alice", "tok"), gvrCM(), "team-a")
 	if ok {
 		t.Fatal("nil RESTConfig + token must not allow")
 	}

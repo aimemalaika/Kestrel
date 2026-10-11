@@ -33,7 +33,7 @@ type Envelope struct {
 // decision lives in one place and cannot drift. A nil Authorizer on the Hub
 // disables filtering (see WithAuthorizer).
 type Authorizer interface {
-	CanList(ctx context.Context, gvr k8s.GVR, namespace string) (bool, error)
+	CanWatch(ctx context.Context, gvr k8s.GVR, namespace string) (bool, error)
 }
 
 // Source produces envelopes for a watch.
