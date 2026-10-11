@@ -15,7 +15,6 @@ import type {
   K8sObject,
   WatchEnvelope,
 } from '../contract/types'
-import { getIdentity } from '../auth/identity'
 
 function path(gvr: GVR, namespace?: string, name?: string, prefix = '/api'): string {
   // Per API-CONTRACT.md the frontend sends `core` literally (e.g. core/v1/pods);
@@ -23,16 +22,6 @@ function path(gvr: GVR, namespace?: string, name?: string, prefix = '/api'): str
   const ns = namespace ? `/namespaces/${encodeURIComponent(namespace)}` : ''
   const nm = name ? `/${encodeURIComponent(name)}` : ''
   return `${prefix}/${gvr.group}/${gvr.version}${ns}/${gvr.resource}${nm}`
-}
-
-function identityHeaders(): Headers {
-  const h = new Headers()
-  const id = getIdentity()
-  if (id) {
-    h.set('Impersonate-User', id.user)
-    for (const g of id.groups) h.append('Impersonate-Group', g)
-  }
-  return h
 }
 
 function wsUrl(p: string): string {
@@ -56,11 +45,15 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 async function request(method: string, url: string, body?: unknown): Promise<Response> {
-  const headers = identityHeaders()
+  // Auth is the OIDC session cookie: same-origin fetch sends it automatically.
+  // No Impersonate-* headers — the backend ignores them and resolves identity
+  // from the verified session only.
+  const headers = new Headers()
   if (body !== undefined) headers.set('Content-Type', 'application/json')
   const res = await fetch(url, {
     method,
     headers,
+    credentials: 'same-origin',
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   if (!res.ok) throw await toApiError(res)

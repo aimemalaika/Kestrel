@@ -85,12 +85,17 @@ describe('HttpClient', () => {
     expect(JSON.parse(init.body)).toEqual(req)
   })
 
-  it('sends identity headers', async () => {
+  it('does not send Impersonate-* headers; relies on the session cookie', async () => {
+    // Auth is the OIDC session cookie (same-origin credentials). The backend
+    // ignores Impersonate-* headers, so the client must not send them even when
+    // a (mock) identity is set.
     setIdentity(IDENTITY_PRESETS[0])
     await createHttpClient().catalog()
-    const h = fetchMock.mock.calls[0][1].headers as Headers
-    expect(h.get('Impersonate-User')).toBe('operator@kestrel')
-    expect(h.get('Impersonate-Group')).toBe('system:masters')
+    const init = fetchMock.mock.calls[0][1]
+    const h = init.headers as Headers
+    expect(h.get('Impersonate-User')).toBeNull()
+    expect(h.get('Impersonate-Group')).toBeNull()
+    expect(init.credentials).toBe('same-origin')
   })
 
   it('throws ApiError on non-2xx', async () => {
