@@ -1,5 +1,6 @@
 import type { ApiError } from '../../contract/types'
 import { getJSON } from '../moduleFetch'
+import { maybeRedirectUnauthorized } from '../../auth/sessionRedirect'
 import type { ParseResult, ServiceMapModel, ValidationError } from './types'
 
 // Same-origin client for the B10 service-map backend. GET reuses the shared
@@ -53,5 +54,6 @@ export async function putServiceMap(yaml: string): Promise<ParseResult> {
     return { ok: false, errors: [{ message: 'Service map too large (max 1 MiB)' }] }
   }
 
+  maybeRedirectUnauthorized(res)
   throw await toApiError(res)
 }

@@ -15,6 +15,7 @@ import type {
   K8sObject,
   WatchEnvelope,
 } from '../contract/types'
+import { maybeRedirectUnauthorized } from '../auth/sessionRedirect'
 
 function path(gvr: GVR, namespace?: string, name?: string, prefix = '/api'): string {
   // Per API-CONTRACT.md the frontend sends `core` literally (e.g. core/v1/pods);
@@ -56,7 +57,10 @@ async function request(method: string, url: string, body?: unknown): Promise<Res
     credentials: 'same-origin',
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (!res.ok) throw await toApiError(res)
+  if (!res.ok) {
+    maybeRedirectUnauthorized(res)
+    throw await toApiError(res)
+  }
   return res
 }
 

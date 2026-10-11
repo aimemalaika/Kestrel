@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHttpClient } from '../HttpClient'
 import { setIdentity, IDENTITY_PRESETS } from '../../auth/identity'
+import { LOGIN_PATH, __resetSessionRedirect } from '../../auth/sessionRedirect'
 
 class FakeES {
   static last: FakeES
@@ -96,6 +97,21 @@ describe('HttpClient', () => {
     expect(h.get('Impersonate-User')).toBeNull()
     expect(h.get('Impersonate-Group')).toBeNull()
     expect(init.credentials).toBe('same-origin')
+  })
+
+  it('redirects to login on 401', async () => {
+    __resetSessionRedirect()
+    const assign = vi.fn()
+    vi.stubGlobal('location', { assign, origin: 'http://localhost' })
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      statusText: 'Unauthorized',
+      json: async () => ({ error: 'no session', code: 401, reason: 'Unauthorized' }),
+    })
+    await expect(createHttpClient().catalog()).rejects.toMatchObject({ code: 401 })
+    expect(assign).toHaveBeenCalledWith(LOGIN_PATH)
+    vi.unstubAllGlobals()
   })
 
   it('throws ApiError on non-2xx', async () => {
