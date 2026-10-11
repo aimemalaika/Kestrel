@@ -56,7 +56,8 @@ export function NavTree({
       const g = t.gvr
       return {
         to: `/ns/${ns}/${g.group}/${g.version}/${g.resource}`,
-        active: gvr?.group === g.group && gvr?.version === g.version && gvr?.resource === g.resource,
+        active:
+          gvr?.group === g.group && gvr?.version === g.version && gvr?.resource === g.resource,
       }
     }
     const e = catalog.find((c) => c.resource === t.resource)

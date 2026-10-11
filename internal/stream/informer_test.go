@@ -283,33 +283,25 @@ func TestSlowSubscriberDisconnectedOthersUnaffected(t *testing.T) {
 	r := newRig(t, []HubOption{WithSubscriberBuffer(2)}, cm("a", "seed"))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	slow, _ := r.hub.Watch(ctx, cmRef) // never read until the end
+	slow, _ := r.hub.Watch(ctx, cmRef) // deliberately never read until the end
 	fast, _ := r.hub.Watch(ctx, cmRef)
 	burst(t, fast, "seed")
 	waitWatch(t, r)
 
-	done := make(chan struct{})
-	got := make(chan string, 64)
-	go func() { // fast consumer
-		defer close(done)
-		for e := range fast {
-			got <- name(e)
-		}
-	}()
+	// Create one object at a time and drain `fast` for each. Draining after every
+	// create keeps fast's buffer from ever overflowing, so the test is
+	// deterministic (no timing race on who overflows). `slow` is never read, so
+	// its buffer (2) overflows after a few events and the hub disconnects it —
+	// without affecting fast, which sees every event in order.
 	for i := 0; i < 20; i++ {
 		n := fmt.Sprintf("o%d", i)
 		if _, err := r.client.Resource(cmGVR).Namespace("a").Create(ctx, cm("a", n), metav1.CreateOptions{}); err != nil {
 			t.Fatal(err)
 		}
+		expect(t, fast, Added, n)
 	}
-	for i := 0; i < 20; i++ { // fast sees everything despite the stuck peer
-		select {
-		case <-got:
-		case <-time.After(5 * time.Second):
-			t.Fatalf("fast subscriber starved at %d", i)
-		}
-	}
-	// The slow one is eventually terminated with an error envelope then closed.
+
+	// The slow subscriber is terminated with an error envelope, then closed.
 	sawErr := false
 	for e := range slow {
 		if e.Type == Error {
@@ -319,8 +311,6 @@ func TestSlowSubscriberDisconnectedOthersUnaffected(t *testing.T) {
 	if !sawErr {
 		t.Fatal("slow subscriber closed without an error envelope")
 	}
-	cancel()
-	<-done
 }
 
 func TestUnknownResourceResolverError(t *testing.T) {

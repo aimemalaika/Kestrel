@@ -59,7 +59,9 @@ describe('serviceMapClient', () => {
   })
 
   it('putServiceMap maps a 400 into a single error from body.error', async () => {
-    fetchMock.mockResolvedValueOnce(res(400, { error: 'bad yaml', code: 400, reason: 'BadRequest' }))
+    fetchMock.mockResolvedValueOnce(
+      res(400, { error: 'bad yaml', code: 400, reason: 'BadRequest' }),
+    )
     const r = await putServiceMap('::')
     expect(r).toEqual({ ok: false, errors: [{ message: 'bad yaml' }] })
   })

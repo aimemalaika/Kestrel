@@ -93,7 +93,12 @@ describe('customResourceSection', () => {
   })
 
   it('returns null when there are no custom resources', () => {
-    expect(customResourceSection([entry('', 'pods', 'Pod'), entry('apps', 'deployments', 'Deployment')], ADMIN_NAV)).toBeNull()
+    expect(
+      customResourceSection(
+        [entry('', 'pods', 'Pod'), entry('apps', 'deployments', 'Deployment')],
+        ADMIN_NAV,
+      ),
+    ).toBeNull()
     expect(customResourceSection([], ADMIN_NAV)).toBeNull()
   })
 })
