@@ -286,9 +286,9 @@ func (a *api) runForward(parent context.Context, conn *websocket.Conn, ref k8s.R
 	// Initial status once the forward is established (or bail on early failure).
 	select {
 	case <-ready:
-		_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"status":"active"}`))
+		sendForwardStatus(conn, "active", "")
 	case err := <-errCh:
+		sendForwardStatus(conn, "error", err.Error())
 		closeWS(conn, err)
 		return
 	case <-clientGone:
@@ -296,16 +296,43 @@ func (a *api) runForward(parent context.Context, conn *websocket.Conn, ref k8s.R
 		return
 	}
 
-	// Hold the forward open until the browser leaves, the forward ends, or ctx
-	// is cancelled. cancel() (deferred) stops the forwarder in every path.
+	// Optional max-lifetime cap (not activity-based: the lifecycle WS has no data
+	// to measure idleness against).
+	var idle <-chan time.Time
+	if a.d.PortForwardTimeout > 0 {
+		t := time.NewTimer(a.d.PortForwardTimeout)
+		defer t.Stop()
+		idle = t.C
+	}
+
+	// Hold the forward open until the browser leaves, the forward ends, the
+	// lifetime cap fires, or ctx is cancelled. cancel() (deferred) stops the
+	// forwarder in every path.
 	select {
 	case <-clientGone:
 	case err := <-errCh:
+		sendForwardStatus(conn, "error", err.Error())
 		closeWS(conn, err)
+		return
+	case <-idle:
+		sendForwardStatus(conn, "error", "port-forward exceeded the maximum session lifetime")
+		closeWS(conn, nil)
 		return
 	case <-ctx.Done():
 	}
 	closeWS(conn, nil)
+}
+
+// sendForwardStatus sends a port-forward lifecycle status frame to the browser:
+// {"status":"active|error","message":...}. The frontend reads it to surface
+// why a forward failed (message empty for "active").
+func sendForwardStatus(conn *websocket.Conn, status, msg string) {
+	b, err := json.Marshal(map[string]string{"status": status, "message": msg})
+	if err != nil {
+		return
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+	_ = conn.WriteMessage(websocket.TextMessage, b)
 }
 
 // --- shared WS helpers --------------------------------------------------

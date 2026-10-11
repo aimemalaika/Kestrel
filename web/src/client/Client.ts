@@ -37,6 +37,7 @@ export interface PortForwardSession {
   ref: ResourceRef
   localPort: number
   remotePort: number
-  status: 'active' | 'closed'
+  status: 'active' | 'closed' | 'error'
+  error?: string
   close(): void
 }

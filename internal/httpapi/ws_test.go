@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -234,5 +235,53 @@ func TestCheckSameOriginTrustProxy(t *testing.T) {
 	SetWSTrustProxy(true)
 	if checkSameOrigin(newReq()) {
 		t.Error("trustProxy=true: http Origin should be rejected against an https (XFP) request")
+	}
+}
+
+// errForward fails immediately without signalling ready.
+type errForward struct{ msg string }
+
+func (f errForward) Forward(_ context.Context, _ string, _ string, _ k8s.ForwardOptions, _ chan<- struct{}) error {
+	return errors.New(f.msg)
+}
+
+// TestPortForwardErrorFrame: an early forward failure sends the client a
+// {"status":"error","message":...} frame (so the UI can show why) before close.
+func TestPortForwardErrorFrame(t *testing.T) {
+	a := newAPI(Deps{PortForward: errForward{msg: "bind: address already in use"}})
+	_, wsURL := wsServer(t, a)
+	c := dial(t, wsURL+forwardPath+"?local=8080&remote=80")
+
+	c.SetReadDeadline(time.Now().Add(wsTimeout))
+	_, data, err := c.ReadMessage()
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(data), `"status":"error"`) || !strings.Contains(string(data), "address already in use") {
+		t.Fatalf("want error status frame with the reason, got %q", data)
+	}
+}
+
+// TestPortForwardLifetimeTimeout: with PortForwardTimeout set, a long-lived
+// forward is torn down after the cap with an error frame.
+func TestPortForwardLifetimeTimeout(t *testing.T) {
+	ff := newFakeForward()
+	a := newAPI(Deps{PortForward: ff, PortForwardTimeout: 150 * time.Millisecond})
+	_, wsURL := wsServer(t, a)
+	c := dial(t, wsURL+forwardPath+"?local=8080&remote=80")
+
+	c.SetReadDeadline(time.Now().Add(wsTimeout))
+	// First frame: active.
+	if _, data, err := c.ReadMessage(); err != nil || !strings.Contains(string(data), "active") {
+		t.Fatalf("active frame: data=%q err=%v", data, err)
+	}
+	// Then, after the cap, an error frame citing the lifetime, and teardown.
+	if _, data, err := c.ReadMessage(); err != nil || !strings.Contains(string(data), "lifetime") {
+		t.Fatalf("want lifetime-timeout error frame, got data=%q err=%v", data, err)
+	}
+	select {
+	case <-ff.stopped:
+	case <-time.After(wsTimeout):
+		t.Fatal("forwarder not stopped after lifetime timeout")
 	}
 }

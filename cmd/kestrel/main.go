@@ -64,6 +64,7 @@ func main() {
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
 	registryAllowDelete := flag.Bool("registry-allow-delete", false, "enable DELETE by digest on the registry (deletesEnabled)")
 	registryGroups := flag.String("registry-allowed-groups", "", "comma-separated OIDC groups allowed to use the registry module (empty = any authenticated user; not enforced in single-operator mode)")
+	pfTimeout := flag.Duration("port-forward-idle-timeout", 0, "max lifetime of a port-forward session before it is torn down (0 = unbounded; abandoned forwards already close within ~60s via keepalive)")
 
 	// Helm module chart repositories. Repeatable (--helm-repo each) and/or
 	// comma-separated within one value: --helm-repo "stable=https://charts.example.com,bitnami=https://charts.bitnami.com".
@@ -100,6 +101,7 @@ func main() {
 		fatal("embedded SPA assets", err)
 	}
 	deps := httpapi.DefaultDeps()
+	deps.PortForwardTimeout = *pfTimeout
 	deps.Registry = registry.NewHandler(registry.Config{
 		URL:                *registryURL,
 		Username:           *registryUser,
