@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"golang.org/x/net/publicsuffix"
+
+	"github.com/aimemalaika/Kestrel/internal/auth"
 )
 
 // Manifest media types we accept/parse. The Accept header advertises all of
@@ -46,6 +48,10 @@ type Config struct {
 	Password           string // optional basic-auth password
 	InsecureSkipVerify bool   // skip TLS verification of the registry
 	AllowDelete        bool   // enable DELETE by digest (deletesEnabled)
+	// AllowedGroups restricts the registry module to authenticated users in at
+	// least one of these OIDC groups. Empty = any authenticated user (default).
+	// Not enforced in single-operator mode (no OIDC token on the request).
+	AllowedGroups []string
 }
 
 // apiError carries an HTTP status for the handler to render as the contract
@@ -78,15 +84,16 @@ type Client struct {
 // Handler serves the /api/registry/* routes backed by a Client. When the
 // registry is not configured (empty URL), c is nil and every route returns 503.
 type Handler struct {
-	c           *Client
-	allowDelete bool
+	c             *Client
+	allowDelete   bool
+	allowedGroups []string
 }
 
 // NewHandler builds the registry HTTP handler. With an empty cfg.URL it returns
 // a handler that answers 503 "registry not configured" on every path.
 func NewHandler(cfg Config) *Handler {
 	if strings.TrimSpace(cfg.URL) == "" {
-		return &Handler{c: nil, allowDelete: false}
+		return &Handler{c: nil, allowDelete: false, allowedGroups: cfg.AllowedGroups}
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.InsecureSkipVerify {
@@ -104,16 +111,42 @@ func NewHandler(cfg Config) *Handler {
 			host: host,
 			hc:   &http.Client{Timeout: 30 * time.Second, Transport: tr},
 		},
-		allowDelete: cfg.AllowDelete,
+		allowDelete:   cfg.AllowDelete,
+		allowedGroups: cfg.AllowedGroups,
 	}
 }
 
 // ---- HTTP routing ---------------------------------------------------------
 
+// denyByGroup enforces the optional OIDC-group allow-list. It returns a 403
+// apiError when a token-bearing user's groups don't intersect allowedGroups.
+// No allow-list, or no token (single-operator), means no restriction.
+func (h *Handler) denyByGroup(r *http.Request) *apiError {
+	if len(h.allowedGroups) == 0 {
+		return nil
+	}
+	id := auth.From(r.Context())
+	if id.Token == "" {
+		return nil
+	}
+	for _, g := range id.Groups {
+		for _, a := range h.allowedGroups {
+			if g == a {
+				return nil
+			}
+		}
+	}
+	return errs(http.StatusForbidden, "Forbidden", "registry access is restricted to specific groups")
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.c == nil {
 		writeErr(w, errs(http.StatusServiceUnavailable, "ServiceUnavailable",
 			"registry not configured (set --registry-url to enable)"))
+		return
+	}
+	if err := h.denyByGroup(r); err != nil {
+		writeErr(w, err)
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/registry")
@@ -270,8 +303,10 @@ type manifest struct {
 
 func (c *Client) listRepos(ctx context.Context) ([]string, error) {
 	var out []string
-	next := c.base + "/v2/_catalog"
-	// Best-effort pagination via the Link header; bounded to avoid a loop.
+	// Request a large page; the registry returns a Link: rel="next" header
+	// carrying the cursor (?n=&last=) for each subsequent page, which we follow.
+	next := c.base + "/v2/_catalog?n=1000"
+	// Pagination via the Link header; bounded to avoid a loop.
 	for i := 0; i < 50 && next != ""; i++ {
 		resp, err := c.do(ctx, http.MethodGet, next, "")
 		if err != nil {

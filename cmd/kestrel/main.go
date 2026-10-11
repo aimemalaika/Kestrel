@@ -63,6 +63,7 @@ func main() {
 	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional; falls back to $KESTREL_REGISTRY_PASSWORD when empty)")
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
 	registryAllowDelete := flag.Bool("registry-allow-delete", false, "enable DELETE by digest on the registry (deletesEnabled)")
+	registryGroups := flag.String("registry-allowed-groups", "", "comma-separated OIDC groups allowed to use the registry module (empty = any authenticated user; not enforced in single-operator mode)")
 
 	// Helm module chart repositories. Repeatable (--helm-repo each) and/or
 	// comma-separated within one value: --helm-repo "stable=https://charts.example.com,bitnami=https://charts.bitnami.com".
@@ -105,6 +106,7 @@ func main() {
 		Password:           registryPassVal,
 		InsecureSkipVerify: *registryInsecure,
 		AllowDelete:        *registryAllowDelete,
+		AllowedGroups:      splitNonEmpty(*registryGroups),
 	})
 	if *registryURL == "" {
 		slog.Warn("registry module disabled: --registry-url not set; /api/registry returns 503")
@@ -277,6 +279,18 @@ func flagOrEnv(flagVal, envName string) string {
 // Each comma-separated entry is `resource` (core group) or `group/resource`;
 // the version is left empty so matching is version-agnostic. Blank entries are
 // skipped.
+// splitNonEmpty splits a comma-separated flag value into trimmed, non-empty
+// entries; empty input yields nil.
+func splitNonEmpty(v string) []string {
+	var out []string
+	for _, e := range strings.Split(v, ",") {
+		if e = strings.TrimSpace(e); e != "" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func parseDenyResources(v string) []k8s.GVR {
 	var out []k8s.GVR
 	for _, e := range strings.Split(v, ",") {

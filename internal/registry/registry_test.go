@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/aimemalaika/Kestrel/internal/auth"
 )
 
 // fakeRegistry is a configurable httptest OCI v2 registry.
@@ -617,5 +620,70 @@ func TestUpstreamNotFoundMaps404(t *testing.T) {
 	res, _ := doReq(t, h, http.MethodGet, "/api/registry/image?repo=a/b&tag=missing")
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing manifest status = %d, want 404", res.StatusCode)
+	}
+}
+
+// doReqCtx drives ServeHTTP with a request carrying the given identity.
+func doReqCtx(t *testing.T, h http.Handler, method, target string, id auth.Identity) (*http.Response, []byte) {
+	t.Helper()
+	req := httptest.NewRequest(method, target, nil).
+		WithContext(auth.WithIdentity(context.Background(), id))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	res := rr.Result()
+	body, _ := io.ReadAll(res.Body)
+	_ = res.Body.Close()
+	return res, body
+}
+
+func TestRegistryGroupAllowList(t *testing.T) {
+	f := &fakeRegistry{catalog: []string{"app/api"}}
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	h := newHandler(t, srv.URL, func(c *Config) { c.AllowedGroups = []string{"ops"} })
+
+	// Token-bearing user NOT in an allowed group → 403, never reaches upstream.
+	if res, _ := doReqCtx(t, h, http.MethodGet, "/api/registry/repos", auth.Identity{User: "d", Token: "t", Groups: []string{"devs"}}); res.StatusCode != 403 {
+		t.Fatalf("non-member should be 403, got %d", res.StatusCode)
+	}
+	// User in an allowed group → allowed (200).
+	if res, body := doReqCtx(t, h, http.MethodGet, "/api/registry/repos", auth.Identity{User: "o", Token: "t", Groups: []string{"ops"}}); res.StatusCode != 200 {
+		t.Fatalf("member should be 200, got %d: %s", res.StatusCode, body)
+	}
+	// Single-operator (no token) → not restricted (200).
+	if res, _ := doReqCtx(t, h, http.MethodGet, "/api/registry/repos", auth.Identity{User: "operator"}); res.StatusCode != 200 {
+		t.Fatalf("single-operator should bypass the group gate, got %d", res.StatusCode)
+	}
+}
+
+func TestCatalogPaginationFollowsLink(t *testing.T) {
+	// Two-page catalog via the Link: rel="next" cursor header.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/_catalog" {
+			http.Error(w, "x", 404)
+			return
+		}
+		if r.URL.Query().Get("last") == "" {
+			w.Header().Set("Link", `</v2/_catalog?n=1000&last=a/one>; rel="next"`)
+			writeJSON(w, 200, catalogResp{Repositories: []string{"a/one"}})
+			return
+		}
+		writeJSON(w, 200, catalogResp{Repositories: []string{"b/two"}})
+	}))
+	defer srv.Close()
+	h := newHandler(t, srv.URL, nil)
+
+	res, body := doReq(t, h, http.MethodGet, "/api/registry/repos")
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d: %s", res.StatusCode, body)
+	}
+	var got struct {
+		Repos []string `json:"repos"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Repos) != 2 || got.Repos[0] != "a/one" || got.Repos[1] != "b/two" {
+		t.Fatalf("pagination should aggregate both pages, got %v", got.Repos)
 	}
 }
