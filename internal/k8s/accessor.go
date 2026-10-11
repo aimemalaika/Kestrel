@@ -58,6 +58,12 @@ func NewAccessor(cfg *rest.Config) (ClusterAccessor, error) {
 	}
 	acc := NewAccessorFromAll(dyn, disc, kube).(*restAccessor)
 	acc.cfg = cfg
+	// Real path only: wrap the deferred mapper so CRDs installed AFTER Kestrel
+	// starts become resolvable without a restart. On a NoMatch the wrapper
+	// invalidates the mem-cached discovery and retries once, cooldown-gated.
+	acc.mapper = newResettingMapper(
+		restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc)),
+	)
 	return acc, nil
 }
 
