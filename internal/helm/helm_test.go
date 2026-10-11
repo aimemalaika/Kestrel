@@ -465,3 +465,44 @@ func assertErrorBody(t *testing.T, rec *httptest.ResponseRecorder) {
 		}
 	}
 }
+
+func TestListReleasesNamespaceScoped(t *testing.T) {
+	a := releaseSecret(t, "team-a", "web", 1, "deployed", encodeRelease(t, sampleRelease("web", "team-a", 1, "deployed")))
+	b := releaseSecret(t, "team-b", "db", 1, "deployed", encodeRelease(t, sampleRelease("db", "team-b", 1, "deployed")))
+	h := newHandler(t, a, b)
+
+	rec := doReq(t, h, "GET", "/api/helm/releases?namespace=team-a")
+	if rec.Code != 200 {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+	}
+	var got []Release
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Namespace != "team-a" || got[0].Name != "web" {
+		t.Fatalf("namespace-scoped list should return only team-a/web, got %+v", got)
+	}
+
+	if rec := doReq(t, h, "GET", "/api/helm/releases?namespace=bad%2Fname"); rec.Code != 400 {
+		t.Fatalf("invalid namespace should be 400, got %d", rec.Code)
+	}
+}
+
+func TestRefuseInternalRedirect(t *testing.T) {
+	blocked := []string{"http://127.0.0.1/i", "http://10.0.0.5/i", "http://169.254.169.254/i", "http://0.0.0.0/i"}
+	for _, u := range blocked {
+		req := httptest.NewRequest("GET", u, nil)
+		if err := refuseInternalRedirect(req, nil); err == nil {
+			t.Errorf("redirect to %s should be refused", u)
+		}
+	}
+	// A public literal IP is allowed (LookupIP of a literal returns it, no DNS).
+	if err := refuseInternalRedirect(httptest.NewRequest("GET", "http://1.1.1.1/i", nil), nil); err != nil {
+		t.Errorf("redirect to public host should be allowed, got %v", err)
+	}
+	// Redirect-chain cap.
+	via := make([]*http.Request, 5)
+	if err := refuseInternalRedirect(httptest.NewRequest("GET", "http://1.1.1.1/i", nil), via); err == nil {
+		t.Error("should stop after 5 redirects")
+	}
+}
