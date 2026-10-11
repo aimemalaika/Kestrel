@@ -108,6 +108,22 @@ row to open a detail drawer with the object's YAML and related data.
 In OIDC mode all three run as *you*; the apiserver must allow the corresponding
 subresource (`pods/log`, `pods/exec`, `pods/portforward`) for your identity.
 
+> **Port-forward is reachable only on the Kestrel host's loopback.** Kestrel
+> opens the forward **server-side** — client-go binds the local port on
+> `127.0.0.1` of the machine/pod running Kestrel, and the browser WebSocket
+> carries only lifecycle/status, not the forwarded traffic. So the forwarded
+> port is usable only by something running on the Kestrel host:
+>
+> - **Local/desktop Kestrel** (run on your own machine against a kubeconfig):
+>   works as expected — the bound `localhost:<port>` is *your* localhost.
+> - **Remote / in-cluster Kestrel** (a Deployment behind an Ingress): the port
+>   binds on the *pod's* loopback, which your laptop can't reach. The UI shows
+>   the session as active, but there is nothing to connect to from your machine.
+>   For ad-hoc access to a remote cluster, use `kubectl port-forward` directly.
+>
+> An abandoned forward closes within ~60s (keepalive); `--port-forward-idle-timeout`
+> caps a long-lived session's total lifetime.
+
 **Registry view.** Browse an OCI registry (repositories, tags, image detail:
 digest, size, layers), and optionally delete by digest. Enabled only when the
 operator sets `--registry-url`; otherwise the registry view reports it is not
