@@ -1,8 +1,17 @@
+import type { CatalogEntry } from '../contract/types'
+
 export type Perspective = 'admin' | 'developer'
 
 // Where a nav item goes. `route` = dedicated page, `resource` = generic resource
-// list (namespace-aware, gated on the live catalog), absent = not implemented.
-export type NavTarget = { route: string } | { resource: string } | undefined
+// list (by name, namespace-aware, gated on the live catalog), `gvr` = a fully
+// qualified generic list (used by the dynamic Custom Resources section, which
+// must disambiguate resources that share a name across API groups), absent =
+// not implemented.
+export type NavTarget =
+  | { route: string }
+  | { resource: string }
+  | { gvr: { group: string; version: string; resource: string } }
+  | undefined
 
 export interface NavItem {
   label: string
@@ -181,4 +190,49 @@ export const DEV_NAV: NavSection[] = [
 
 export function navFor(p: Perspective): NavSection[] {
   return p === 'developer' ? DEV_NAV : ADMIN_NAV
+}
+
+// isBuiltinGroup reports whether an API group ships with Kubernetes (so it is
+// NOT a custom resource). All built-in groups are either the core group (""),
+// a handful of legacy groups, or end in ".k8s.io". Everything else (e.g.
+// tekton.dev, argoproj.io, example.com, *.openshift.io) is treated as custom.
+export function isBuiltinGroup(g: string): boolean {
+  return (
+    g === '' ||
+    g === 'apps' ||
+    g === 'batch' ||
+    g === 'autoscaling' ||
+    g === 'policy' ||
+    g === 'extensions' ||
+    g.endsWith('.k8s.io')
+  )
+}
+
+// customResourceSection derives a flat "Custom Resources" nav section from the
+// live catalog: every resource in a non-built-in API group that isn't already
+// surfaced by the static nav (deduped by resource name) and isn't a subresource.
+// Items link to the generic list by full group/version/resource. Returns null
+// when there are none, so no empty section renders.
+export function customResourceSection(
+  catalog: CatalogEntry[],
+  nav: NavSection[],
+): NavSection | null {
+  const staticResources = new Set<string>()
+  for (const s of nav) {
+    for (const it of s.items) {
+      const t = it.target
+      if (t && 'resource' in t) staticResources.add(t.resource)
+    }
+  }
+  const items: NavItem[] = catalog
+    .filter(
+      (e) => !isBuiltinGroup(e.group) && !e.resource.includes('/') && !staticResources.has(e.resource),
+    )
+    .sort((a, b) => a.group.localeCompare(b.group) || a.resource.localeCompare(b.resource))
+    .map((e) => ({
+      label: e.kind || e.resource,
+      icon: 'crd',
+      target: { gvr: { group: e.group, version: e.version, resource: e.resource } },
+    }))
+  return items.length ? { section: 'Custom Resources', items } : null
 }

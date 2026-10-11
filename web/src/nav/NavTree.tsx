@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { createClient } from '../client/createClient'
 import type { CatalogEntry } from '../contract/types'
-import { navFor, type NavItem, type Perspective } from './categoryMap'
+import { customResourceSection, navFor, type NavItem, type Perspective } from './categoryMap'
 import { useSelection } from '../state/selection'
 import { Icon } from '../ui'
 
@@ -52,6 +52,13 @@ export function NavTree({
       // more specific sibling (/cluster/settings) is active.
       return { to: t.route, active: pathname === t.route }
     }
+    if ('gvr' in t) {
+      const g = t.gvr
+      return {
+        to: `/ns/${ns}/${g.group}/${g.version}/${g.resource}`,
+        active: gvr?.group === g.group && gvr?.version === g.version && gvr?.resource === g.resource,
+      }
+    }
     const e = catalog.find((c) => c.resource === t.resource)
     if (!e) return undefined
     return {
@@ -60,9 +67,15 @@ export function NavTree({
     }
   }
 
+  // Append a dynamic "Custom Resources" section derived from the live catalog
+  // (CRDs not already in the static nav). Collapsed by default (not in DEFAULT_OPEN).
+  const baseNav = navFor(perspective)
+  const cr = customResourceSection(catalog, baseNav)
+  const sections = cr ? [...baseNav, cr] : baseNav
+
   return (
     <nav aria-label="Primary">
-      {navFor(perspective).map((s) => (
+      {sections.map((s) => (
         <div key={s.section}>
           {!rail && (
             <button

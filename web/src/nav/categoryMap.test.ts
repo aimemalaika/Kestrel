@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ADMIN_NAV, DEV_NAV, navFor } from './categoryMap'
+import { ADMIN_NAV, DEV_NAV, navFor, customResourceSection } from './categoryMap'
 
 describe('nav model', () => {
   it('admin sections mirror the mock order', () => {
@@ -57,5 +57,43 @@ describe('nav model', () => {
     })
     expect(find(ADMIN_NAV, 'Builds', 'ImageStreams')).toEqual({ resource: 'imagestreams' })
     expect(find(DEV_NAV, 'Developer', 'Topology')).toEqual({ route: '/topology' })
+  })
+})
+
+describe('customResourceSection', () => {
+  const entry = (group: string, resource: string, kind: string, version = 'v1') => ({
+    group,
+    version,
+    resource,
+    kind,
+    namespaced: true,
+    verbs: ['list'],
+  })
+
+  it('surfaces non-built-in groups as a Custom Resources section, excluding built-ins, subresources, and static dupes', () => {
+    const catalog = [
+      entry('', 'pods', 'Pod'), // core → built-in, excluded
+      entry('apps', 'deployments', 'Deployment'), // built-in, excluded
+      entry('rbac.authorization.k8s.io', 'roles', 'Role'), // *.k8s.io built-in, excluded
+      entry('image.openshift.io', 'imagestreams', 'ImageStream'), // in static nav → deduped
+      entry('tekton.dev', 'pipelineruns', 'PipelineRun'), // in static nav → deduped
+      entry('argoproj.io', 'applications', 'Application'),
+      entry('example.com', 'widgets/status', 'Widget'), // subresource → excluded
+      entry('example.com', 'widgets', 'Widget'),
+    ]
+    const sec = customResourceSection(catalog, ADMIN_NAV)
+    expect(sec).not.toBeNull()
+    expect(sec!.section).toBe('Custom Resources')
+    // Only the custom resources not already in the static nav, sorted by group
+    // then resource (argoproj.io < example.com).
+    expect(sec!.items.map((i) => i.label)).toEqual(['Application', 'Widget'])
+    expect(sec!.items[0].target).toEqual({
+      gvr: { group: 'argoproj.io', version: 'v1', resource: 'applications' },
+    })
+  })
+
+  it('returns null when there are no custom resources', () => {
+    expect(customResourceSection([entry('', 'pods', 'Pod'), entry('apps', 'deployments', 'Deployment')], ADMIN_NAV)).toBeNull()
+    expect(customResourceSection([], ADMIN_NAV)).toBeNull()
   })
 })
