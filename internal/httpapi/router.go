@@ -33,6 +33,11 @@ type Deps struct {
 	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
 	Helm        http.Handler // /api/helm/* (releases + chart repos)
 	ServiceMap  http.Handler // /api/servicemap (store + validate; ConfigMap-backed)
+	// PortForwardTimeout caps a port-forward session's lifetime (0 = unbounded).
+	// The lifecycle WS carries no data, so this is a max-duration cap, not an
+	// activity-based idle timeout; abandoned forwards already tear down within
+	// ~pongWait via the read deadline.
+	PortForwardTimeout time.Duration
 }
 
 // DefaultDeps wires the B0 stubs.

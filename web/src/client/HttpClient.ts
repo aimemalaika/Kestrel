@@ -127,8 +127,21 @@ export function createHttpClient(): Client {
         status: 'active',
         close: () => ws.close(),
       }
+      // The server sends lifecycle status frames: {"status":"active"|"error","message"}.
+      ws.onmessage = (e) => {
+        try {
+          const m = JSON.parse(String(e.data)) as { status?: string; message?: string }
+          if (m.status === 'error') {
+            session.status = 'error'
+            session.error = m.message || 'port-forward failed'
+          }
+        } catch {
+          /* ignore non-JSON frames */
+        }
+      }
       ws.onclose = () => {
-        session.status = 'closed'
+        // Don't overwrite an error status reported just before close.
+        if (session.status === 'active') session.status = 'closed'
       }
       return session
     },
