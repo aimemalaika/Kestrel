@@ -47,11 +47,11 @@ func main() {
 	// and Kestrel runs as the single operator (its own ServiceAccount credentials).
 	oidcIssuer := flag.String("oidc-issuer", "", "OIDC issuer URL; empty disables login (single-operator mode)")
 	oidcClientID := flag.String("oidc-client-id", "", "OIDC client id")
-	oidcClientSecret := flag.String("oidc-client-secret", "", "OIDC client secret")
+	oidcClientSecret := flag.String("oidc-client-secret", "", "OIDC client secret (falls back to $KESTREL_OIDC_CLIENT_SECRET when empty)")
 	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback)")
 	oidcGroupsClaim := flag.String("oidc-groups-claim", "groups", "id_token claim carrying the user's groups")
 	oidcUsernameClaim := flag.String("oidc-username-claim", "email", "id_token claim used for the display username")
-	sessionKey := flag.String("session-key", "", "HMAC key for session cookies; empty generates a random key (sessions won't survive restart)")
+	sessionKey := flag.String("session-key", "", "HMAC key for session cookies (falls back to $KESTREL_SESSION_KEY when empty); empty generates a random key (sessions won't survive restart)")
 
 	tlsCert := flag.String("tls-cert", "", "TLS certificate file; with --tls-key, serve HTTPS")
 	tlsKey := flag.String("tls-key", "", "TLS key file; with --tls-cert, serve HTTPS")
@@ -60,7 +60,7 @@ func main() {
 	// it: /api/registry/* returns 503 "registry not configured".
 	registryURL := flag.String("registry-url", "", "OCI registry base URL incl. scheme (e.g. https://registry.example.com); empty disables the registry module")
 	registryUser := flag.String("registry-username", "", "registry basic-auth username (optional)")
-	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional)")
+	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional; falls back to $KESTREL_REGISTRY_PASSWORD when empty)")
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
 	registryAllowDelete := flag.Bool("registry-allow-delete", false, "enable DELETE by digest on the registry (deletesEnabled)")
 
@@ -74,7 +74,20 @@ func main() {
 	// defaults to the in-cluster ServiceAccount namespace, else "default".
 	servicemapCM := flag.String("servicemap-configmap", "kestrel-servicemap",
 		"ConfigMap for the service map as [namespace/]name; namespace defaults to the in-cluster SA namespace (else \"default\")")
+
+	// Informer deny-list (#113). Comma-separated `resource` or `group/resource`
+	// entries the shared informer refuses to watch (SSE), regardless of version.
+	// Denied resources are still readable via get/list (per-user token) — only
+	// live streaming is disabled. Default empty = no change.
+	noWatch := flag.String("no-watch-resources", "",
+		"comma-separated resources the shared informer refuses to watch (SSE), as `resource` or `group/resource` (version-agnostic); still readable via get/list. Default empty disables the deny-list")
 	flag.Parse()
+
+	// Env-native secret fallback (#113): keep secrets off the process command line.
+	// An explicit non-empty flag always wins; otherwise fall back to the env var.
+	sessionKeyVal := flagOrEnv(*sessionKey, "KESTREL_SESSION_KEY")
+	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
+	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
 
 	obs.SetupLogger(*logLevel)
 
@@ -89,7 +102,7 @@ func main() {
 	deps.Registry = registry.NewHandler(registry.Config{
 		URL:                *registryURL,
 		Username:           *registryUser,
-		Password:           *registryPass,
+		Password:           registryPassVal,
 		InsecureSkipVerify: *registryInsecure,
 		AllowDelete:        *registryAllowDelete,
 	})
@@ -123,7 +136,13 @@ func main() {
 		// #46: the per-user SSE read filter. The shared informer watches as the SA,
 		// so every snapshot object and live delta is gated by a namespace-level SSAR
 		// for the subscriber's own identity before it leaves the hub (fail closed).
-		hub := stream.NewHubFromAccessor(acc, stream.WithAuthorizer(k8s.NewSSARAuthorizer(acc)))
+		hubOpts := []stream.HubOption{stream.WithAuthorizer(k8s.NewSSARAuthorizer(acc))}
+		if deny := parseDenyResources(*noWatch); len(deny) > 0 {
+			hubOpts = append(hubOpts, stream.WithDenyResources(deny))
+			slog.Info("informer deny-list active: these resources cannot be live-streamed over SSE (still readable via get/list)",
+				slog.String("resources", *noWatch))
+		}
+		hub := stream.NewHubFromAccessor(acc, hubOpts...)
 		defer hub.Close()
 		deps.Stream = hub
 		deps.Logs = k8s.NewRealLogs(acc)
@@ -143,14 +162,21 @@ func main() {
 
 	mux := http.NewServeMux()
 
+	// Liveness probe (#113). Registered on the MAIN serving port so a kubelet
+	// probe exercises the real listener, but deliberately exempt from authn and
+	// the rate limiter (a probe carries no session and must never be throttled):
+	// both middlewares early-return for exactly this path (see healthzPath). No
+	// cluster call — liveness only.
+	mux.HandleFunc(healthzPath, healthz)
+
 	// authn is the outer middleware; nil when OIDC is disabled.
 	var authnMW func(http.Handler) http.Handler
 	if *oidcIssuer != "" {
-		key := sessionKeyBytes(*sessionKey)
+		key := sessionKeyBytes(sessionKeyVal)
 		authr, err := authn.NewAuthenticator(context.Background(), authn.Config{
 			Issuer:        *oidcIssuer,
 			ClientID:      *oidcClientID,
-			ClientSecret:  *oidcClientSecret,
+			ClientSecret:  oidcClientSecretVal,
 			RedirectURL:   *oidcRedirectURL,
 			GroupsClaim:   *oidcGroupsClaim,
 			UsernameClaim: *oidcUsernameClaim,
@@ -222,6 +248,56 @@ func main() {
 	} else {
 		fatal("http server", http.ListenAndServe(*addr, handler))
 	}
+}
+
+// healthzPath is the liveness endpoint. It is referenced by the authn and
+// rate-limit middlewares (internal/authn, internal/obs) which both bypass it so
+// an unauthenticated, unthrottled kubelet probe always reaches it.
+const healthzPath = "/healthz"
+
+// healthz is a trivial liveness handler: it never touches the cluster and
+// always returns 200 as long as the process is serving.
+func healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// flagOrEnv returns flagVal when it is non-empty, otherwise the value of the
+// named environment variable (which may itself be empty). Used so secrets can be
+// supplied via the environment and never land on the process command line.
+func flagOrEnv(flagVal, envName string) string {
+	if flagVal != "" {
+		return flagVal
+	}
+	return os.Getenv(envName)
+}
+
+// parseDenyResources parses the --no-watch-resources value into deny-list GVRs.
+// Each comma-separated entry is `resource` (core group) or `group/resource`;
+// the version is left empty so matching is version-agnostic. Blank entries are
+// skipped.
+func parseDenyResources(v string) []k8s.GVR {
+	var out []k8s.GVR
+	for _, e := range strings.Split(v, ",") {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		group, resource := "", e
+		if i := strings.IndexByte(e, '/'); i >= 0 {
+			group, resource = strings.TrimSpace(e[:i]), strings.TrimSpace(e[i+1:])
+		}
+		// Treat the contract's "core" alias and a bare resource as the core group ("").
+		if group == "core" {
+			group = ""
+		}
+		if resource == "" {
+			continue
+		}
+		out = append(out, k8s.GVR{Group: group, Resource: resource})
+	}
+	return out
 }
 
 // metricsMux serves the Prometheus exposition at /metrics on the dedicated

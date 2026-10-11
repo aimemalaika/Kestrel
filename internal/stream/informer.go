@@ -64,6 +64,7 @@ type Hub struct {
 	bufSize    int
 	syncTO     time.Duration
 	authz      Authorizer                              // nil ⇒ no per-user SSE read filter (#46)
+	deny       map[groupResource]struct{}              // #113: GVRs refused for watching (version-agnostic); nil/empty ⇒ no denial
 	newInforms func(k8s.GVR) cache.SharedIndexInformer // overridable; counts creations in tests
 
 	mu      sync.Mutex
@@ -87,6 +88,43 @@ func WithSubscriberBuffer(n int) HubOption {
 			h.bufSize = n
 		}
 	}
+}
+
+// groupResource is a version-agnostic resource key for the watch deny-list.
+type groupResource struct {
+	group    string
+	resource string
+}
+
+// WithDenyResources refuses to watch the given resources (#113). A denied GVR
+// makes Watch fail fast with a 403 StatusError ("watching %s is disabled by
+// server policy") BEFORE any informer is created, so the shared informer cache
+// never list/watches those objects. Matching is by group+resource only, so
+// e.g. secrets (core/"", v1, secrets) is denied regardless of version. Denied
+// resources remain readable via get/list (per-user token); only live streaming
+// (SSE) is disabled. An empty deny-list is a no-op (today's behavior).
+func WithDenyResources(deny []k8s.GVR) HubOption {
+	return func(h *Hub) {
+		for _, g := range deny {
+			if g.Resource == "" {
+				continue
+			}
+			if h.deny == nil {
+				h.deny = map[groupResource]struct{}{}
+			}
+			h.deny[groupResource{group: g.Group, resource: g.Resource}] = struct{}{}
+		}
+	}
+}
+
+// denied reports whether g is on the watch deny-list (group+resource match,
+// version ignored).
+func (h *Hub) denied(g k8s.GVR) bool {
+	if len(h.deny) == 0 {
+		return false
+	}
+	_, ok := h.deny[groupResource{group: g.Group, resource: g.Resource}]
+	return ok
 }
 
 // WithAuthorizer wires the per-user SSE read filter (#46). When set, every
@@ -296,6 +334,11 @@ func envNamespace(env Envelope) string {
 
 // Watch implements Source.
 func (h *Hub) Watch(ctx context.Context, ref k8s.Ref) (<-chan Envelope, error) {
+	// #113: refuse denied resources BEFORE creating an informer, so the shared
+	// SA-scoped cache never list/watches them. Version-agnostic group+resource.
+	if h.denied(ref.GVR) {
+		return nil, k8s.Forbidden("watching %s is disabled by server policy", ref.Resource)
+	}
 	if h.resolve != nil {
 		if err := h.resolve(ref.GVR); err != nil {
 			return nil, err

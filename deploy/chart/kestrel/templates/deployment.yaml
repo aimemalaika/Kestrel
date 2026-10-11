@@ -56,6 +56,12 @@ spec:
             {{- if .Values.config.mock }}
             - --mock
             {{- end }}
+            {{- if .Values.rbac.excludeSecrets }}
+            # Opt-in (#113): the shared informer refuses to live-watch Secrets, so
+            # they are never cached or streamed over SSE (still readable per-user
+            # via get/list). See rbac.excludeSecrets in values.yaml.
+            - --no-watch-resources=secrets
+            {{- end }}
             {{- with .Values.config.oidc.issuer }}
             - --oidc-issuer={{ . }}
             {{- end }}
@@ -71,15 +77,6 @@ spec:
             {{- if and .Values.config.oidc.usernameClaim (ne .Values.config.oidc.usernameClaim "email") }}
             - --oidc-username-claim={{ .Values.config.oidc.usernameClaim }}
             {{- end }}
-            {{- if .Values.config.oidc.issuer }}
-            {{- if include "kestrel.hasSecret" . }}
-            # Sourced from env (Secret) and expanded by Kubernetes $(VAR) — see env below.
-            - --oidc-client-secret=$(OIDC_CLIENT_SECRET)
-            {{- end }}
-            {{- end }}
-            {{- if include "kestrel.hasSecret" . }}
-            - --session-key=$(SESSION_KEY)
-            {{- end }}
             {{- if .Values.config.tls.enabled }}
             - --tls-cert={{ .Values.config.tls.certFile }}
             - --tls-key={{ .Values.config.tls.keyFile }}
@@ -90,9 +87,6 @@ spec:
             {{- if .Values.config.registry.url }}
             {{- with .Values.config.registry.username }}
             - --registry-username={{ . }}
-            {{- end }}
-            {{- if include "kestrel.hasSecret" . }}
-            - --registry-password=$(REGISTRY_PASSWORD)
             {{- end }}
             {{- if .Values.config.registry.insecureSkipVerify }}
             - --registry-insecure-skip-verify
@@ -105,23 +99,26 @@ spec:
             - --helm-repo={{ .name }}={{ .url }}
             {{- end }}
           {{- if include "kestrel.hasSecret" . }}
+          # Secrets are read ENV-NATIVELY by the binary (#113): each KESTREL_*
+          # var is used when the matching flag is empty, so the value never lands
+          # on the process command line (not visible in `ps` or the pod spec).
           env:
             {{- if .Values.config.oidc.issuer }}
-            - name: OIDC_CLIENT_SECRET
+            - name: KESTREL_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kestrel.secretName" . }}
                   key: {{ .Values.existingSecret.oidcClientSecretKey }}
                   optional: true
             {{- end }}
-            - name: SESSION_KEY
+            - name: KESTREL_SESSION_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kestrel.secretName" . }}
                   key: {{ .Values.existingSecret.sessionKeyKey }}
                   optional: true
             {{- if .Values.config.registry.url }}
-            - name: REGISTRY_PASSWORD
+            - name: KESTREL_REGISTRY_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ include "kestrel.secretName" . }}

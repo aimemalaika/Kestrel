@@ -26,6 +26,18 @@ metadata:
     {{- include "kestrel.labels" . | nindent 4 }}
 rules:
 {{- if .Values.rbac.clusterRead }}
+{{- if .Values.rbac.excludeSecrets }}
+  # rbac.excludeSecrets=true: the BEHAVIORAL protection is the
+  # --no-watch-resources=secrets flag on the Deployment — Kestrel's shared
+  # informer never list/watches Secrets, so they are never cached or streamed
+  # over SSE. The grant below is still a wildcard and therefore STILL technically
+  # allows the SA to read Secrets: Kubernetes RBAC has no "deny" verb, and there
+  # is no way to express `resources: ["*"] except secrets` — truly removing
+  # Secrets from the SA would require enumerating every resource (infeasible, and
+  # it breaks for CRDs). To fully strip Secrets from RBAC, set
+  # rbac.clusterRead=false and bind your own narrower Role out-of-band. See the
+  # chart README section "Excluding Secrets".
+{{- end }}
   - apiGroups: ["*"]
     resources: ["*"]
     verbs: ["get", "list", "watch"]

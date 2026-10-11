@@ -2,7 +2,9 @@ package stream
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	gort "runtime"
 	"sync/atomic"
 	"testing"
@@ -329,6 +331,36 @@ func TestUnknownResourceResolverError(t *testing.T) {
 	if r.informs.Load() != 0 {
 		t.Fatal("informer created for unresolvable GVR")
 	}
+}
+
+// #113: a resource on the watch deny-list is refused with a 403 StatusError
+// BEFORE any informer is created, and the match is version-agnostic
+// (group+resource), so configmaps is denied even though the deny entry carries
+// no version.
+func TestDenyResourcesRefusesWatch(t *testing.T) {
+	deny := []k8s.GVR{{Group: "", Resource: "configmaps"}}
+	r := newRig(t, []HubOption{WithDenyResources(deny)})
+	_, err := r.hub.Watch(context.Background(), cmRef)
+	if err == nil {
+		t.Fatal("want error for denied resource")
+	}
+	var se *k8s.StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusForbidden {
+		t.Fatalf("want 403 StatusError, got %#v", err)
+	}
+	if r.informs.Load() != 0 {
+		t.Fatal("informer created for a denied resource")
+	}
+}
+
+// An empty deny-list must not change behavior: the watch proceeds normally.
+func TestDenyResourcesEmptyIsNoOp(t *testing.T) {
+	r := newRig(t, []HubOption{WithDenyResources(nil)}, cm("default", "a"))
+	ch, err := r.hub.Watch(context.Background(), cmRef)
+	if err != nil {
+		t.Fatalf("empty deny-list should allow the watch: %v", err)
+	}
+	burst(t, ch, "a")
 }
 
 func waitFor(t *testing.T, cond func() bool) {

@@ -151,6 +151,12 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 	// Retry-After is advisory; one token refills every 1/rps seconds.
 	retryAfter := strconv.Itoa(max(1, int(1.0/float64(rl.rps)+0.999)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Liveness probe (#113) is never throttled: a kubelet probe must always
+		// be able to reach the health endpoint.
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !rl.limiterFor(rl.key(r)).Allow() {
 			w.Header().Set("Retry-After", retryAfter)
 			writeRateLimited(w)

@@ -21,6 +21,13 @@ import (
 // identity or inject a token.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Liveness probe (#113) is exempt from authn: a kubelet probe carries no
+		// session. It is registered on the main mux, so let it pass untouched.
+		if r.URL.Path == "/healthz" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		apiPath := r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/")
 
 		// CSRF / cross-origin defense. Mutating requests require a present,
