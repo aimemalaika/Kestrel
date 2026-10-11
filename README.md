@@ -51,16 +51,26 @@ The backend does four jobs, and every feature is a variation on one of them: **a
 
 ```bash
 # build the SPA, then the binary that embeds it
-cd web && npm ci && npm run build && cd ..
+cd web && npm ci && npm run build && cd ..   # production build → talks to the backend
 go build -o kestrel ./cmd/kestrel
 ./kestrel            # serves http://localhost:8080
 ```
 
-**Just want to see the UI?** Run with stub data, no cluster needed:
+`npm run build` produces the SPA that calls the real backend (`VITE_CLIENT=http`, the default). Open the UI, pick an identity, and you're browsing your live cluster.
+
+**Try it with no cluster** — stub data served by the backend:
 
 ```bash
-./kestrel --mock
+./kestrel --mock     # the real-client UI, backed by in-memory stub data
 ```
+
+**UI-only development** (no backend at all) — the dev server defaults to the mock client:
+
+```bash
+cd web && npm run dev
+```
+
+> **Note:** to preview mock data from a *production build*, set `VITE_CLIENT=mock npm run build`. Without it, a build always talks to the backend.
 
 **Container / Helm / OIDC:** see **[`examples/`](examples/)** for ready-to-use install and usage docs — `examples/docker/`, `examples/helm/` (sample `values.yaml` for single-operator and OIDC multi-user), and `examples/oidc/` (the apiserver-must-trust-the-same-issuer requirement, session key, etc.).
 

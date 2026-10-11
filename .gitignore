@@ -18,3 +18,12 @@ CLAUDE.md
 /bin/
 *.test
 *.out
+# Vite env files are config, not secrets, and CI needs them — the *.test rule
+# above (Go test binaries) would otherwise swallow web/.env.test.
+!web/.env.test
+# The built SPA is generated, not committed, but `//go:embed all:dist` in
+# web/embed.go needs web/dist to exist at build time (the backend CI job runs
+# `go build ./...` without building the frontend). Ignore the build output but
+# keep a tracked placeholder so the embed pattern always matches.
+/web/dist/*
+!/web/dist/.gitkeep
