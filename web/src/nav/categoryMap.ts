@@ -226,7 +226,8 @@ export function customResourceSection(
   }
   const items: NavItem[] = catalog
     .filter(
-      (e) => !isBuiltinGroup(e.group) && !e.resource.includes('/') && !staticResources.has(e.resource),
+      (e) =>
+        !isBuiltinGroup(e.group) && !e.resource.includes('/') && !staticResources.has(e.resource),
     )
     .sort((a, b) => a.group.localeCompare(b.group) || a.resource.localeCompare(b.resource))
     .map((e) => ({

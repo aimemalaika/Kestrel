@@ -7,9 +7,7 @@ export function createHttpHelm(): HelmClient {
       return getJSON<Release[]>('/api/helm/releases')
     },
     async getRelease(ns, name) {
-      return getJSON<ReleaseDetail>(
-        `/api/helm/releases/detail?namespace=${q(ns)}&name=${q(name)}`,
-      )
+      return getJSON<ReleaseDetail>(`/api/helm/releases/detail?namespace=${q(ns)}&name=${q(name)}`)
     },
     async listRepos() {
       return getJSON<ChartRepo[]>('/api/helm/repos')
