@@ -35,6 +35,11 @@ type Config struct {
 	GroupsClaim   string // default "groups"
 	UsernameClaim string // default "email" (display only)
 	Scopes        []string
+	// TrustProxy mirrors --trusted-proxy: when true, X-Forwarded-Proto is
+	// honored when deciding the request scheme (Secure cookie flag, same-origin
+	// scheme compare); when false the spoofable header is ignored and only r.TLS
+	// counts. Must be set from the SAME flag that gates the rate-limiter's XFF.
+	TrustProxy bool
 }
 
 // Claims is the verified subset of an id_token Kestrel relies on.
@@ -66,6 +71,10 @@ type Authenticator struct {
 	verifier Verifier
 	store    *sessionStore
 	key      []byte // HMAC key for signed cookies and state
+
+	// trustProxy gates honoring X-Forwarded-Proto for the request scheme (see
+	// Config.TrustProxy); false ignores the header and trusts only r.TLS.
+	trustProxy bool
 
 	now func() time.Time // injectable clock for tests
 }
@@ -100,11 +109,12 @@ func NewAuthenticator(ctx context.Context, cfg Config, key []byte) (*Authenticat
 		groupsClaim:   cfg.GroupsClaim,
 	}
 	return &Authenticator{
-		oauth:    oauth,
-		verifier: verifier,
-		store:    newSessionStore(),
-		key:      key,
-		now:      time.Now,
+		oauth:      oauth,
+		verifier:   verifier,
+		store:      newSessionStore(),
+		key:        key,
+		trustProxy: cfg.TrustProxy,
+		now:        time.Now,
 	}, nil
 }
 

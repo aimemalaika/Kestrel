@@ -35,8 +35,22 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: checkSameOrigin,
 }
 
+// wsTrustProxy gates whether checkSameOrigin honors X-Forwarded-Proto when
+// detecting the request scheme. It is a package-level value (checkSameOrigin is
+// wired into wsUpgrader as a bare func) set once at startup by SetWSTrustProxy,
+// from the SAME --trusted-proxy flag that gates the rate-limiter's XFF and the
+// authn/obs scheme checks. Default false: ignore the spoofable header.
+var wsTrustProxy bool
+
+// SetWSTrustProxy configures whether the WebSocket origin check trusts
+// X-Forwarded-Proto. Call it once at startup (before serving) with the
+// --trusted-proxy flag value.
+func SetWSTrustProxy(trust bool) { wsTrustProxy = trust }
+
 // checkSameOrigin is the wsUpgrader origin policy; the authn middleware mirrors
-// it for the WS/SSE upgrade paths so the two agree.
+// it for the WS/SSE upgrade paths so the two agree. The scheme is https only
+// over TLS, or via X-Forwarded-Proto when wsTrustProxy is set (fail-safe: with
+// it unset the spoofable header is ignored, making the compare stricter).
 func checkSameOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -50,7 +64,7 @@ func checkSameOrigin(r *http.Request) bool {
 		return false
 	}
 	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+	if r.TLS != nil || (wsTrustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")) {
 		scheme = "https"
 	}
 	return u.Scheme == "" || strings.EqualFold(u.Scheme, scheme)

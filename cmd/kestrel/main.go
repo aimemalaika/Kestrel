@@ -40,7 +40,8 @@ func main() {
 	logLevel := flag.String("log-level", "info", "log level: debug|info|warn|error")
 	rateLimit := flag.Float64("rate-limit", 20, "per-caller request rate (req/sec); 0 disables rate limiting")
 	rateBurst := flag.Int("rate-burst", 40, "per-caller burst size for the rate limiter")
-	trustedProxy := flag.Bool("trusted-proxy", false, "trust X-Forwarded-For/X-Real-Ip for the client IP (enable ONLY behind a reverse proxy that rewrites these headers; default off is safe)")
+	trustedProxy := flag.Bool("trusted-proxy", false, "trust X-Forwarded-For/X-Real-Ip for the client IP and X-Forwarded-Proto for the request scheme (enable ONLY behind a reverse proxy that rewrites these headers; default off is safe)")
+	csp := flag.String("csp", obs.DefaultCSP, "Content-Security-Policy header value (crafted for the built SPA); pass --csp=\"\" to disable the CSP header")
 
 	// OIDC login + token forwarding. If --oidc-issuer is empty, OIDC is disabled
 	// and Kestrel runs as the single operator (its own ServiceAccount credentials).
@@ -153,6 +154,7 @@ func main() {
 			RedirectURL:   *oidcRedirectURL,
 			GroupsClaim:   *oidcGroupsClaim,
 			UsernameClaim: *oidcUsernameClaim,
+			TrustProxy:    *trustedProxy,
 		}, key)
 		if err != nil {
 			fatal("oidc setup", err)
@@ -170,6 +172,10 @@ func main() {
 		slog.Warn("OIDC disabled: --oidc-issuer not set; running as single operator, all /api uses Kestrel's own ServiceAccount credentials and no login is required",
 			slog.String("operator", auth.Operator))
 	}
+
+	// The WebSocket origin check trusts X-Forwarded-Proto only under --trusted-proxy,
+	// consistent with the authn/obs scheme checks and the rate-limiter's XFF gating.
+	httpapi.SetWSTrustProxy(*trustedProxy)
 
 	mux.Handle("/api/", httpapi.New(deps))
 	mux.Handle("/", httpapi.SPA(dist))
@@ -194,7 +200,7 @@ func main() {
 	// security headers apply to everything: the SPA and all of /api. It sets
 	// headers before delegating and does not wrap the ResponseWriter, so SSE/WS
 	// (Flusher/Hijacker) are unaffected.
-	handler = obs.SecurityHeaders(handler)
+	handler = obs.SecurityHeaders(*csp, *trustedProxy, handler)
 	handler = obs.Recovery(handler)
 
 	// /metrics on a SEPARATE listener — NOT behind authn (a scraper has no

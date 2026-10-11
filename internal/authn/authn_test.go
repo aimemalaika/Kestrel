@@ -102,13 +102,25 @@ func TestSessionCookieFlags(t *testing.T) {
 		t.Error("cookie value is not a valid signed session id")
 	}
 
-	// HTTPS via X-Forwarded-Proto: Secure must be on.
+	// HTTPS via X-Forwarded-Proto with trustProxy=false: the spoofable header is
+	// IGNORED, so Secure stays off (fail-safe).
 	rec = httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "http://host/", nil)
 	r.Header.Set("X-Forwarded-Proto", "https")
 	a.setSessionCookie(rec, r, "sid", time.Time{})
+	if rec.Result().Cookies()[0].Secure {
+		t.Error("Secure must stay false for X-Forwarded-Proto when --trusted-proxy is off")
+	}
+
+	// HTTPS via X-Forwarded-Proto with trustProxy=true: Secure must be on.
+	at := testAuth(nil, nil)
+	at.trustProxy = true
+	rec = httptest.NewRecorder()
+	r = httptest.NewRequest("GET", "http://host/", nil)
+	r.Header.Set("X-Forwarded-Proto", "https")
+	at.setSessionCookie(rec, r, "sid", time.Time{})
 	if !rec.Result().Cookies()[0].Secure {
-		t.Error("Secure must be true behind an https proxy")
+		t.Error("Secure must be true behind an https proxy when --trusted-proxy is on")
 	}
 }
 
@@ -549,5 +561,42 @@ func TestMiddlewareNonAPIPassThrough(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/index.html", nil))
 	if !hit || rec.Code != 200 {
 		t.Errorf("non-api path should pass through: hit=%v code=%d", hit, rec.Code)
+	}
+}
+
+// TestRequestSchemeTrustProxy locks in that X-Forwarded-Proto is only honored
+// for the request scheme when --trusted-proxy is on; r.TLS always counts.
+func TestRequestSchemeTrustProxy(t *testing.T) {
+	plainXFP := httptest.NewRequest("GET", "http://host/api", nil)
+	plainXFP.Header.Set("X-Forwarded-Proto", "https")
+	tlsReq := httptest.NewRequest("GET", "https://host/api", nil) // sets r.TLS
+
+	if got := requestScheme(plainXFP, false); got != "http" {
+		t.Errorf("XFP=https, trustProxy=false: scheme=%q, want http (header ignored)", got)
+	}
+	if got := requestScheme(plainXFP, true); got != "https" {
+		t.Errorf("XFP=https, trustProxy=true: scheme=%q, want https", got)
+	}
+	if got := requestScheme(tlsReq, false); got != "https" {
+		t.Errorf("r.TLS set: scheme=%q, want https regardless of trustProxy", got)
+	}
+}
+
+// TestSameOriginSchemeTrustProxy covers the same-origin scheme compare: with
+// trustProxy off, a request forwarded as https (XFP) is still treated as http,
+// so an http:// Origin matches; with trustProxy on it is https, so the http
+// Origin's scheme mismatches and is rejected.
+func TestSameOriginSchemeTrustProxy(t *testing.T) {
+	newReq := func() *http.Request {
+		r := httptest.NewRequest("POST", "http://host/api/apply", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.Header.Set("Origin", "http://host")
+		return r
+	}
+	if !sameOrigin(newReq(), false) {
+		t.Error("trustProxy=false: http Origin should match an http-treated request (XFP ignored)")
+	}
+	if sameOrigin(newReq(), true) {
+		t.Error("trustProxy=true: http Origin should mismatch an https (XFP) request's scheme")
 	}
 }

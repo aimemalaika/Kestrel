@@ -31,7 +31,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 		if apiPath {
 			switch {
 			case isMutating(r.Method):
-				if !sameOrigin(r) {
+				if !sameOrigin(r, a.trustProxy) {
 					// follow-up: once the SPA is wired to echo a token, add a double-submit
 					// CSRF token in addition to this Origin check (do not require a custom
 					// header before then — it would break the untouched frontend).
@@ -39,7 +39,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 					return
 				}
 			case isUpgradeOrStreamPath(r.URL.Path):
-				if !originOK(r) {
+				if !originOK(r, a.trustProxy) {
 					writeAuthError(w, http.StatusForbidden, "Forbidden", "cross-origin request rejected")
 					return
 				}
@@ -110,7 +110,7 @@ func isUpgradeOrStreamPath(p string) bool {
 
 // sameOrigin reports whether the request's Origin (or Referer) is same scheme+
 // host as the request. A state-changing request with neither header is rejected.
-func sameOrigin(r *http.Request) bool {
+func sameOrigin(r *http.Request, trustProxy bool) bool {
 	src := r.Header.Get("Origin")
 	if src == "" {
 		src = r.Header.Get("Referer")
@@ -118,24 +118,27 @@ func sameOrigin(r *http.Request) bool {
 	if src == "" {
 		return false
 	}
-	return sameOriginURL(src, r)
+	return sameOriginURL(src, r, trustProxy)
 }
 
 // originOK mirrors the WS CheckOrigin policy for the stream/upgrade GETs: allow
 // when there is no Origin header (non-browser client); otherwise require the
 // Origin to be same scheme+host as the request.
-func originOK(r *http.Request) bool {
+func originOK(r *http.Request, trustProxy bool) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true
 	}
-	return sameOriginURL(origin, r)
+	return sameOriginURL(origin, r, trustProxy)
 }
 
 // requestScheme is the scheme the request arrived on: https when served over TLS
-// or behind a proxy that set X-Forwarded-Proto: https, else http.
-func requestScheme(r *http.Request) string {
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+// or — only when trustProxy is true — behind a proxy that set
+// X-Forwarded-Proto: https, else http. With trustProxy false the spoofable
+// header is ignored (fail-safe: treating the request as http only makes the
+// same-origin scheme compare stricter). trustProxy comes from --trusted-proxy.
+func requestScheme(r *http.Request, trustProxy bool) string {
+	if r.TLS != nil || (trustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")) {
 		return "https"
 	}
 	return "http"
@@ -144,7 +147,7 @@ func requestScheme(r *http.Request) string {
 // sameOriginURL reports whether src (an Origin/Referer URL) has the same host as
 // the request and, when it carries a scheme, the same scheme as the request —
 // so an http:// origin never passes for an https request.
-func sameOriginURL(src string, r *http.Request) bool {
+func sameOriginURL(src string, r *http.Request, trustProxy bool) bool {
 	u, err := url.Parse(src)
 	if err != nil || u.Host == "" {
 		return false
@@ -152,7 +155,7 @@ func sameOriginURL(src string, r *http.Request) bool {
 	if !strings.EqualFold(u.Host, r.Host) {
 		return false
 	}
-	if u.Scheme != "" && !strings.EqualFold(u.Scheme, requestScheme(r)) {
+	if u.Scheme != "" && !strings.EqualFold(u.Scheme, requestScheme(r, trustProxy)) {
 		return false
 	}
 	return true
