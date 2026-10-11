@@ -4,7 +4,9 @@ import { createClient } from '../createClient'
 afterEach(() => vi.unstubAllEnvs())
 
 describe('createClient', () => {
-  it('defaults to the mock client', async () => {
+  it('uses the mock client in the test env (VITE_CLIENT=mock via .env.test)', async () => {
+    // Production default is 'http' (see createClient); the dev server and tests
+    // pin VITE_CLIENT=mock, so with no per-test stub the mock client is used.
     const c = createClient()
     expect((await c.catalog()).length).toBeGreaterThan(0)
   })

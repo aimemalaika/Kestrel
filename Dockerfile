@@ -20,8 +20,11 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
 # Copy the rest of the frontend and build the SPA.
+# VITE_CLIENT=http ships the SPA that talks to the real backend (not the mock
+# client); it is the default, set here explicitly so the production image can
+# never accidentally ship a mock UI.
 COPY web/ ./
-RUN npm run build
+RUN VITE_CLIENT=http npm run build
 # Result: /src/web/dist
 
 # ---- Stage 2: build the Go binary -----------------------------------------

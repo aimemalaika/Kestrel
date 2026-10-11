@@ -147,11 +147,21 @@ export function ResourceTable({
       accessorFn: (o: K8sObject) => s.value(o),
       cell: (ctx) => {
         const v = String(ctx.getValue() ?? '')
-        if (s.id === 'name')
+        if (s.id === 'name') {
+          // Link to the detail using the ROW's own namespace, not the current
+          // selection: from the All-Namespaces view (_all) a relative link would
+          // inherit `_all` and the detail Get would run with no namespace and
+          // fail ("no longer exists"). Cluster-scoped rows (no namespace) use a
+          // relative link, which is correct.
+          const rowNs = ctx.row.original.metadata.namespace
+          const detailTo =
+            rowNs && gvr
+              ? `/ns/${encodeURIComponent(rowNs)}/${gvr.group}/${gvr.version}/${gvr.resource}/${encodeURIComponent(v)}`
+              : encodeURIComponent(v)
           return (
             <span className="inline-flex items-center gap-2">
               <Link
-                to={encodeURIComponent(v)}
+                to={detailTo}
                 className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 rounded"
               >
                 <Mono>{v}</Mono>
@@ -161,6 +171,7 @@ export function ResourceTable({
               )}
             </span>
           )
+        }
         if (s.kind === 'status') return <StatusPill value={v} />
         if (s.kind === 'age') return <Age creationTimestamp={v === '—' ? undefined : v} />
         if (s.kind === 'scan') return <ScanCell value={v} />
@@ -214,7 +225,7 @@ export function ResourceTable({
         return s.kind === 'text' && s.id !== 'name' ? <span className="text-zinc-300">{v}</span> : v
       },
     }))
-  }, [kind, namespace])
+  }, [kind, namespace, gvr])
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
@@ -342,68 +353,70 @@ export function ResourceTable({
     }
   })
   // Pods get default row actions (logs / terminal / more) matching the design;
-  // each opens the pod's drawer (relative link, like the name cell).
+  // each opens the pod's drawer. Use the row's own namespace (not the current
+  // selection) so actions work from the All-Namespaces view — see the name cell.
   const actBtn =
     'p-1 rounded text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/60'
-  const podActions = (o: K8sObject): ReactNode => (
-    <>
-      <Link
-        to={encodeURIComponent(o.metadata.name)}
-        aria-label={`Logs: ${o.metadata.name}`}
-        className={actBtn}
-      >
-        <Icon name="logs" />
-      </Link>
-      <Link
-        to={encodeURIComponent(o.metadata.name)}
-        aria-label={`Terminal: ${o.metadata.name}`}
-        className={actBtn}
-      >
-        <Icon name="terminal" />
-      </Link>
-      <Link
-        to={encodeURIComponent(o.metadata.name)}
-        aria-label={`More: ${o.metadata.name}`}
-        className={actBtn}
-      >
-        <Icon name="dots" />
-      </Link>
-    </>
-  )
-  const deployActions = (o: K8sObject): ReactNode => (
-    <>
-      <Link
-        to={encodeURIComponent(o.metadata.name)}
-        aria-label={`Open: ${o.metadata.name}`}
-        className={actBtn}
-      >
-        <Icon name="external" />
-      </Link>
-      <Link
-        to={encodeURIComponent(o.metadata.name)}
-        aria-label={`More: ${o.metadata.name}`}
-        className={actBtn}
-      >
-        <Icon name="dots" />
-      </Link>
-    </>
-  )
-  const linkActions =
-    (icons: Array<[string, string]>) =>
-    (o: K8sObject): ReactNode => (
+  const podActions = (o: K8sObject): ReactNode => {
+    const ns = o.metadata.namespace
+    const to =
+      ns && gvr
+        ? `/ns/${encodeURIComponent(ns)}/${gvr.group}/${gvr.version}/${gvr.resource}/${encodeURIComponent(o.metadata.name)}`
+        : encodeURIComponent(o.metadata.name)
+    return (
       <>
-        {icons.map(([label, icon]) => (
-          <Link
-            key={label}
-            to={encodeURIComponent(o.metadata.name)}
-            aria-label={`${label}: ${o.metadata.name}`}
-            className={actBtn}
-          >
-            <Icon name={icon} />
-          </Link>
-        ))}
+        <Link to={to} aria-label={`Logs: ${o.metadata.name}`} className={actBtn}>
+          <Icon name="logs" />
+        </Link>
+        <Link to={to} aria-label={`Terminal: ${o.metadata.name}`} className={actBtn}>
+          <Icon name="terminal" />
+        </Link>
+        <Link to={to} aria-label={`More: ${o.metadata.name}`} className={actBtn}>
+          <Icon name="dots" />
+        </Link>
       </>
     )
+  }
+  const deployActions = (o: K8sObject): ReactNode => {
+    const ns = o.metadata.namespace
+    const to =
+      ns && gvr
+        ? `/ns/${encodeURIComponent(ns)}/${gvr.group}/${gvr.version}/${gvr.resource}/${encodeURIComponent(o.metadata.name)}`
+        : encodeURIComponent(o.metadata.name)
+    return (
+      <>
+        <Link to={to} aria-label={`Open: ${o.metadata.name}`} className={actBtn}>
+          <Icon name="external" />
+        </Link>
+        <Link to={to} aria-label={`More: ${o.metadata.name}`} className={actBtn}>
+          <Icon name="dots" />
+        </Link>
+      </>
+    )
+  }
+  const linkActions =
+    (icons: Array<[string, string]>) =>
+    (o: K8sObject): ReactNode => {
+      const ns = o.metadata.namespace
+      const to =
+        ns && gvr
+          ? `/ns/${encodeURIComponent(ns)}/${gvr.group}/${gvr.version}/${gvr.resource}/${encodeURIComponent(o.metadata.name)}`
+          : encodeURIComponent(o.metadata.name)
+      return (
+        <>
+          {icons.map(([label, icon]) => (
+            <Link
+              key={label}
+              to={to}
+              aria-label={`${label}: ${o.metadata.name}`}
+              className={actBtn}
+            >
+              <Icon name={icon} />
+            </Link>
+          ))}
+        </>
+      )
+    }
   const KIND_ACTIONS: Partial<Record<string, (o: K8sObject) => ReactNode>> = {
     Pod: podActions,
     Deployment: deployActions,

@@ -18,3 +18,6 @@ CLAUDE.md
 /bin/
 *.test
 *.out
+# Vite env files are config, not secrets, and CI needs them — the *.test rule
+# above (Go test binaries) would otherwise swallow web/.env.test.
+!web/.env.test
