@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/aimemalaika/Kestrel/internal/auth"
 	"github.com/aimemalaika/Kestrel/internal/helm"
@@ -251,13 +252,32 @@ func (a *api) canI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, k8s.CanIResponse{Allowed: allowed})
 }
 
+// streamTokenSkew ends a watch stream this long before the user's id_token
+// expires, so the client reconnects (and the authn middleware re-issues a
+// refreshed token) before the stale token would make the per-user cache filter
+// fail closed. #106.
+const streamTokenSkew = 10 * time.Second
+
 func (a *api) stream(w http.ResponseWriter, r *http.Request, segs []string) {
 	ref, ok := parseRef(segs)
 	if !ok {
 		writeStatus(w, 404, "NotFound", "unknown stream path "+r.URL.Path)
 		return
 	}
-	ch, err := a.d.Stream.Watch(r.Context(), ref)
+	ctx := r.Context()
+	// Bound the stream to the forwarded token's lifetime. On this deadline the
+	// stream ends; EventSource reconnects and the middleware refreshes the token
+	// for the new stream. (The token was just refreshed by the middleware if it
+	// was near expiry, so the deadline is normally well in the future; guard
+	// against a past deadline so we never open an instantly-cancelled stream.)
+	if id := auth.From(ctx); id.Token != "" && !id.Expiry.IsZero() {
+		if deadline := id.Expiry.Add(-streamTokenSkew); deadline.After(time.Now()) {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithDeadline(ctx, deadline)
+			defer cancel()
+		}
+	}
+	ch, err := a.d.Stream.Watch(ctx, ref)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -269,7 +289,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request, segs []string) {
 	}
 	for {
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return
 		case env, open := <-ch:
 			if !open {
