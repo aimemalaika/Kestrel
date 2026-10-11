@@ -212,3 +212,27 @@ func TestPortForwardBadPortRejectedBeforeUpgrade(t *testing.T) {
 		t.Fatalf("want 400, got %v", resp)
 	}
 }
+
+// TestCheckSameOriginTrustProxy covers the WS origin check's scheme handling:
+// an http:// Origin on a request forwarded as https (XFP) is treated as http
+// (and so matches) when wsTrustProxy is off, and mismatches when it is on.
+func TestCheckSameOriginTrustProxy(t *testing.T) {
+	t.Cleanup(func() { SetWSTrustProxy(false) }) // restore package default
+
+	newReq := func() *http.Request {
+		r := httptest.NewRequest("GET", "http://host/api/exec", nil)
+		r.Header.Set("X-Forwarded-Proto", "https")
+		r.Header.Set("Origin", "http://host")
+		return r
+	}
+
+	SetWSTrustProxy(false)
+	if !checkSameOrigin(newReq()) {
+		t.Error("trustProxy=false: http Origin should pass (XFP ignored, request treated as http)")
+	}
+
+	SetWSTrustProxy(true)
+	if checkSameOrigin(newReq()) {
+		t.Error("trustProxy=true: http Origin should be rejected against an https (XFP) request")
+	}
+}

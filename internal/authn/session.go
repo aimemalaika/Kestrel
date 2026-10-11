@@ -204,13 +204,17 @@ func (a *Authenticator) verifyState(state string) (nonce string, ok bool) {
 
 // --- session cookie ---------------------------------------------------------
 
-// isHTTPS reports whether the request arrived over TLS (directly, or via a
-// proxy that set X-Forwarded-Proto: https). It gates the Secure cookie flag.
-func isHTTPS(r *http.Request) bool {
+// isHTTPS reports whether the request arrived over TLS (directly via r.TLS, or
+// — only when trustProxy is true — via a proxy that set X-Forwarded-Proto:
+// https). It gates the Secure cookie flag. With trustProxy false the spoofable
+// header is ignored; treating the request as http only drops Secure, which is
+// fail-safe (a Secure cookie on a real http request would simply never be sent
+// back). trustProxy comes from --trusted-proxy via Config.TrustProxy.
+func isHTTPS(r *http.Request, trustProxy bool) bool {
 	if r.TLS != nil {
 		return true
 	}
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	return trustProxy && strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // setSessionCookie writes the signed session cookie. HttpOnly + SameSite=Lax
@@ -223,7 +227,7 @@ func (a *Authenticator) setSessionCookie(w http.ResponseWriter, r *http.Request,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isHTTPS(r),
+		Secure:   isHTTPS(r, a.trustProxy),
 	}
 	if !expiry.IsZero() {
 		c.Expires = expiry
@@ -239,7 +243,7 @@ func (a *Authenticator) clearSessionCookie(w http.ResponseWriter, r *http.Reques
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isHTTPS(r),
+		Secure:   isHTTPS(r, a.trustProxy),
 		MaxAge:   -1,
 	})
 }
@@ -264,7 +268,7 @@ func (a *Authenticator) setStateCookie(w http.ResponseWriter, r *http.Request, s
 		Path:     "/auth",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isHTTPS(r),
+		Secure:   isHTTPS(r, a.trustProxy),
 		MaxAge:   int(stateTTL / time.Second),
 	})
 }
@@ -277,7 +281,7 @@ func (a *Authenticator) clearStateCookie(w http.ResponseWriter, r *http.Request)
 		Path:     "/auth",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   isHTTPS(r),
+		Secure:   isHTTPS(r, a.trustProxy),
 		MaxAge:   -1,
 	})
 }
