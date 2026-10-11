@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ViewHeader, EmptyState, Card } from '../ui'
 import { parseServiceMap } from '../modules/servicemap/parse'
 import { projectSla } from '../modules/servicemap/sla'
@@ -6,13 +6,53 @@ import { layoutGraph, graphSize } from '../modules/servicemap/layout'
 import { ServiceNode } from '../modules/servicemap/ServiceNode'
 import { ServiceEdge } from '../modules/servicemap/ServiceEdge'
 import { UploadPanel } from '../modules/servicemap/UploadPanel'
+import type { ApiError } from '../contract/types'
 import type { ParseResult } from '../modules/servicemap/types'
-import { SAMPLE_YAML } from '../modules/servicemap/sample'
+import { getServiceMap, putServiceMap } from '../modules/servicemap/serviceMapClient'
 
 export function ServiceMapView() {
-  // Preview the sample map by default so the screen shows a graph on first open.
-  const [result, setResult] = useState<ParseResult | null>(() => parseServiceMap(SAMPLE_YAML))
+  // `null` result + `loading` = fetching the stored map; `null` result when not
+  // loading = nothing stored (empty state). The sample is a client-side preview
+  // only (no PUT), so it never overwrites the persisted cluster map.
+  const [result, setResult] = useState<ParseResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [pending, setPending] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    getServiceMap()
+      .then((model) => {
+        if (!active) return
+        if (model.services.length > 0) setResult({ ok: true, model })
+      })
+      .catch((err: ApiError) => {
+        if (active) setLoadError(err.error)
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const onPreview = (text: string) => {
+    setSelected(null)
+    setLoadError(null)
+    setResult(parseServiceMap(text))
+  }
+
+  const onSubmit = (text: string) => {
+    setSelected(null)
+    setLoadError(null)
+    setPending(true)
+    putServiceMap(text)
+      .then((r) => setResult(r))
+      .catch((err: ApiError) => setLoadError(err.error))
+      .finally(() => setPending(false))
+  }
 
   const computed = useMemo(() => {
     if (!result?.ok) return null
@@ -33,14 +73,22 @@ export function ServiceMapView() {
   return (
     <div className="space-y-4">
       <ViewHeader title="Service Map" />
-      <UploadPanel
-        onLoad={(t) => {
-          setSelected(null)
-          setResult(parseServiceMap(t))
-        }}
-      />
+      <UploadPanel onPreview={onPreview} onSubmit={onSubmit} pending={pending} />
 
-      {!result && (
+      {loadError && (
+        <Card className="p-4">
+          <p className="text-sm font-medium text-red-400">Could not load service map</p>
+          <p className="text-xs text-zinc-400 mt-1">{loadError}</p>
+        </Card>
+      )}
+
+      {loading && (
+        <Card className="p-4">
+          <p className="text-sm text-zinc-400">Loading service map…</p>
+        </Card>
+      )}
+
+      {!loading && !loadError && !result && (
         <EmptyState
           title="No service map loaded"
           hint="Upload a services.yaml or load the sample to see your services and projected SLAs."
