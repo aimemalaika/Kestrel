@@ -1,0 +1,13 @@
+---
+# Kestrel Kubespray add-on — PREPARE phase (run BEFORE your cluster.yml).
+# Generates the issuer CA, distributes it to control-plane nodes, and renders a
+# kube_oidc_* group_vars snippet for you to include in your inventory.
+# This add-on is NOT part of upstream Kubespray; layer it onto your inventory.
+- name: Kestrel add-on — prepare CA + apiserver OIDC trust
+  hosts: kube_control_plane
+  gather_facts: true
+  tasks:
+    - name: Run the prepare tasks
+      ansible.builtin.include_role:
+        name: kestrel_addon
+        tasks_from: prepare.yml

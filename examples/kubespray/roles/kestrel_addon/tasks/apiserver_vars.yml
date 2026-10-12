@@ -1,0 +1,36 @@
+---
+- name: Render the kube_oidc_* group_vars snippet
+  ansible.builtin.template:
+    src: kestrel-oidc.group_vars.yml.j2
+    dest: "{{ kestrel_addon_group_vars_out }}"
+    mode: "0644"
+  run_once: true
+  delegate_to: localhost
+
+- name: Remind the operator to include the snippet before cluster.yml
+  ansible.builtin.debug:
+    msg: >-
+      Wrote {{ kestrel_addon_group_vars_out }}. Copy it into your inventory
+      group_vars/k8s_cluster/ and run your Kubespray cluster.yml, THEN run
+      deploy.yml. The add-on is not part of upstream Kubespray.
+  run_once: true
+  delegate_to: localhost
+
+- name: Check whether the apiserver manifest exists (post cluster.yml)
+  ansible.builtin.stat:
+    path: /etc/kubernetes/manifests/kube-apiserver.yaml
+  register: kestrel_apiserver_manifest
+  become: true
+  when: kestrel_addon_verify_apiserver | bool
+  tags: [verify]
+
+- name: Verify the apiserver picked up the OIDC issuer flag
+  ansible.builtin.command:
+    cmd: grep -q -- "--oidc-issuer-url=https://{{ kestrel_addon_host }}{{ kestrel_addon_dex_path }}" /etc/kubernetes/manifests/kube-apiserver.yaml
+  become: true
+  changed_when: false
+  when:
+    - kestrel_addon_verify_apiserver | bool
+    - kestrel_apiserver_manifest.stat is defined
+    - kestrel_apiserver_manifest.stat.exists | default(false)
+  tags: [verify]

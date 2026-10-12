@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  role_name: kestrel_addon
+  namespace: kestrel
+  author: Kestrel
+  description: Deploy Kestrel (bundled Dex + ingress TLS) and wire kube-apiserver OIDC trust on a Kubespray cluster.
+  license: Apache-2.0
+  min_ansible_version: "2.15"
+dependencies: []

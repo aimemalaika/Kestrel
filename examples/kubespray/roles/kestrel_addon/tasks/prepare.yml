@@ -1,0 +1,5 @@
+---
+- name: Generate + distribute the issuer CA
+  ansible.builtin.include_tasks: ca.yml
+- name: Render apiserver OIDC vars + snippet
+  ansible.builtin.include_tasks: apiserver_vars.yml

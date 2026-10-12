@@ -1,0 +1,10 @@
+---
+# Kestrel Kubespray add-on — DEPLOY phase (run AFTER your cluster.yml).
+- name: Kestrel add-on — deploy the Helm release
+  hosts: kube_control_plane[0]
+  gather_facts: false
+  tasks:
+    - name: Run the deploy tasks
+      ansible.builtin.include_role:
+        name: kestrel_addon
+        tasks_from: deploy.yml
