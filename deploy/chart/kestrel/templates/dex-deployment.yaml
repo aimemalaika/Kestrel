@@ -17,9 +17,13 @@ spec:
         {{- include "kestrel.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: dex
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/dex-configmap.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/dex-secret.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "kestrel.dexFullname" . }}
+      {{- with .Values.dex.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: dex
           image: {{ .Values.dex.image | quote }}
@@ -27,6 +31,22 @@ spec:
           ports:
             - name: http
               containerPort: 5556
+          {{- with .Values.dex.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.dex.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.dex.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.dex.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.dex.github.clientId }}
           env:
             - name: GITHUB_CLIENT_SECRET
@@ -42,6 +62,9 @@ spec:
               readOnly: true
       volumes:
         - name: config
-          configMap:
-            name: {{ include "kestrel.dexFullname" . }}
+          secret:
+            secretName: {{ include "kestrel.dexFullname" . }}
+            items:
+              - key: config.yaml
+                path: config.yaml
 {{- end }}

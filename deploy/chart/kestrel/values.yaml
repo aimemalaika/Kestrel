@@ -184,6 +184,44 @@ dex:
     clientSecret: ""
     # -- Optional org/team restriction (Dex github connector `orgs`).
     orgs: []
+  # -- Dex container resources.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  # -- Dex pod security context.
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  # -- Dex container security context.
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  # -- Dex liveness probe (HTTP /healthz on 5556).
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 3
+    failureThreshold: 3
+  # -- Dex readiness probe.
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
 
 # Secret handling for the three sensitive inputs:
 #   - oidc client secret   (--oidc-client-secret)
@@ -214,9 +252,11 @@ secret:
   create: false
   # -- OIDC client secret (inline — not for production).
   oidcClientSecret: ""
-  # -- Session HMAC key for signing session cookies. Empty => the binary
-  # generates a random key at startup (sessions will not survive a restart and
-  # will break across replicas). Set a stable value in production.
+  # -- Session HMAC key for signing session cookies. When empty AND the chart
+  # creates the Secret (dex.enabled or secret.create), a stable key is generated
+  # and reused across upgrades (lookup). Set explicitly to share a known key, or
+  # use existingSecret to manage it yourself. Only an all-empty, no-Secret setup
+  # falls back to the binary's per-start random key.
   sessionKey: ""
   # -- Registry basic-auth password (inline — not for production).
   registryPassword: ""
