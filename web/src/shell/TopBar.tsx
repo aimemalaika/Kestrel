@@ -293,7 +293,9 @@ export function TopBar({
         className="hidden md:flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="text-xs text-emerald-400 font-medium">{info?.clusterName || 'Kestrel'}</span>
+        <span className="text-xs text-emerald-400 font-medium">
+          {info?.clusterName || 'Kestrel'}
+        </span>
         {info?.serverVersion && (
           <span className="text-[10px] text-emerald-600">{info.serverVersion}</span>
         )}

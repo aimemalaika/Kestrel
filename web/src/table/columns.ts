@@ -224,7 +224,13 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   ],
   StatefulSet: [
     { header: 'Ready', path: 'ready', numeric: true, cell: 'readyfrac', derive: stsReady },
-    { header: 'Replicas', path: 'spec.replicas', numeric: true, cell: 'scale', derive: deployDesired },
+    {
+      header: 'Replicas',
+      path: 'spec.replicas',
+      numeric: true,
+      cell: 'scale',
+      derive: deployDesired,
+    },
   ],
   DaemonSet: [
     { header: 'Ready', path: 'ready', numeric: true, cell: 'readyfrac', derive: dsReady },

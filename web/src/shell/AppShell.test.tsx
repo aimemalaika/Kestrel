@@ -57,7 +57,9 @@ describe('AppShell', () => {
     it('header has cluster pill, notifications dropdown and help', async () => {
       renderShell()
       // The pill reads the cluster name from the client (mock → "kestrel-mock").
-      expect(await within(screen.getByTestId('cluster-pill')).findByText('kestrel-mock')).toBeInTheDocument()
+      expect(
+        await within(screen.getByTestId('cluster-pill')).findByText('kestrel-mock'),
+      ).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
       expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeInTheDocument()

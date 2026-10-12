@@ -160,7 +160,9 @@ describe('per-kind rich columns', () => {
     const ids = columnSpecs('StatefulSet', { namespaceSelected: true }).map((c) => c.id)
     expect(ids).not.toContain('status') // generic phase column removed
     const v = (h: string, o: K8sObject) =>
-      columnSpecs(o.kind, { namespaceSelected: true }).find((c) => c.header === h)!.value(o)
+      columnSpecs(o.kind, { namespaceSelected: true })
+        .find((c) => c.header === h)!
+        .value(o)
     expect(v('Ready', sts)).toBe('2/3')
     const ds: K8sObject = {
       apiVersion: 'apps/v1',
@@ -181,7 +183,9 @@ describe('per-kind rich columns', () => {
     const ids = columnSpecs('Ingress', { namespaceSelected: true }).map((c) => c.id)
     expect(ids).not.toContain('status')
     const v = (h: string) =>
-      columnSpecs('Ingress', { namespaceSelected: true }).find((c) => c.header === h)!.value(ing)
+      columnSpecs('Ingress', { namespaceSelected: true })
+        .find((c) => c.header === h)!
+        .value(ing)
     expect(v('Hosts')).toBe('a.example.com, b.example.com')
     expect(v('Address')).toBe('10.233.0.5')
   })
