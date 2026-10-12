@@ -148,6 +148,43 @@ config:
   #  - name: bitnami
   #    url: https://charts.bitnami.com/bitnami
 
+# Bundled Dex OIDC broker (optional). When enabled, Dex is deployed in-cluster on
+# the same ingress host under `dex.path`, Kestrel's --oidc-* flags are auto-wired,
+# and a turnkey username/password login works out of the box. Requires ingress.host.
+# NOTE: when dex.enabled=true the bundled Dex wins and config.oidc.* is ignored;
+# don't set both.
+# The keys `_genClientSecret` / `admin._genPassword` are internal render-time cache
+# keys (NOT user-set) that keep the generated client secret/password consistent
+# across templates within one render.
+dex:
+  # -- Deploy the bundled Dex broker and enable OIDC login.
+  enabled: false
+  # -- Dex image (pinned).
+  image: "ghcr.io/dexidp/dex:v2.41.1"
+  # -- Path prefix Dex is served under; issuer = https://<ingress.host><path>.
+  path: "/dex"
+  # -- OAuth client id Kestrel uses with Dex.
+  clientId: "kestrel"
+  # -- Client secret shared by Kestrel and Dex. Generated when empty (Task 6).
+  clientSecret: ""
+  admin:
+    # -- Create a static username/password admin login in Dex.
+    enabled: true
+    # -- Admin login username (an email). Fed from Kubespray inventory via #193.
+    user: "admin@kestrel"
+    # -- Admin plaintext password. Hashed (bcrypt) into the Dex config; never stored
+    #    as plaintext. Generated when empty (Task 6). Required (or generated) when admin.enabled.
+    password: ""
+    # -- Groups claim for the admin user (bind these to RBAC; also drives the perspective rule #194).
+    groups: ["kestrel-admins"]
+  github:
+    # -- GitHub OAuth app client id. Setting this (and clientSecret) shows "Log in with GitHub".
+    clientId: ""
+    # -- GitHub OAuth app client secret.
+    clientSecret: ""
+    # -- Optional org/team restriction (Dex github connector `orgs`).
+    orgs: []
+
 # Secret handling for the three sensitive inputs:
 #   - oidc client secret   (--oidc-client-secret)
 #   - session key          (--session-key)

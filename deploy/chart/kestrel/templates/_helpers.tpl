@@ -74,5 +74,55 @@ Name of the Secret holding sensitive values (existing or chart-created).
 Whether any sensitive value is wired in (controls whether secret env is added).
 */}}
 {{- define "kestrel.hasSecret" -}}
-{{- if or .Values.existingSecret.name .Values.secret.create }}true{{- end }}
+{{- if or .Values.existingSecret.name .Values.secret.create .Values.dex.enabled }}true{{- end }}
+{{- end }}
+
+{{/* Dex resource name. */}}
+{{- define "kestrel.dexFullname" -}}
+{{- printf "%s-dex" (include "kestrel.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/* Dex issuer URL = https://<ingress.host><dex.path>. Requires ingress.host. */}}
+{{- define "kestrel.dexIssuer" -}}
+{{- $host := required "dex.enabled requires ingress.host (the OIDC issuer needs a hostname)" .Values.ingress.host -}}
+{{- printf "https://%s%s" $host .Values.dex.path -}}
+{{- end }}
+
+{{/* Resolve the Dex client secret: value, else existing Secret, else generated.
+     The generated value is cached on .Values so every template in one render agrees. */}}
+{{- define "kestrel.dexClientSecret" -}}
+{{- if .Values.dex.clientSecret -}}
+{{- .Values.dex.clientSecret -}}
+{{- else if .Values.dex._genClientSecret -}}
+{{- .Values.dex._genClientSecret -}}
+{{- else -}}
+{{- $s := (lookup "v1" "Secret" .Release.Namespace (include "kestrel.dexFullname" .)) -}}
+{{- $v := "" -}}
+{{- if and $s $s.data (index $s.data "client-secret") -}}
+{{- $v = index $s.data "client-secret" | b64dec -}}
+{{- else -}}
+{{- $v = randAlphaNum 32 -}}
+{{- end -}}
+{{- $_ := set .Values.dex "_genClientSecret" $v -}}
+{{- $v -}}
+{{- end -}}
+{{- end }}
+
+{{/* Resolve the Dex admin plaintext password: value, else existing Secret, else generated (cached per render). */}}
+{{- define "kestrel.dexAdminPassword" -}}
+{{- if .Values.dex.admin.password -}}
+{{- .Values.dex.admin.password -}}
+{{- else if .Values.dex.admin._genPassword -}}
+{{- .Values.dex.admin._genPassword -}}
+{{- else -}}
+{{- $s := (lookup "v1" "Secret" .Release.Namespace (include "kestrel.dexFullname" .)) -}}
+{{- $v := "" -}}
+{{- if and $s $s.data (index $s.data "admin-password") -}}
+{{- $v = index $s.data "admin-password" | b64dec -}}
+{{- else -}}
+{{- $v = randAlphaNum 20 -}}
+{{- end -}}
+{{- $_ := set .Values.dex.admin "_genPassword" $v -}}
+{{- $v -}}
+{{- end -}}
 {{- end }}

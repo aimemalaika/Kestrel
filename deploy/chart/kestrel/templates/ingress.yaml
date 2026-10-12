@@ -52,5 +52,14 @@ spec:
                 name: {{ $fullName }}
                 port:
                   number: {{ $svcPort }}
+          {{- if $.Values.dex.enabled }}
+          - path: {{ $.Values.dex.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "kestrel.dexFullname" $ }}
+                port:
+                  number: 5556
+          {{- end }}
     {{- end }}
 {{- end }}

@@ -75,6 +75,28 @@ The broker owns the GitHub OAuth app + org/team→groups mapping; Kestrel only
 names which connector to pre-select. Enable any combination; empty advertises
 nothing (you must enable at least one in OIDC mode).
 
+### Bundled Dex (no separate broker)
+
+Don't have a broker? Let the chart run Dex for you, in-cluster, on the same
+ingress host under `/dex`:
+
+```bash
+helm install kestrel deploy/chart/kestrel \
+  --set dex.enabled=true \
+  --set ingress.enabled=true \
+  --set ingress.host=kestrel.example.com
+```
+
+- Kestrel's `--oidc-*` flags are wired automatically (issuer
+  `https://<ingress.host>/dex`); do **not** also set `config.oidc.*`.
+- A turnkey username/password login works out of the box. Set
+  `dex.admin.user` / `dex.admin.password` / `dex.admin.groups`; an empty
+  password is generated and printed in the install NOTES.
+- GitHub is opt-in: set `dex.github.clientId` and `dex.github.clientSecret` to
+  add "Log in with GitHub" (optionally restrict with `dex.github.orgs`).
+- `ingress.host` and TLS are required. The kube-apiserver must also trust
+  `https://<host>/dex`; see [`../oidc/apiserver-trust.md`](../oidc/apiserver-trust.md).
+
 ## Key points about these values
 
 - `config.*` maps 1:1 to the binary's CLI flags; the chart only emits a flag when
