@@ -148,3 +148,26 @@ If your issuer serves TLS from a CA the control-plane nodes don't already trust
 the apiserver the CA: `--oidc-ca-file=/path/to/ca.pem` (kubeadm
 `apiServer.extraArgs` / Kubespray `kube_oidc_ca_file`). Browsers and `kubelogin`
 must trust it too.
+
+### Self-signed issuer (bundled Dex)
+
+With the bundled Dex on a self-signed ingress (`ingress.tls.mode=selfSigned`, see
+[`../helm/`](../helm/)), the CA to trust is the cert the chart generated into the
+TLS Secret. Extract it and point the apiserver at it:
+
+```bash
+# Name is <fullname>-tls: "kestrel-tls" for release "kestrel",
+# "<release>-kestrel-tls" for other release names.
+kubectl -n <ns> get secret <kestrel-tls-secret> -o jsonpath='{.data.tls\.crt}' | base64 -d > oidc-ca.pem
+```
+
+- Copy `oidc-ca.pem` to each control-plane node, then set the apiserver
+  `--oidc-ca-file` in the same durable place as the other `--oidc-*` settings:
+  kubeadm `apiServer.extraArgs` (`oidc-ca-file: /path/to/oidc-ca.pem`) or Kubespray
+  `kube_oidc_ca_file`.
+- Clients (`kubelogin`, the browser) must trust the same CA, or the login
+  redirect to `https://<host>/dex` will fail the TLS check.
+- Kestrel's own backend already trusts this CA automatically: the chart mounts
+  the generated cert and sets `--oidc-ca-file` when `dex.enabled` and
+  `ingress.tls.mode=selfSigned`. You only need to handle the apiserver and clients.
+- Automatic apiserver and client CA wiring is tracked in #193.

@@ -15,7 +15,11 @@ package authn
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -40,6 +44,12 @@ type Config struct {
 	// scheme compare); when false the spoofable header is ignored and only r.TLS
 	// counts. Must be set from the SAME flag that gates the rate-limiter's XFF.
 	TrustProxy bool
+	// CAFile, when non-empty, is a PEM bundle of extra CA certificate(s) the
+	// backend trusts for ALL calls to the OIDC issuer (discovery, JWKS, token
+	// exchange, refresh, ROPC). Use it when the issuer is served with a
+	// self-signed / private-CA certificate (e.g. bundled Dex behind a
+	// self-signed ingress). Empty = system trust only.
+	CAFile string
 }
 
 // Claims is the verified subset of an id_token Kestrel relies on.
@@ -80,6 +90,10 @@ type Authenticator struct {
 	// Config.TrustProxy); false ignores the header and trusts only r.TLS.
 	trustProxy bool
 
+	// httpClient, when non-nil, is a CA-trusting client injected into oauth2
+	// token-endpoint contexts so they trust the issuer cert like discovery does.
+	httpClient *http.Client
+
 	now func() time.Time // injectable clock for tests
 }
 
@@ -95,6 +109,24 @@ func NewAuthenticator(ctx context.Context, cfg Config, key []byte) (*Authenticat
 	}
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = DefaultScopes
+	}
+	var httpClient *http.Client
+	if cfg.CAFile != "" {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		pem, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read oidc CA file %q: %w", cfg.CAFile, err)
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("oidc CA file %q contained no PEM certificates", cfg.CAFile)
+		}
+		httpClient = &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+		}}
+		ctx = oidc.ClientContext(ctx, httpClient)
 	}
 	provider, err := oidc.NewProvider(ctx, cfg.Issuer)
 	if err != nil {
@@ -118,6 +150,7 @@ func NewAuthenticator(ctx context.Context, cfg Config, key []byte) (*Authenticat
 		store:      newSessionStore(),
 		key:        key,
 		trustProxy: cfg.TrustProxy,
+		httpClient: httpClient,
 		now:        time.Now,
 	}, nil
 }

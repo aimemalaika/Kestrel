@@ -290,11 +290,17 @@ ingress:
   # Each entry: {host, paths: [{path, pathType}]}.
   hosts: []
   tls:
-    # -- TLS mode: "secret" (use an operator-provided `secretName`, also the
-    # cert-manager path via annotations), "selfSigned" (the chart generates a
-    # self-signed cert into a Secret — no cert-manager needed; browsers/apiserver
-    # must trust the CA), or "disabled". Empty derives from `enabled` for
-    # back-compat (enabled=true => secret).
+    # -- TLS mode, one of:
+    #   "secret"     — use an operator-provided `secretName` (also the
+    #                  cert-manager path, via annotations).
+    #   "selfSigned" — the chart generates a self-signed cert into a Secret (no
+    #                  cert-manager needed). When dex.enabled, Kestrel also mounts
+    #                  that cert and sets --oidc-ca-file so the backend trusts the
+    #                  bundled issuer. The kube-apiserver and clients (browser,
+    #                  kubelogin) must still trust the CA — extract it from the TLS
+    #                  Secret; see examples/oidc/apiserver-trust.md.
+    #   "disabled"   — no TLS.
+    # Empty derives from `enabled` for back-compat (enabled=true => secret).
     mode: ""
     # -- Enable TLS on the Ingress (back-compat; prefer `mode`). true => secret mode.
     enabled: false

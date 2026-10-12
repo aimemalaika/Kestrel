@@ -52,6 +52,7 @@ func main() {
 	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback). Falls back to $KESTREL_OIDC_REDIRECT_URL")
 	oidcGroupsClaim := flag.String("oidc-groups-claim", "groups", "id_token claim carrying the user's groups")
 	oidcUsernameClaim := flag.String("oidc-username-claim", "email", "id_token claim used for the display username")
+	oidcCAFile := flag.String("oidc-ca-file", "", "PEM CA bundle the backend trusts for OIDC issuer calls (discovery, JWKS, token endpoint); set when the issuer uses a self-signed/private-CA cert. Falls back to $KESTREL_OIDC_CA_FILE")
 	oidcGitHubConnector := flag.String("oidc-github-connector", "", "Dex/Keycloak connector id for the \"Log in with GitHub\" option; empty hides it (the broker handles the GitHub OAuth + org→groups mapping). Falls back to $KESTREL_OIDC_GITHUB_CONNECTOR")
 	oidcPasswordConnector := flag.String("oidc-password-connector", "", "connector id for the username/password option (redirect-to-IdP); empty + --oidc-password-enable=false hides it. Falls back to $KESTREL_OIDC_PASSWORD_CONNECTOR")
 	oidcPasswordEnable := flag.Bool("oidc-password-enable", false, "enable the native username/password form (ROPC relay to the broker token endpoint); use only when a redirect connector is not viable. Also enabled by $KESTREL_OIDC_PASSWORD_ENABLE=true")
@@ -102,6 +103,7 @@ func main() {
 	oidcRedirectURLVal := flagOrEnv(*oidcRedirectURL, "KESTREL_OIDC_REDIRECT_URL")
 	oidcGitHubConnectorVal := flagOrEnv(*oidcGitHubConnector, "KESTREL_OIDC_GITHUB_CONNECTOR")
 	oidcPasswordConnectorVal := flagOrEnv(*oidcPasswordConnector, "KESTREL_OIDC_PASSWORD_CONNECTOR")
+	oidcCAFileVal := flagOrEnv(*oidcCAFile, "KESTREL_OIDC_CA_FILE")
 	oidcPasswordEnableVal := *oidcPasswordEnable || envBool("KESTREL_OIDC_PASSWORD_ENABLE")
 
 	obs.SetupLogger(*logLevel)
@@ -219,6 +221,7 @@ func main() {
 			GroupsClaim:   *oidcGroupsClaim,
 			UsernameClaim: *oidcUsernameClaim,
 			TrustProxy:    *trustedProxy,
+			CAFile:        oidcCAFileVal,
 		}, key)
 		if err != nil {
 			fatal("oidc setup", err)
