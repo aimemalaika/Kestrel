@@ -230,13 +230,11 @@ export function ResourceTable({
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [nsFilter, setNsFilter] = useState('')
   const columnFilters = useMemo<ColumnFiltersState>(() => {
     const f: ColumnFiltersState = []
     if (statusFilter) f.push({ id: 'status', value: statusFilter })
-    if (nsFilter) f.push({ id: 'namespace', value: nsFilter })
     return f
-  }, [statusFilter, nsFilter])
+  }, [statusFilter])
 
   const [pageSize, setPageSize] = useState(50)
   const [pageIndex, setPageIndex] = useState(0)
@@ -259,13 +257,12 @@ export function ResourceTable({
   const gvrKey = gvr ? `${gvr.group}/${gvr.version}/${gvr.resource}` : ''
   useEffect(() => {
     setPageIndex(0)
-  }, [gvrKey, namespace, globalFilter, statusFilter, nsFilter])
+  }, [gvrKey, namespace, globalFilter, statusFilter])
   // Reset filters when the resource type changes: a status/ns chip from the
   // previous kind would otherwise persist with no visible control to clear it
   // (the new kind may render no matching chips), stranding every row.
   useEffect(() => {
     setStatusFilter('')
-    setNsFilter('')
     setGlobalFilter('')
   }, [gvrKey])
 
@@ -275,20 +272,12 @@ export function ResourceTable({
       columnSpecs(kind, { namespaceSelected: !!namespace }).find((c) => c.id === 'status')?.value,
     [kind, namespace],
   )
-  const hasNsCol = columns.some((c) => c.id === 'namespace')
   const statuses = useMemo(
     () =>
       statusSpec && statusValue
         ? [...new Set(rows.map((o) => statusValue(o)))].filter((v) => v !== '—').sort()
         : [],
     [rows, statusSpec, statusValue],
-  )
-  const namespaces = useMemo(
-    () =>
-      hasNsCol
-        ? [...new Set(rows.map((o) => o.metadata.namespace).filter((n): n is string => !!n))].sort()
-        : [],
-    [rows, hasNsCol],
   )
 
   const total = table.getFilteredRowModel().rows.length
@@ -447,9 +436,6 @@ export function ResourceTable({
       <FilterBar
         query={globalFilter}
         onQuery={setGlobalFilter}
-        namespaceFilter={nsFilter}
-        onNamespace={hasNsCol ? setNsFilter : undefined}
-        namespaces={namespaces}
         statusFilter={statusFilter}
         onStatus={(s) => setStatusFilter((cur) => (cur === s ? '' : s))}
         statuses={statuses}
