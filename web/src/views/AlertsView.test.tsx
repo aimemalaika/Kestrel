@@ -12,6 +12,11 @@ describe('AlertsView', () => {
     expect(screen.getAllByRole('button', { name: 'Silence' }).length).toBe(ALERTS.length)
   })
 
+  it('discloses sample data on the Alerts tab', () => {
+    render(<AlertsView />)
+    expect(screen.getByRole('note')).toHaveTextContent(/Sample data — no metrics source connected/)
+  })
+
   it('Silences tab shows empty state; Alert Rules tab shows table', () => {
     render(<AlertsView />)
     fireEvent.click(screen.getByRole('button', { name: 'Silences' }))

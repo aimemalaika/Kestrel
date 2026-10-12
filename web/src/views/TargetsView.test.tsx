@@ -19,4 +19,8 @@ describe('TargetsView', () => {
     fireEvent.change(screen.getByLabelText('Filter by name'), { target: { value: 'kubelet' } })
     expect(screen.getAllByRole('row')).toHaveLength(2)
   })
+  it('discloses sample data', () => {
+    render(<TargetsView />)
+    expect(screen.getByRole('note')).toHaveTextContent(/Sample data — no metrics source connected/)
+  })
 })

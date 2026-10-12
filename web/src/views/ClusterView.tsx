@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useResourceStream } from '../table/useResourceStream'
+import { useClusterInfo } from '../cluster/useClusterInfo'
 import { Age } from '../table/Age'
 import { getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
@@ -266,15 +267,6 @@ function MachineSetsTab({ rows }: { rows: K8sObject[] }) {
   )
 }
 
-const SETTINGS = [
-  { label: 'Cluster Name', value: 'kestrel-cluster' },
-  { label: 'Console URL', value: 'https://console.kestrel-cluster.example.com' },
-  { label: 'API URL', value: 'https://api.kestrel-cluster.example.com:6443' },
-  { label: 'Authentication', value: 'OIDC' },
-  { label: 'Registry', value: 'image-registry.kestrel.svc:5000' },
-  { label: 'Monitoring', value: 'Kestrel Metrics (Prometheus-compatible)' },
-]
-
 export function ClusterView() {
   // Settings is URL-driven (/cluster/settings) so it stays in sync with the sidebar;
   // Operators/Version/Machine Sets are local sub-tabs under /cluster.
@@ -293,6 +285,21 @@ export function ClusterView() {
   const ops = useResourceStream(OPERATORS, undefined)
   const versions = useResourceStream(VERSIONS, undefined)
   const sets = useResourceStream(MACHINESETS, undefined)
+  const { info } = useClusterInfo()
+  // Real identity from GET /api/cluster-info (name/host via flag+rest.Config, version via discovery).
+  const realRows = [
+    { label: 'Cluster Name', value: info?.clusterName || '—' },
+    { label: 'API URL', value: info?.apiServerURL || '—' },
+    { label: 'Kubernetes Version', value: info?.serverVersion || '—' },
+  ]
+  // Not yet sourced from the cluster — labelled sample, not faked. Authentication
+  // in particular is owned by the auth-mode work (#155), not invented here.
+  const sampleRows = [
+    { label: 'Console URL', value: '—' },
+    { label: 'Authentication', value: 'Not reported (see auth mode — #155)' },
+    { label: 'Registry', value: '—' },
+    { label: 'Monitoring', value: 'No metrics source connected' },
+  ]
   return (
     <div>
       <ViewHeader title="Cluster" tabs={TABS} activeTab={tab} onTab={onTab} />
@@ -303,7 +310,11 @@ export function ClusterView() {
         <Card>
           <CardHeader title="Global Configuration" />
           <div className="p-5 space-y-3 text-xs">
-            <KV rows={SETTINGS} />
+            <KV rows={realRows} />
+            <p role="note" className="text-xs text-zinc-500 pt-2">
+              Sample data — not yet sourced from the cluster
+            </p>
+            <KV rows={sampleRows} mono={false} />
           </div>
         </Card>
       )}

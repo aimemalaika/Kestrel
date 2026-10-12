@@ -1,9 +1,22 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AuthProvider } from '../auth/AuthProvider'
 import { TopBar } from './TopBar'
 import { firingAlerts } from '../modules/alerts/alertsMock'
+
+// The cluster pill reads cluster identity through this hook; pin it so the pill
+// has a deterministic real-cluster value across these tests.
+vi.mock('../cluster/useClusterInfo', () => ({
+  useClusterInfo: () => ({
+    info: {
+      clusterName: 'brd-hq-cluster',
+      serverVersion: 'v1.33.4',
+      apiServerURL: 'https://api.brd-hq-cluster.brd.rw:8443',
+    },
+    error: false,
+  }),
+}))
 
 function renderAt(path: string) {
   return render(
@@ -32,6 +45,16 @@ describe('TopBar namespace selector visibility', () => {
   })
 })
 
+describe('TopBar cluster pill', () => {
+  it('shows the real cluster name and server version, not the hardcoded placeholder', async () => {
+    renderAt('/overview')
+    const pill = screen.getByTestId('cluster-pill')
+    expect(await within(pill).findByText('brd-hq-cluster')).toBeInTheDocument()
+    expect(within(pill).getByText('v1.33.4')).toBeInTheDocument()
+    expect(screen.queryByText('kestrel-cluster')).toBeNull()
+  })
+})
+
 describe('TopBar notification bell', () => {
   it('shows firing count and lists firing alerts in the dropdown', () => {
     render(
@@ -48,5 +71,17 @@ describe('TopBar notification bell', () => {
     expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeInTheDocument()
     expect(screen.getByText(firingAlerts()[0].name, { exact: false })).toBeInTheDocument()
     expect(screen.queryByText('No notifications')).toBeNull()
+  })
+
+  it('discloses that notifications are sample data', () => {
+    render(
+      <AuthProvider>
+        <MemoryRouter>
+          <TopBar perspective="admin" onPerspectiveChange={() => {}} />
+        </MemoryRouter>
+      </AuthProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    expect(screen.getByText(/Sample data/)).toBeInTheDocument()
   })
 })

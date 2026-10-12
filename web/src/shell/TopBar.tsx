@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthProvider'
 import { useSelection } from '../state/selection'
 import type { Perspective } from '../nav/categoryMap'
 import { firingAlerts } from '../modules/alerts/alertsMock'
+import { useClusterInfo } from '../cluster/useClusterInfo'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -227,6 +228,9 @@ function NotificationBell() {
               ))}
             </div>
           )}
+          <p className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-600">
+            Sample data
+          </p>
         </div>
       )}
     </div>
@@ -241,6 +245,7 @@ export function TopBar({
   onPerspectiveChange: (p: Perspective) => void
 }) {
   const crumbs = useCrumbs()
+  const { info } = useClusterInfo()
   return (
     <header className="flex items-center h-12 px-4 bg-header border-b border-zinc-800 shrink-0 z-40 gap-3">
       <div className="flex items-center gap-2 mr-2">
@@ -288,8 +293,12 @@ export function TopBar({
         className="hidden md:flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-2.5 py-1"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="text-xs text-emerald-400 font-medium">kestrel-cluster</span>
-        <span className="text-[10px] text-emerald-600">v1</span>
+        <span className="text-xs text-emerald-400 font-medium">
+          {info?.clusterName || 'Kestrel'}
+        </span>
+        {info?.serverVersion && (
+          <span className="text-[10px] text-emerald-600">{info.serverVersion}</span>
+        )}
       </div>
 
       <button

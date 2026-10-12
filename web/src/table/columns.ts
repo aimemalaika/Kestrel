@@ -67,6 +67,30 @@ function deployDesired(o: K8sObject): string {
   return String(num(getPath(o, 'spec.replicas') ?? getPath(o, 'status.replicas')))
 }
 
+/** StatefulSet readiness: status.readyReplicas / spec.replicas. */
+function stsReady(o: K8sObject): string {
+  return `${num(getPath(o, 'status.readyReplicas'))}/${num(getPath(o, 'spec.replicas') ?? getPath(o, 'status.replicas'))}`
+}
+
+/** DaemonSet readiness: status.numberReady / status.desiredNumberScheduled. */
+function dsReady(o: K8sObject): string {
+  return `${num(getPath(o, 'status.numberReady'))}/${num(getPath(o, 'status.desiredNumberScheduled'))}`
+}
+
+/** Ingress address: first status.loadBalancer.ingress ip|hostname, else undefined. */
+function ingressAddress(o: K8sObject): string | undefined {
+  const ing = arr(getPath(o, 'status.loadBalancer.ingress'))[0]
+  return dash(ing?.ip ?? ing?.hostname)
+}
+
+/** Ingress hosts: comma-joined spec.rules[].host. */
+function ingressHosts(o: K8sObject): string | undefined {
+  const hosts = arr(getPath(o, 'spec.rules'))
+    .map((r) => r.host)
+    .filter(Boolean)
+  return hosts.length ? hosts.join(', ') : undefined
+}
+
 function dash(v: unknown): string | undefined {
   return v === undefined || v === null || v === '' ? undefined : String(v)
 }
@@ -140,10 +164,13 @@ const NO_STATUS_KINDS = new Set([
   'ClusterRoleBinding',
   'Service',
   'StorageClass',
+  'StatefulSet',
+  'DaemonSet',
+  'Ingress',
 ])
 
 /** Kinds whose Status column sits right after Name/Namespace. */
-const STATUS_FIRST_KINDS = new Set(['PersistentVolumeClaim', 'PersistentVolume'])
+const STATUS_FIRST_KINDS = new Set(['PersistentVolumeClaim', 'PersistentVolume', 'Pod'])
 
 export function hasStatusColumn(kind: string): boolean {
   return !NO_STATUS_KINDS.has(kind)
@@ -171,7 +198,6 @@ const BINDING_HINTS: ColumnHint[] = [
 
 export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   Pod: [
-    { header: 'Phase', path: 'status.phase' },
     { header: 'Ready', path: 'ready', numeric: true, derive: podReady },
     { header: 'Restarts', path: 'restarts', numeric: true, cell: 'restarts', derive: podRestarts },
     { header: 'CPU', path: 'status.usage.cpu', numeric: true, derive: usage('cpu') },
@@ -195,6 +221,24 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
       cell: 'mono',
       derive: (o) => dash(arr(getPath(o, 'spec.template.spec.containers'))[0]?.image),
     },
+  ],
+  StatefulSet: [
+    { header: 'Ready', path: 'ready', numeric: true, cell: 'readyfrac', derive: stsReady },
+    {
+      header: 'Replicas',
+      path: 'spec.replicas',
+      numeric: true,
+      cell: 'scale',
+      derive: deployDesired,
+    },
+  ],
+  DaemonSet: [
+    { header: 'Ready', path: 'ready', numeric: true, cell: 'readyfrac', derive: dsReady },
+    { header: 'Available', path: 'status.numberAvailable', numeric: true },
+  ],
+  Ingress: [
+    { header: 'Hosts', path: 'hosts', cell: 'mono', derive: ingressHosts },
+    { header: 'Address', path: 'address', cell: 'mono', derive: ingressAddress },
   ],
   Service: [
     { header: 'Type', path: 'spec.type', cell: 'svctype' },

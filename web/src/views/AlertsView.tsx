@@ -46,6 +46,9 @@ export function AlertsView() {
   return (
     <div>
       <ViewHeader title="Monitoring" tabs={TABS} activeTab={tab} onTab={setTab} />
+      <p role="note" className="text-xs text-zinc-500 mb-4">
+        Sample data — no metrics source connected
+      </p>
       {tab === 'Alerts' && (
         <>
           <FilterBar

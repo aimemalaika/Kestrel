@@ -12,17 +12,25 @@ interface Item {
   path: string
 }
 
-function fuzzy(text: string, q: string): boolean {
+/**
+ * Relevance score for `text` against query `q`:
+ *   3 exact (whole text or a whole word), 2 word prefix, 1 word-boundary
+ *   substring, 0.5 plain (mid-word) substring, 0 no contiguous match.
+ * Subsequence-only matches (the old `fuzzy` behaviour) score 0 → filtered out.
+ */
+function score(text: string, q: string): number {
   const t = text.toLowerCase()
-  let i = 0
-  for (const ch of q.toLowerCase()) {
-    i = t.indexOf(ch, i)
-    if (i < 0) return false
-    i++
-  }
-  return true
+  const query = q.toLowerCase().trim()
+  if (!query) return 0
+  const words = t.split(/\s+/).filter(Boolean)
+  if (t === query || words.some((w) => w === query)) return 3
+  if (words.some((w) => w.startsWith(query))) return 2
+  const idx = t.indexOf(query)
+  if (idx < 0) return 0
+  return idx === 0 || /\s/.test(t[idx - 1]) ? 1 : 0.5
 }
 
+const MIN_SCORE = 0.5 // results below this are dropped
 const MAX = 50
 
 export function CommandPalette() {
@@ -77,31 +85,39 @@ export function CommandPalette() {
 
   const items = useMemo<Item[]>(() => {
     if (!open) return []
-    const nsPart = ns ?? 'default'
-    const kinds: Item[] = catalog
-      .filter((c) => !query || fuzzy(`${c.kind} ${c.resource}`, query))
+    // Preserve the current namespace scope (e.g. `_all`) instead of forcing `default`.
+    const nsPart = ns ?? '_all'
+    const kinds: { it: Item; s: number }[] = catalog
       .map((c) => ({
-        id: `k:${c.group}/${c.version}/${c.resource}`,
-        group: 'Kinds' as const,
-        label: c.kind,
-        hint: c.resource,
-        path: `/ns/${nsPart}/${c.group}/${c.version}/${c.resource}`,
+        it: {
+          id: `k:${c.group}/${c.version}/${c.resource}`,
+          group: 'Kinds' as const,
+          label: c.kind,
+          hint: c.resource,
+          path: `/ns/${nsPart}/${c.group}/${c.version}/${c.resource}`,
+        },
+        s: query ? score(`${c.kind} ${c.resource}`, query) : 1,
       }))
-    const objs: Item[] =
+      .filter(({ s }) => !query || s >= MIN_SCORE)
+    const objs: { it: Item; s: number }[] =
       gvr && query
         ? rows
-            .filter((o) =>
-              fuzzy(`${o.metadata.name} ${o.metadata.namespace ?? ''} ${o.kind}`, query),
-            )
             .map((o) => ({
-              id: `o:${o.metadata.uid ?? `${o.metadata.namespace}/${o.metadata.name}`}`,
-              group: 'Resources' as const,
-              label: o.metadata.name,
-              hint: [o.kind, o.metadata.namespace].filter(Boolean).join(' · '),
-              path: `/ns/${o.metadata.namespace ?? ns ?? 'default'}/${gvr.group}/${gvr.version}/${gvr.resource}/${encodeURIComponent(o.metadata.name)}`,
+              it: {
+                id: `o:${o.metadata.uid ?? `${o.metadata.namespace}/${o.metadata.name}`}`,
+                group: 'Resources' as const,
+                label: o.metadata.name,
+                hint: [o.kind, o.metadata.namespace].filter(Boolean).join(' · '),
+                path: `/ns/${o.metadata.namespace ?? ns ?? '_all'}/${gvr.group}/${gvr.version}/${gvr.resource}/${encodeURIComponent(o.metadata.name)}`,
+              },
+              s: score(`${o.metadata.name} ${o.metadata.namespace ?? ''} ${o.kind}`, query),
             }))
+            .filter(({ s }) => s >= MIN_SCORE)
         : []
-    return [...kinds, ...objs].slice(0, MAX)
+    return [...kinds, ...objs]
+      .sort((a, b) => b.s - a.s)
+      .slice(0, MAX)
+      .map(({ it }) => it)
   }, [open, catalog, query, rows, gvr, ns])
 
   if (!open) return null

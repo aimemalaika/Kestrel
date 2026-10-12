@@ -83,6 +83,7 @@ func main() {
 	// live streaming is disabled. Default empty = no change.
 	noWatch := flag.String("no-watch-resources", "",
 		"comma-separated resources the shared informer refuses to watch (SSE), as `resource` or `group/resource` (version-agnostic); still readable via get/list. Default empty disables the deny-list")
+	clusterName := flag.String("cluster-name", "", "display name for the connected cluster (falls back to $KESTREL_CLUSTER_NAME)")
 	flag.Parse()
 
 	// Env-native secret fallback (#113): keep secrets off the process command line.
@@ -102,6 +103,7 @@ func main() {
 	}
 	deps := httpapi.DefaultDeps()
 	deps.PortForwardTimeout = *pfTimeout
+	deps.ClusterName = flagOrEnv(*clusterName, "KESTREL_CLUSTER_NAME")
 	deps.Registry = registry.NewHandler(registry.Config{
 		URL:                *registryURL,
 		Username:           *registryUser,
@@ -132,6 +134,8 @@ func main() {
 		if err != nil {
 			fatal("cluster clients", err)
 		}
+		// Shared accessor for read-only cluster-info (server version + host). nil under --mock.
+		deps.Accessor = acc
 		// Helm releases are read AS THE USER (token forwarding) via this accessor.
 		deps.Helm = helm.NewHandler(acc, helm.Config{Repos: parsedRepos})
 		// Service map is read/written AS THE USER (token forwarding) via this accessor.

@@ -48,4 +48,22 @@ describe('CommandPalette', () => {
     fireEvent.click(await screen.findByText('web-2'))
     expect(navigate).toHaveBeenCalledWith('/ns/default/core/v1/pods/web-2')
   })
+
+  it('shows "No results" for a query that matches no kind', async () => {
+    setup()
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    fireEvent.change(screen.getByLabelText(/search kinds/i), { target: { value: 'argocd' } })
+    expect(await screen.findByText('No results')).toBeInTheDocument()
+    expect(screen.queryByText('Deployment')).toBeNull()
+  })
+
+  it('preserves the current namespace on navigate (not "default")', async () => {
+    setup('/ns/_all/core/v1/pods')
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true })
+    const input = screen.getByLabelText(/search kinds/i)
+    fireEvent.change(input, { target: { value: 'deploy' } })
+    await screen.findByText('Deployment')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(navigate).toHaveBeenCalledWith('/ns/_all/apps/v1/deployments')
+  })
 })

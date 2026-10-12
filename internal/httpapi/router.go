@@ -33,6 +33,12 @@ type Deps struct {
 	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
 	Helm        http.Handler // /api/helm/* (releases + chart repos)
 	ServiceMap  http.Handler // /api/servicemap (store + validate; ConfigMap-backed)
+	// ClusterName is the display name for the connected cluster, from
+	// --cluster-name / $KESTREL_CLUSTER_NAME. May be "" (no hardcoded default).
+	ClusterName string
+	// Accessor is the shared cluster accessor, used read-only for cluster-info
+	// (server version via discovery, host via rest.Config). nil under --mock.
+	Accessor k8s.ClusterAccessor
 	// PortForwardTimeout caps a port-forward session's lifetime (0 = unbounded).
 	// The lifecycle WS carries no data, so this is a max-duration cap, not an
 	// activity-based idle timeout; abandoned forwards already tear down within
@@ -118,6 +124,8 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 	switch segs[0] {
 	case "catalog":
 		a.only(w, r, http.MethodGet, a.catalog)
+	case "cluster-info":
+		a.only(w, r, http.MethodGet, a.clusterInfo)
 	case "apply":
 		a.only(w, r, http.MethodPut, a.apply)
 	case "can-i":
