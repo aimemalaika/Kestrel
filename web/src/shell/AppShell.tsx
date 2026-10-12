@@ -6,6 +6,7 @@ import { SessionsDock } from '../sessions/SessionsDock'
 import { useAuth } from '../auth/AuthProvider'
 import { LoginScreen } from '../auth/LoginScreen'
 import { CommandPalette } from '../search/CommandPalette'
+import { ErrorBoundary } from './ErrorBoundary'
 import type { Perspective } from '../nav/categoryMap'
 
 export function AppShell() {
@@ -18,7 +19,9 @@ export function AppShell() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar perspective={perspective} />
         <main className="flex-1 min-w-0 overflow-y-auto">
-          <Outlet />
+          <ErrorBoundary label="This view">
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       <SessionsDock />

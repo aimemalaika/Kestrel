@@ -7,11 +7,14 @@ export interface Selection {
 }
 
 export function useSelection(): Selection {
+  // Resolve gvr whether or not a specific resource name is in the path, so the
+  // current resource view is known on both list (…/pods) and detail (…/pods/web-1) pages.
+  const detail = useMatch('/ns/:namespace/:group/:version/:resource/:name')
   const full = useMatch('/ns/:namespace/:group/:version/:resource')
   const nsOnly = useMatch('/ns/:namespace')
-  const p: Partial<Record<string, string>> = full?.params ?? nsOnly?.params ?? {}
+  const p: Partial<Record<string, string>> = detail?.params ?? full?.params ?? nsOnly?.params ?? {}
   const gvr =
-    full && p.group && p.version && p.resource
+    (detail || full) && p.group && p.version && p.resource
       ? { group: p.group, version: p.version, resource: p.resource }
       : undefined
   // `_all` is the All-Namespaces sentinel → no namespace scope (streams show every namespace).

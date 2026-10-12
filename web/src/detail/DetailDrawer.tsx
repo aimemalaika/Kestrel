@@ -13,6 +13,7 @@ import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
 import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
 import { Icon } from '../ui'
+import { ErrorBoundary } from '../shell/ErrorBoundary'
 
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
 const Terminal = lazy(() => import('../streaming/Terminal'))
@@ -88,56 +89,60 @@ export function DetailDrawer() {
         ))}
       </div>
       <div className="flex-1 overflow-auto p-5">
-        {status === 'loading' && <p className="text-sm text-zinc-500">Loading…</p>}
-        {status === 'notfound' && <p className="text-sm text-zinc-500">{name} no longer exists.</p>}
-        {status === 'error' && (
-          <p className="text-sm text-zinc-500">Stream interrupted — resyncing…</p>
-        )}
-        {status === 'ready' && object && (
-          <>
-            {tab === 'detail' && (
-              <>
-                <DetailPanel object={object} />
-                {isPod && podRef && (
-                  <div className="mt-4">
-                    <PortForwardButton target={podRef} />
+        <ErrorBoundary key={tab} label="This tab">
+          {status === 'loading' && <p className="text-sm text-zinc-500">Loading…</p>}
+          {status === 'notfound' && (
+            <p className="text-sm text-zinc-500">{name} no longer exists.</p>
+          )}
+          {status === 'error' && (
+            <p className="text-sm text-zinc-500">Stream interrupted — resyncing…</p>
+          )}
+          {status === 'ready' && object && (
+            <>
+              {tab === 'detail' && (
+                <>
+                  <DetailPanel object={object} />
+                  {isPod && podRef && (
+                    <div className="mt-4">
+                      <PortForwardButton target={podRef} />
+                    </div>
+                  )}
+                </>
+              )}
+              {tab === 'yaml' && (
+                <>
+                  <div className="mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setEditing((v) => !v)}
+                      disabled={!canUpdate}
+                      className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50"
+                    >
+                      {editing ? 'View' : 'Edit'}
+                    </button>
                   </div>
-                )}
-              </>
-            )}
-            {tab === 'yaml' && (
-              <>
-                <div className="mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setEditing((v) => !v)}
-                    disabled={!canUpdate}
-                    className="flex items-center gap-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1.5 rounded-md font-medium transition-colors disabled:opacity-50"
-                  >
-                    {editing ? 'View' : 'Edit'}
-                  </button>
-                </div>
-                {editing && objRef ? (
-                  <Suspense fallback={<p className="text-sm text-zinc-500">Loading editor…</p>}>
-                    <YamlEditor object={object} />
-                  </Suspense>
-                ) : (
-                  <YamlView object={object} />
-                )}
-              </>
-            )}
-            {tab === 'events' && <EventsView object={object} />}
-            {tab === 'relations' && <RelationsView object={object} />}
-            {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
-            {tab === 'app' && isApplication && <ArgoRichView object={object} />}
-            {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
-            {tab === 'terminal' && isPod && podRef ? (
-              <Suspense fallback={<p className="text-sm text-zinc-500">Loading terminal…</p>}>
-                <Terminal pod={podRef} />
-              </Suspense>
-            ) : null}
-          </>
-        )}
+                  {editing && objRef ? (
+                    <Suspense fallback={<p className="text-sm text-zinc-500">Loading editor…</p>}>
+                      <YamlEditor object={object} />
+                    </Suspense>
+                  ) : (
+                    <YamlView object={object} />
+                  )}
+                </>
+              )}
+              {tab === 'events' && <EventsView object={object} />}
+              {tab === 'relations' && <RelationsView object={object} />}
+              {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
+              {tab === 'app' && isApplication && <ArgoRichView object={object} />}
+              {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
+              {tab === 'terminal' && isPod && podRef ? (
+                <Suspense fallback={<p className="text-sm text-zinc-500">Loading terminal…</p>}>
+                  <Terminal pod={podRef} />
+                </Suspense>
+              ) : null}
+            </>
+          )}
+        </ErrorBoundary>
       </div>
     </div>
   )

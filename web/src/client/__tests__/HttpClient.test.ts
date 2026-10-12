@@ -14,12 +14,20 @@ class FakeES {
 }
 class FakeWS {
   static last: FakeWS
+  static CONNECTING = 0
+  static OPEN = 1
+  onopen: (() => void) | null = null
   onmessage: ((e: { data: string }) => void) | null = null
   onclose: (() => void) | null = null
+  readyState = FakeWS.CONNECTING
   send = vi.fn()
   close = vi.fn()
   constructor(public url: string) {
     FakeWS.last = this
+  }
+  open() {
+    this.readyState = FakeWS.OPEN
+    this.onopen?.()
   }
 }
 
@@ -160,6 +168,7 @@ describe('HttpClient', () => {
     expect(FakeWS.last.url).toMatch(
       /^ws:\/\/.*\/api\/exec\/core\/v1\/namespaces\/default\/pods\/p1$/,
     )
+    FakeWS.last.open()
     const cb = vi.fn()
     s.onData(cb)
     FakeWS.last.onmessage!({ data: 'out' })
@@ -174,6 +183,29 @@ describe('HttpClient', () => {
     })
     s.close()
     expect(FakeWS.last.close).toHaveBeenCalled()
+  })
+
+  it('exec queues resize/send sent before OPEN and never calls ws.send while CONNECTING', () => {
+    const s = createHttpClient().exec(ref)
+    expect(FakeWS.last.readyState).toBe(FakeWS.CONNECTING)
+    s.resize(120, 40) // the crash path: resize before OPEN
+    s.send('echo hi')
+    expect(FakeWS.last.send).not.toHaveBeenCalled() // queued, not thrown
+    FakeWS.last.open() // socket reaches OPEN → flush in order
+    expect(FakeWS.last.send).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({ type: 'resize', cols: 120, rows: 40 }),
+    )
+    expect(FakeWS.last.send).toHaveBeenNthCalledWith(2, 'echo hi')
+  })
+
+  it('exec drops frames sent after close without throwing', () => {
+    const s = createHttpClient().exec(ref)
+    FakeWS.last.open()
+    s.close()
+    FakeWS.last.readyState = 3 // CLOSED
+    expect(() => s.resize(80, 24)).not.toThrow()
+    expect(FakeWS.last.send).not.toHaveBeenCalled()
   })
 
   it('portForward tracks status', () => {

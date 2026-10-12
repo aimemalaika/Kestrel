@@ -89,5 +89,15 @@ export function TD({ children, className = '' }: { children: ReactNode; classNam
 }
 
 export function Mono({ children }: { children: ReactNode }) {
-  return <span className="font-mono text-sky-400 text-xs">{children}</span>
+  // Cap long monospace values (image refs with digests, long resource names) so
+  // the table fits the viewport instead of overflowing; the full value shows on
+  // hover. CSS-only truncation keeps the text in the DOM (search/tests unaffected).
+  return (
+    <span
+      className="font-mono text-sky-400 text-xs inline-block max-w-[24rem] truncate align-bottom"
+      title={typeof children === 'string' ? children : undefined}
+    >
+      {children}
+    </span>
+  )
 }

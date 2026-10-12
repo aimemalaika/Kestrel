@@ -254,9 +254,7 @@ export function TopBar({
 
       <PerspectiveToggle perspective={perspective} onChange={onPerspectiveChange} />
 
-      <div className="hidden md:block">
-        <NamespacePicker />
-      </div>
+      <NamespacePicker />
 
       <nav
         aria-label="Breadcrumb"

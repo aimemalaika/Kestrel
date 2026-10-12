@@ -106,13 +106,25 @@ export function createHttpClient(): Client {
     exec(ref): ExecSession {
       const ws = new WebSocket(wsUrl(path(ref, ref.namespace, ref.name, '/api/exec')))
       const listeners: ((d: string) => void)[] = []
+      const pending: string[] = []
+      const sendFrame = (frame: string) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(frame)
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          pending.push(frame) // flush on open
+        }
+        // CLOSING/CLOSED: drop — the session is gone.
+      }
+      ws.onopen = () => {
+        for (const frame of pending.splice(0)) ws.send(frame)
+      }
       ws.onmessage = (e: MessageEvent) => listeners.forEach((cb) => cb(String(e.data)))
       return {
         onData: (cb) => {
           listeners.push(cb)
         },
-        send: (data) => ws.send(data),
-        resize: (cols, rows) => ws.send(JSON.stringify({ type: 'resize', cols, rows })),
+        send: (data) => sendFrame(data),
+        resize: (cols, rows) => sendFrame(JSON.stringify({ type: 'resize', cols, rows })),
         close: () => ws.close(),
       }
     },
