@@ -27,7 +27,7 @@ describe('ResourceTable', () => {
   it('adapts columns to the kind', async () => {
     renderAt('/ns/default/core/v1/pods')
     await screen.findByText('web-1')
-    expect(screen.getByText('Phase')).toBeInTheDocument()
+    expect(screen.getByText('Status')).toBeInTheDocument()
     expect(screen.getByText('Node')).toBeInTheDocument()
   })
 })

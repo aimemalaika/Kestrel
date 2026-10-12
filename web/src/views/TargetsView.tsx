@@ -67,6 +67,9 @@ export function TargetsView() {
   return (
     <div>
       <ViewHeader title="Targets" count={rows.length} />
+      <p role="note" className="text-xs text-zinc-500 mb-4">
+        Sample data — no metrics source connected
+      </p>
       <FilterBar
         query={query}
         onQuery={setQuery}

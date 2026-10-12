@@ -33,10 +33,38 @@ describe('columnSpecs', () => {
     const ids = cols.map((c) => c.id)
     expect(ids).toContain('name')
     expect(ids).not.toContain('namespace')
-    expect(ids).toContain('status.phase')
+    expect(ids).not.toContain('status.phase')
     expect(ids).toContain('status')
     expect(ids).toContain('age')
     expect(cols.find((c) => c.id === 'name')!.value(pod)).toBe('web-1')
+  })
+
+  it('Pod has a single Status column at position 3, no duplicate Phase', () => {
+    const cols = columnSpecs('Pod', { namespaceSelected: false })
+    const ids = cols.map((c) => c.id)
+    expect(ids).toEqual([
+      'name',
+      'namespace',
+      'status',
+      'ready',
+      'restarts',
+      'status.usage.cpu',
+      'status.usage.memory',
+      'spec.nodeName',
+      'age',
+    ])
+    expect(ids.filter((id) => id === 'status.phase')).toHaveLength(0)
+    const sel = columnSpecs('Pod', { namespaceSelected: true }).map((c) => c.id)
+    expect(sel).toEqual([
+      'name',
+      'status',
+      'ready',
+      'restarts',
+      'status.usage.cpu',
+      'status.usage.memory',
+      'spec.nodeName',
+      'age',
+    ])
   })
 
   it('includes Namespace when none selected; unknown kind gets defaults only', () => {
@@ -120,6 +148,42 @@ describe('per-kind rich columns', () => {
       expect.arrayContaining(['Capacity', 'Reclaim', 'Status']),
     )
     expect(headers('StorageClass')).toContain('Provisioner')
+  })
+  it('StatefulSet/DaemonSet derive readiness; no blank status.phase pill', () => {
+    const sts: K8sObject = {
+      apiVersion: 'apps/v1',
+      kind: 'StatefulSet',
+      metadata: { name: 's' },
+      spec: { replicas: 3 },
+      status: { readyReplicas: 2 },
+    }
+    const ids = columnSpecs('StatefulSet', { namespaceSelected: true }).map((c) => c.id)
+    expect(ids).not.toContain('status') // generic phase column removed
+    const v = (h: string, o: K8sObject) =>
+      columnSpecs(o.kind, { namespaceSelected: true }).find((c) => c.header === h)!.value(o)
+    expect(v('Ready', sts)).toBe('2/3')
+    const ds: K8sObject = {
+      apiVersion: 'apps/v1',
+      kind: 'DaemonSet',
+      metadata: { name: 'd' },
+      status: { numberReady: 4, desiredNumberScheduled: 6 },
+    }
+    expect(v('Ready', ds)).toBe('4/6')
+  })
+  it('Ingress shows hosts/address, not a status.phase pill', () => {
+    const ing: K8sObject = {
+      apiVersion: 'networking.k8s.io/v1',
+      kind: 'Ingress',
+      metadata: { name: 'i' },
+      spec: { rules: [{ host: 'a.example.com' }, { host: 'b.example.com' }] },
+      status: { loadBalancer: { ingress: [{ ip: '10.233.0.5' }] } },
+    }
+    const ids = columnSpecs('Ingress', { namespaceSelected: true }).map((c) => c.id)
+    expect(ids).not.toContain('status')
+    const v = (h: string) =>
+      columnSpecs('Ingress', { namespaceSelected: true }).find((c) => c.header === h)!.value(ing)
+    expect(v('Hosts')).toBe('a.example.com, b.example.com')
+    expect(v('Address')).toBe('10.233.0.5')
   })
   const val = (k: string, h: string, o: K8sObject) =>
     columnSpecs(k, { namespaceSelected: true })

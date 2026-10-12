@@ -1660,6 +1660,10 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     async catalog() {
       return CATALOG
     },
+    async clusterInfo() {
+      // Clearly a mock, not a fabricated real cluster.
+      return { clusterName: 'kestrel-mock', serverVersion: 'v0.0.0-mock', apiServerURL: '' }
+    },
     async get(ref: ResourceRef) {
       const o = store.get(`${ref.namespace}/${ref.name}`)
       if (!o)

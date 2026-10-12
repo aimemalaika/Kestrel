@@ -13,8 +13,16 @@ export interface WatchOptions {
   namespace?: string
 }
 
+/** Read-only identity of the connected cluster (GET /api/cluster-info). */
+export interface ClusterInfo {
+  clusterName: string
+  serverVersion: string
+  apiServerURL: string
+}
+
 export interface Client {
   catalog(): Promise<CatalogEntry[]>
+  clusterInfo(): Promise<ClusterInfo>
   get(ref: ResourceRef): Promise<K8sObject>
   apply(obj: K8sObject, opts?: { dryRun?: boolean }): Promise<K8sObject>
   delete(ref: ResourceRef, opts?: { dryRun?: boolean }): Promise<void>

@@ -29,6 +29,9 @@ describe('AppShell', () => {
 
     it('renders Kestrel wordmark, breadcrumb, and catalog nav', async () => {
       renderShell()
+      // Wait for the cluster pill to resolve (mock → "kestrel-mock") so the only
+      // remaining "Kestrel" text is the wordmark, not the pill's loading fallback.
+      await screen.findByText('kestrel-mock')
       expect(screen.getByText('Kestrel')).toBeInTheDocument()
       expect(screen.queryByText('OKD')).toBeNull()
       expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Overview')
@@ -51,9 +54,10 @@ describe('AppShell', () => {
       expect(screen.getByRole('button', { name: /^Operators/ })).toBeInTheDocument()
     })
 
-    it('header has cluster pill, notifications dropdown and help', () => {
+    it('header has cluster pill, notifications dropdown and help', async () => {
       renderShell()
-      expect(screen.getByTestId('cluster-pill')).toHaveTextContent('kestrel-cluster')
+      // The pill reads the cluster name from the client (mock → "kestrel-mock").
+      expect(await within(screen.getByTestId('cluster-pill')).findByText('kestrel-mock')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
       expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeInTheDocument()

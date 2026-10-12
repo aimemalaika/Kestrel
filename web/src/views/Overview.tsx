@@ -242,6 +242,9 @@ export function Overview() {
       </div>
 
       {/* Charts row */}
+      <p role="note" className="text-xs text-zinc-500">
+        {SAMPLE}
+      </p>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {CHARTS.map((m) => (
           <Card key={m.label} className="p-4">

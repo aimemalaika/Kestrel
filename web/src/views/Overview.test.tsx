@@ -26,6 +26,11 @@ describe('Overview', () => {
     expect(screen.getByText('NodeNotReady')).toBeInTheDocument()
   })
 
+  it('discloses that metric/alert tiles are sample data', () => {
+    render(<Overview />)
+    expect(screen.getByRole('note')).toHaveTextContent(/Sample data — no metrics source connected/)
+  })
+
   it('has a View all events button and derived Routes/Alerts sublabels', async () => {
     render(<Overview />)
     expect(screen.getByRole('button', { name: 'View all' })).toBeInTheDocument()

@@ -1,5 +1,6 @@
 import type {
   Client,
+  ClusterInfo,
   ExecSession,
   PortForwardSession,
   ResourceRef,
@@ -70,6 +71,9 @@ export function createHttpClient(): Client {
   return {
     async catalog() {
       return (await (await request('GET', '/api/catalog')).json()) as CatalogEntry[]
+    },
+    async clusterInfo() {
+      return (await (await request('GET', '/api/cluster-info')).json()) as ClusterInfo
     },
     async get(ref: ResourceRef) {
       const url = path(ref, ref.namespace, ref.name)
