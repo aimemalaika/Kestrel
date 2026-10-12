@@ -52,9 +52,9 @@ func main() {
 	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback)")
 	oidcGroupsClaim := flag.String("oidc-groups-claim", "groups", "id_token claim carrying the user's groups")
 	oidcUsernameClaim := flag.String("oidc-username-claim", "email", "id_token claim used for the display username")
-	oidcGitHubConnector := flag.String("oidc-github-connector", "", "Dex/Keycloak connector id for the \"Log in with GitHub\" option; empty hides it (the broker handles the GitHub OAuth + org→groups mapping)")
-	oidcPasswordConnector := flag.String("oidc-password-connector", "", "connector id for the username/password option (redirect-to-IdP); empty + --oidc-password-enable=false hides it")
-	oidcPasswordEnable := flag.Bool("oidc-password-enable", false, "enable the native username/password form (ROPC relay to the broker token endpoint); use only when a redirect connector is not viable")
+	oidcGitHubConnector := flag.String("oidc-github-connector", "", "Dex/Keycloak connector id for the \"Log in with GitHub\" option; empty hides it (the broker handles the GitHub OAuth + org→groups mapping). Falls back to $KESTREL_OIDC_GITHUB_CONNECTOR")
+	oidcPasswordConnector := flag.String("oidc-password-connector", "", "connector id for the username/password option (redirect-to-IdP); empty + --oidc-password-enable=false hides it. Falls back to $KESTREL_OIDC_PASSWORD_CONNECTOR")
+	oidcPasswordEnable := flag.Bool("oidc-password-enable", false, "enable the native username/password form (ROPC relay to the broker token endpoint); use only when a redirect connector is not viable. Also enabled by $KESTREL_OIDC_PASSWORD_ENABLE=true")
 	sessionKey := flag.String("session-key", "", "HMAC key for session cookies (falls back to $KESTREL_SESSION_KEY when empty); empty generates a random key (sessions won't survive restart)")
 
 	tlsCert := flag.String("tls-cert", "", "TLS certificate file; with --tls-key, serve HTTPS")
@@ -95,6 +95,10 @@ func main() {
 	sessionKeyVal := flagOrEnv(*sessionKey, "KESTREL_SESSION_KEY")
 	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
 	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
+	// Login-method config is env-sourceable too (config-free; flag wins when set).
+	oidcGitHubConnectorVal := flagOrEnv(*oidcGitHubConnector, "KESTREL_OIDC_GITHUB_CONNECTOR")
+	oidcPasswordConnectorVal := flagOrEnv(*oidcPasswordConnector, "KESTREL_OIDC_PASSWORD_CONNECTOR")
+	oidcPasswordEnableVal := *oidcPasswordEnable || envBool("KESTREL_OIDC_PASSWORD_ENABLE")
 
 	obs.SetupLogger(*logLevel)
 
@@ -222,7 +226,7 @@ func main() {
 		// Native username/password (ROPC) endpoint, only when the operator enabled
 		// the native form. It enforces POST itself (credentials never in a URL) and
 		// is on the bare mux outside /api/, like the other /auth/* routes.
-		if *oidcPasswordEnable {
+		if oidcPasswordEnableVal {
 			mux.HandleFunc("/auth/password", authr.PasswordLogin)
 		}
 		// Unauthenticated discovery endpoint (outside the /api/ authn gate, like
@@ -232,9 +236,9 @@ func main() {
 		mux.Handle("/authinfo", authn.AuthInfoHandler(authn.AuthInfo{
 			Mode: "oidc",
 			Options: authn.BuildOptions(authn.OptionsConfig{
-				GitHubConnector:   *oidcGitHubConnector,
-				PasswordConnector: *oidcPasswordConnector,
-				PasswordEnable:    *oidcPasswordEnable,
+				GitHubConnector:   oidcGitHubConnectorVal,
+				PasswordConnector: oidcPasswordConnectorVal,
+				PasswordEnable:    oidcPasswordEnableVal,
 			}),
 		}, authr))
 		authnMW = authr.Middleware
@@ -325,6 +329,17 @@ func flagOrEnv(flagVal, envName string) string {
 		return flagVal
 	}
 	return os.Getenv(envName)
+}
+
+// envBool reports whether the named environment variable is set to a truthy
+// value (1/true/yes/on, case-insensitive). Used so boolean toggles can be
+// supplied via the environment, consistent with flagOrEnv for strings.
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // parseDenyResources parses the --no-watch-resources value into deny-list GVRs.

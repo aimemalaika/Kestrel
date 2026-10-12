@@ -109,6 +109,22 @@ kestrel \
   --oidc-github-connector github      # advertises "Log in with GitHub"
 ```
 
+### Enabling login methods via env
+
+The login-method settings are env-sourceable too (the flag wins when set), so you
+can configure them without flags — e.g. in a Deployment's `env:`:
+
+| Setting | Flag | Env var |
+| --- | --- | --- |
+| GitHub connector id | `--oidc-github-connector` | `KESTREL_OIDC_GITHUB_CONNECTOR` |
+| Password connector id (redirect) | `--oidc-password-connector` | `KESTREL_OIDC_PASSWORD_CONNECTOR` |
+| Native password form (ROPC) | `--oidc-password-enable` | `KESTREL_OIDC_PASSWORD_ENABLE=true` |
+
+**Offer several and let the user choose:** enable more than one and the login
+screen shows them all for the user to pick (Kestrel never auto-selects). The
+GitHub / password-connector ids are broker-specific and so must be named
+explicitly (flag or env) — there is no hardcoded default.
+
 Clicking the button sends the user to `/auth/login?connector=github`, which
 forwards `connector_id=github` to the broker (Dex's connector-selection param).
 
