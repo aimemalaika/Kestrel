@@ -15,7 +15,7 @@ spec:
   {{- with .Values.ingress.className }}
   ingressClassName: {{ . }}
   {{- end }}
-  {{- if .Values.ingress.tls.enabled }}
+  {{- if ne (include "kestrel.ingressTLSMode" .) "disabled" }}
   tls:
     - hosts:
         {{- if .Values.ingress.tls.hosts }}
@@ -23,7 +23,7 @@ spec:
         {{- else if .Values.ingress.host }}
         - {{ .Values.ingress.host | quote }}
         {{- end }}
-      secretName: {{ required "ingress.tls.secretName is required when ingress.tls.enabled" .Values.ingress.tls.secretName }}
+      secretName: {{ include "kestrel.ingressTLSSecretName" . }}
   {{- end }}
   rules:
     {{- if .Values.ingress.hosts }}
