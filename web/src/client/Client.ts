@@ -6,6 +6,7 @@ import type {
   CanIRequest,
   CanIResponse,
 } from '../contract/types'
+import type { AuthInfo } from '../auth/authInfo'
 
 export type Unsubscribe = () => void
 export type ResourceRef = GVR & { namespace?: string; name: string }
@@ -23,6 +24,7 @@ export interface ClusterInfo {
 export interface Client {
   catalog(): Promise<CatalogEntry[]>
   clusterInfo(): Promise<ClusterInfo>
+  authInfo(): Promise<AuthInfo>
   get(ref: ResourceRef): Promise<K8sObject>
   apply(obj: K8sObject, opts?: { dryRun?: boolean }): Promise<K8sObject>
   delete(ref: ResourceRef, opts?: { dryRun?: boolean }): Promise<void>

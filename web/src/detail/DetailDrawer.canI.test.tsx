@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../toast/ToastProvider'
 import { AppRoutes } from '../routes'
 import { AuthProvider } from '../auth/AuthProvider'
-import { setIdentity, IDENTITY_PRESETS } from '../auth/identity'
+import { setIdentity } from '../auth/identity'
 
 function renderAt(path: string) {
   return render(
@@ -19,7 +19,7 @@ function renderAt(path: string) {
 }
 
 describe('DetailDrawer can-i gating', () => {
-  beforeEach(() => setIdentity(IDENTITY_PRESETS[0]))
+  beforeEach(() => setIdentity({ name: 'operator@kestrel', groups: ['system:masters'] }))
   afterEach(() => setIdentity(null))
 
   it('enables Delete for an allowed (default) object', async () => {

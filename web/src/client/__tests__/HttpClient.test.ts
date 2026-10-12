@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHttpClient } from '../HttpClient'
-import { setIdentity, IDENTITY_PRESETS } from '../../auth/identity'
+import { setIdentity } from '../../auth/identity'
 import { LOGIN_PATH, __resetSessionRedirect } from '../../auth/sessionRedirect'
 
 class FakeES {
@@ -98,7 +98,7 @@ describe('HttpClient', () => {
     // Auth is the OIDC session cookie (same-origin credentials). The backend
     // ignores Impersonate-* headers, so the client must not send them even when
     // a (mock) identity is set.
-    setIdentity(IDENTITY_PRESETS[0])
+    setIdentity({ name: 'operator@kestrel', groups: ['system:masters'] })
     await createHttpClient().catalog()
     const init = fetchMock.mock.calls[0][1]
     const h = init.headers as Headers

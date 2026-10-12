@@ -10,9 +10,15 @@ import { ErrorBoundary } from './ErrorBoundary'
 import type { Perspective } from '../nav/categoryMap'
 
 export function AppShell() {
-  const { identity } = useAuth()
+  const { status } = useAuth()
   const [perspective, setPerspective] = useState<Perspective>('admin')
-  if (!identity) return <LoginScreen />
+  if (status === 'loading')
+    return (
+      <div className="min-h-screen grid place-items-center bg-page text-zinc-500 text-sm">
+        Loading…
+      </div>
+    )
+  if (status === 'needs-login') return <LoginScreen />
   return (
     <div className="flex flex-col h-screen bg-page text-zinc-200 overflow-hidden">
       <TopBar perspective={perspective} onPerspectiveChange={setPerspective} />

@@ -197,12 +197,25 @@ func main() {
 		mux.HandleFunc("/auth/login", authr.Login)
 		mux.HandleFunc("/auth/callback", authr.Callback)
 		mux.HandleFunc("/auth/logout", authr.Logout)
+		// Unauthenticated discovery endpoint (outside the /api/ authn gate, like
+		// /healthz and /auth/*) so the SPA can learn the mode + login options and
+		// the current user (best-effort, when a session is present).
+		mux.Handle("/authinfo", authn.AuthInfoHandler(authn.AuthInfo{
+			Mode:    "oidc",
+			Options: []authn.AuthOption{{ID: "oidc", Label: "Log in", Start: "/auth/login"}},
+		}, authr))
 		authnMW = authr.Middleware
 		slog.Info("OIDC login enabled; forwarding user id_tokens to the apiserver",
 			slog.String("issuer", *oidcIssuer))
 		slog.Info("NOTE: the kube-apiserver must trust this SAME issuer for forwarded tokens to authenticate")
 	} else {
 		mux.Handle("/auth/", authn.NotConfiguredHandler())
+		// Single-operator: no login, so /authinfo advertises no options and reports
+		// the operator identity the SPA enters as directly.
+		mux.Handle("/authinfo", authn.AuthInfoHandler(
+			authn.AuthInfo{Mode: "single-operator", User: &authn.AuthUser{Name: auth.Operator}},
+			nil,
+		))
 		slog.Warn("OIDC disabled: --oidc-issuer not set; running as single operator, all /api uses Kestrel's own ServiceAccount credentials and no login is required",
 			slog.String("operator", auth.Operator))
 	}

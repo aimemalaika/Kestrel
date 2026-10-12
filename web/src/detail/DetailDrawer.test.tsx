@@ -3,10 +3,10 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { AppRoutes } from '../routes'
 import { AuthProvider } from '../auth/AuthProvider'
-import { setIdentity, IDENTITY_PRESETS } from '../auth/identity'
+import { setIdentity } from '../auth/identity'
 
 describe('DetailDrawer via routes', () => {
-  beforeEach(() => setIdentity(IDENTITY_PRESETS[0]))
+  beforeEach(() => setIdentity({ name: 'operator@kestrel', groups: ['system:masters'] }))
   afterEach(() => setIdentity(null))
 
   it('a Name link opens the drawer for that object', async () => {

@@ -16,6 +16,7 @@ import type {
   K8sObject,
   WatchEnvelope,
 } from '../contract/types'
+import type { AuthInfo } from '../auth/authInfo'
 import { maybeRedirectUnauthorized } from '../auth/sessionRedirect'
 
 function path(gvr: GVR, namespace?: string, name?: string, prefix = '/api'): string {
@@ -74,6 +75,17 @@ export function createHttpClient(): Client {
     },
     async clusterInfo() {
       return (await (await request('GET', '/api/cluster-info')).json()) as ClusterInfo
+    },
+    async authInfo() {
+      // /authinfo is unauthenticated and NOT under /api, so it bypasses request()
+      // (no maybeRedirectUnauthorized): a non-200 simply means "treat as needs-login".
+      try {
+        const res = await fetch('/authinfo', { credentials: 'same-origin' })
+        if (!res.ok) return { mode: 'oidc', user: null, options: [] } as AuthInfo
+        return (await res.json()) as AuthInfo
+      } catch {
+        return { mode: 'oidc', user: null, options: [] } as AuthInfo
+      }
     },
     async get(ref: ResourceRef) {
       const url = path(ref, ref.namespace, ref.name)
