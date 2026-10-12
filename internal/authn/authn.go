@@ -63,6 +63,10 @@ type OAuth2 interface {
 	AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string
 	Exchange(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
 	TokenSource(ctx context.Context, t *oauth2.Token) oauth2.TokenSource
+	// PasswordCredentialsToken performs the OAuth2 Resource-Owner-Password (ROPC)
+	// grant against the broker's token endpoint. *oauth2.Config already satisfies
+	// this; it backs the native username/password form (#158).
+	PasswordCredentialsToken(ctx context.Context, username, password string) (*oauth2.Token, error)
 }
 
 // Authenticator owns the OIDC flow, the session store, and the middleware.

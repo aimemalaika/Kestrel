@@ -2,19 +2,30 @@ package authn
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
 )
 
 // Login starts the authorization-code flow: it mints a signed state (carrying a
-// nonce) and redirects to the OIDC provider.
+// nonce) and redirects to the OIDC provider. An optional ?connector= pre-selects
+// a Dex/Keycloak connector (the backend itself puts this in the advertised
+// option's Start URL), so one endpoint serves every connector. The connector id
+// is non-sensitive config, never a secret.
 func (a *Authenticator) Login(w http.ResponseWriter, r *http.Request) {
 	state, nonce := a.newState()
 	// Bind the state to THIS browser so Callback can reject a state+code minted by
 	// an attacker and fed to a victim's /auth/callback (login CSRF / fixation).
 	a.setStateCookie(w, r, state)
-	http.Redirect(w, r, a.oauth.AuthCodeURL(state, oidc.Nonce(nonce)), http.StatusFound)
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce)}
+	if c := r.URL.Query().Get("connector"); c != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("connector_id", c))
+	}
+	http.Redirect(w, r, a.oauth.AuthCodeURL(state, opts...), http.StatusFound)
 }
 
 // Callback completes the flow: verify state, exchange the code, verify the
@@ -66,6 +77,14 @@ func (a *Authenticator) Callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.createSession(w, r, claims, raw, tok)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// createSession stores a verified login as a server-side session and sets the
+// signed session cookie. Shared by Callback (authorization-code flow) and
+// PasswordLogin (ROPC), so both paths establish an identical session.
+func (a *Authenticator) createSession(w http.ResponseWriter, r *http.Request, claims Claims, rawIDToken string, tok *oauth2.Token) {
 	if !claims.Expiry.IsZero() {
 		tok.Expiry = claims.Expiry // refresh the token source against id_token expiry
 	}
@@ -73,13 +92,71 @@ func (a *Authenticator) Callback(w http.ResponseWriter, r *http.Request) {
 	a.store.put(sid, &session{
 		User:         claims.Username,
 		Groups:       claims.Groups,
-		IDToken:      raw,
+		IDToken:      rawIDToken,
 		RefreshToken: tok.RefreshToken,
 		Expiry:       claims.Expiry,
 		token:        tok,
 	})
 	a.setSessionCookie(w, r, sid, claims.Expiry)
-	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// PasswordLogin authenticates a username+password against the broker via the
+// OAuth2 Resource-Owner-Password (ROPC) grant and, on success, establishes the
+// same server-side session as the authorization-code callback. POST only, so
+// credentials can never arrive in a query string; they come from the request
+// body (form or JSON) and are NEVER logged or placed in a URL. Responds 204 on
+// success (the SPA re-fetches /authinfo), or the {error,code,reason} contract
+// body on failure. Fails closed. CSRF: it enforces POST and relies on
+// SameSite=Lax + same-origin fetch; a double-submit token is the proper
+// follow-up (see the TODO at middleware.go).
+func (a *Authenticator) PasswordLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		writeAuthError(w, http.StatusMethodNotAllowed, "MethodNotAllowed", "use POST")
+		return
+	}
+	user, pass := credsFromRequest(r)
+	if user == "" || pass == "" {
+		writeAuthError(w, http.StatusBadRequest, "BadRequest", "username and password are required")
+		return
+	}
+	tok, err := a.oauth.PasswordCredentialsToken(r.Context(), user, pass)
+	if err != nil {
+		// Generic message: never echo the broker error (and never log the creds).
+		writeAuthError(w, http.StatusUnauthorized, "Unauthorized", "invalid credentials")
+		return
+	}
+	raw, ok := tok.Extra("id_token").(string)
+	if !ok || raw == "" {
+		writeAuthError(w, http.StatusBadGateway, "BadGateway", "no id_token in token response")
+		return
+	}
+	claims, err := a.verifier.Verify(r.Context(), raw)
+	if err != nil {
+		writeAuthError(w, http.StatusUnauthorized, "Unauthorized", "id_token verification failed")
+		return
+	}
+	a.createSession(w, r, claims, raw, tok)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// credsFromRequest reads username/password from the POST body only — either
+// application/json or form-encoded. Never the query string.
+func credsFromRequest(r *http.Request) (user, pass string) {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body) == nil {
+			return body.Username, body.Password
+		}
+		return "", ""
+	}
+	if err := r.ParseForm(); err != nil {
+		return "", ""
+	}
+	return r.PostFormValue("username"), r.PostFormValue("password")
 }
 
 // Logout clears the session (server-side) and the cookie.

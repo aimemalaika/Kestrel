@@ -1668,6 +1668,15 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
       // UI-only/dev mode: single-operator so the SPA renders without a backend.
       return { mode: 'single-operator', user: { name: 'kestrel-operator' }, options: [] }
     },
+    async passwordLogin() {
+      // Mock accepts any credentials (dev/offline).
+    },
+    kubeconfigUrl() {
+      return '/api/kubeconfig'
+    },
+    async loginCommand() {
+      return { command: 'kubectl config use-context kestrel-mock' }
+    },
     async get(ref: ResourceRef) {
       const o = store.get(`${ref.namespace}/${ref.name}`)
       if (!o)

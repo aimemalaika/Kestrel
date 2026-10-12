@@ -87,6 +87,27 @@ export function createHttpClient(): Client {
         return { mode: 'oidc', user: null, options: [] } as AuthInfo
       }
     },
+    async passwordLogin(username: string, password: string) {
+      // ROPC relay. /auth/password is NOT under /api, so this bypasses request()
+      // (a 401 here means "bad credentials", shown inline — not a session redirect).
+      // Credentials go in the URL-encoded body only, never the URL.
+      const body = new URLSearchParams({ username, password })
+      const res = await fetch('/auth/password', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      })
+      if (!res.ok) throw await toApiError(res)
+    },
+    kubeconfigUrl() {
+      return '/api/kubeconfig'
+    },
+    async loginCommand() {
+      return (await (await request('GET', '/api/kubeconfig/command')).json()) as {
+        command: string
+      }
+    },
     async get(ref: ResourceRef) {
       const url = path(ref, ref.namespace, ref.name)
       return (await (await request('GET', url)).json()) as K8sObject

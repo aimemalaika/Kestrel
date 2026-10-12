@@ -7,6 +7,7 @@ import { useSelection } from '../state/selection'
 import type { Perspective } from '../nav/categoryMap'
 import { firingAlerts } from '../modules/alerts/alertsMock'
 import { useClusterInfo } from '../cluster/useClusterInfo'
+import { createClient } from '../client/createClient'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -36,6 +37,17 @@ function useCrumbs(): string[] {
 function UserMenu() {
   const { identity, signOut, mode } = useAuth()
   const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const copyLoginCommand = async () => {
+    try {
+      const { command } = await createClient().loginCommand()
+      await navigator.clipboard?.writeText(command)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard or fetch unavailable — leave the label unchanged.
+    }
+  }
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -115,15 +127,35 @@ function UserMenu() {
             )}
           </div>
           {mode === 'oidc' && (
-            <button
-              type="button"
-              role="menuitem"
-              tabIndex={-1}
-              onClick={signOut}
-              className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
-            >
-              Sign out
-            </button>
+            <>
+              <a
+                role="menuitem"
+                tabIndex={-1}
+                href={createClient().kubeconfigUrl()}
+                download
+                className="block w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
+              >
+                Download kubeconfig
+              </a>
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={copyLoginCommand}
+                className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
+              >
+                {copied ? 'Copied!' : 'Copy login command'}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                onClick={signOut}
+                className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
+              >
+                Sign out
+              </button>
+            </>
           )}
         </div>
       )}
