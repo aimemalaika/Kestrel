@@ -1,0 +1,59 @@
+---
+- name: Ensure the namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ kestrel_addon_namespace }}"
+    state: present
+  run_once: true
+
+- name: Create the ingress TLS Secret from the generated cert
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      type: kubernetes.io/tls
+      metadata:
+        name: "{{ kestrel_addon_tls_secret_name }}"
+        namespace: "{{ kestrel_addon_namespace }}"
+      data:
+        tls.crt: "{{ lookup('file', kestrel_addon_local_certdir + '/tls.crt') | b64encode }}"
+        tls.key: "{{ lookup('file', kestrel_addon_local_certdir + '/tls.key') | b64encode }}"
+  run_once: true
+  no_log: true
+
+- name: Deploy the Kestrel Helm release
+  kubernetes.core.helm:
+    name: "{{ kestrel_addon_release_name }}"
+    chart_ref: "{{ kestrel_addon_chart_path }}"
+    release_namespace: "{{ kestrel_addon_namespace }}"
+    create_namespace: false
+    wait: true
+    values:
+      image:
+        repository: "{{ kestrel_addon_image_repository }}"
+        tag: "{{ kestrel_addon_image_tag }}"
+      ingress:
+        enabled: true
+        className: "{{ kestrel_addon_ingress_class_name }}"
+        host: "{{ kestrel_addon_host }}"
+        tls:
+          mode: secret
+          secretName: "{{ kestrel_addon_tls_secret_name }}"
+      dex:
+        enabled: true
+        # Keep Dex's client id + path in sync with the apiserver kube_oidc_*
+        # snippet (same vars), so overriding either never desyncs the issuer.
+        clientId: "{{ kestrel_addon_oidc_client_id }}"
+        path: "{{ kestrel_addon_dex_path }}"
+        admin:
+          enabled: true
+          user: "{{ kestrel_addon_admin_user }}"
+          groups: "{{ kestrel_addon_admin_groups }}"
+        github:
+          clientId: "{{ kestrel_addon_github_client_id }}"
+          clientSecret: "{{ kestrel_addon_github_client_secret }}"
+          orgs: "{{ kestrel_addon_github_orgs }}"
+  run_once: true
+  no_log: true

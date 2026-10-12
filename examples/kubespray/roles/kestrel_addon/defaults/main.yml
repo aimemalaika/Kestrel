@@ -1,0 +1,42 @@
+---
+# --- Identity / hosts ---
+kestrel_addon_namespace: kestrel
+kestrel_addon_release_name: kestrel
+# Public host the ingress serves and the OIDC issuer lives under (REQUIRED).
+kestrel_addon_host: ""
+# IngressClass name (e.g. "nginx"). Empty omits ingressClassName — set it unless
+# your cluster has a default IngressClass, or the ingress won't be served.
+kestrel_addon_ingress_class_name: ""
+# Dex issuer = https://<host>/dex (kept in sync with the chart's dex.path).
+kestrel_addon_dex_path: /dex
+kestrel_addon_oidc_client_id: kestrel
+
+# --- Chart location + image ---
+kestrel_addon_chart_path: "{{ playbook_dir }}/../../deploy/chart/kestrel"
+kestrel_addon_image_repository: ghcr.io/aimemalaika/kestrel
+kestrel_addon_image_tag: "1.0.0"
+
+# --- Login methods ---
+kestrel_addon_admin_user: "admin@kestrel"
+kestrel_addon_admin_groups: ["kestrel-admins"]
+# Supply via ansible-vault to enable "Log in with GitHub"; empty = password-only.
+kestrel_addon_github_client_id: ""
+kestrel_addon_github_client_secret: ""   # vault-encrypt this
+kestrel_addon_github_orgs: []
+
+# --- CA / cert ---
+# Where the generated CA lands on control-plane nodes (feeds kube_oidc_ca_file).
+kestrel_addon_apiserver_ca_path: /etc/kubernetes/pki/kestrel-oidc-ca.pem
+# Local scratch dir on the controller for generated key material.
+kestrel_addon_local_certdir: "{{ playbook_dir }}/generated/pki"
+kestrel_addon_cert_days: 3650
+kestrel_addon_tls_secret_name: "{{ kestrel_addon_release_name }}-tls"
+
+# --- apiserver OIDC claim vars (match the chart / id_token) ---
+kestrel_addon_oidc_username_claim: email
+kestrel_addon_oidc_groups_claim: groups
+
+# Where to render the group_vars snippet the operator includes before cluster.yml.
+kestrel_addon_group_vars_out: "{{ playbook_dir }}/generated/kestrel-oidc.group_vars.yml"
+# Verify the apiserver manifest picked up the flags (run after cluster.yml).
+kestrel_addon_verify_apiserver: true

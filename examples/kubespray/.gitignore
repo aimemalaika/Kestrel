@@ -1,0 +1,4 @@
+# Runtime output of the add-on's prepare phase — NEVER commit this.
+# It holds the generated CA/server private keys (ca.key, tls.key), the CA, and
+# the rendered kube_oidc_* group_vars snippet.
+generated/
