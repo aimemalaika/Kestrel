@@ -40,7 +40,12 @@ const SINGLE: AuthValue = {
 function renderTopBar() {
   return render(
     <MemoryRouter initialEntries={['/overview']}>
-      <TopBar perspective="admin" onPerspectiveChange={() => {}} />
+      <TopBar
+        perspective="admin"
+        onPerspectiveChange={() => {}}
+        terminalOpen={false}
+        onToggleTerminal={() => {}}
+      />
     </MemoryRouter>,
   )
 }

@@ -18,11 +18,19 @@ vi.mock('../cluster/useClusterInfo', () => ({
   }),
 }))
 
-function renderAt(path: string) {
+function renderAt(
+  path: string,
+  props: { terminalOpen?: boolean; onToggleTerminal?: () => void } = {},
+) {
   return render(
     <AuthProvider>
       <MemoryRouter initialEntries={[path]}>
-        <TopBar perspective="admin" onPerspectiveChange={() => {}} />
+        <TopBar
+          perspective="admin"
+          onPerspectiveChange={() => {}}
+          terminalOpen={props.terminalOpen ?? false}
+          onToggleTerminal={props.onToggleTerminal ?? (() => {})}
+        />
       </MemoryRouter>
     </AuthProvider>,
   )
@@ -45,6 +53,35 @@ describe('TopBar namespace selector visibility', () => {
   })
 })
 
+describe('TopBar Terminal button', () => {
+  it('is live and toggles the terminal drawer', () => {
+    const onToggleTerminal = vi.fn()
+    renderAt('/overview', { onToggleTerminal })
+    const btn = screen.getByRole('button', { name: 'Terminal' })
+    expect(btn).not.toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(btn)
+    expect(onToggleTerminal).toHaveBeenCalledTimes(1)
+  })
+
+  it('reflects the open state via aria-expanded', () => {
+    renderAt('/overview', { terminalOpen: true })
+    expect(screen.getByRole('button', { name: 'Terminal' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+  })
+})
+
+describe('TopBar Help menu', () => {
+  it('Help is a live menu trigger (not a dead control)', () => {
+    renderAt('/overview')
+    const help = screen.getByRole('button', { name: 'Help' })
+    expect(help).not.toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(help)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+  })
+})
+
 describe('TopBar cluster pill', () => {
   it('shows the real cluster name and server version, not the hardcoded placeholder', async () => {
     renderAt('/overview')
@@ -60,7 +97,12 @@ describe('TopBar notification bell', () => {
     render(
       <AuthProvider>
         <MemoryRouter>
-          <TopBar perspective="admin" onPerspectiveChange={() => {}} />
+          <TopBar
+            perspective="admin"
+            onPerspectiveChange={() => {}}
+            terminalOpen={false}
+            onToggleTerminal={() => {}}
+          />
         </MemoryRouter>
       </AuthProvider>,
     )
@@ -77,7 +119,12 @@ describe('TopBar notification bell', () => {
     render(
       <AuthProvider>
         <MemoryRouter>
-          <TopBar perspective="admin" onPerspectiveChange={() => {}} />
+          <TopBar
+            perspective="admin"
+            onPerspectiveChange={() => {}}
+            terminalOpen={false}
+            onToggleTerminal={() => {}}
+          />
         </MemoryRouter>
       </AuthProvider>,
     )

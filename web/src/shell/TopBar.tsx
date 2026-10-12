@@ -8,6 +8,7 @@ import type { Perspective } from '../nav/categoryMap'
 import { firingAlerts } from '../modules/alerts/alertsMock'
 import { useClusterInfo } from '../cluster/useClusterInfo'
 import { createClient } from '../client/createClient'
+import { HelpMenu } from './HelpMenu'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -276,9 +277,13 @@ function NotificationBell() {
 export function TopBar({
   perspective,
   onPerspectiveChange,
+  terminalOpen,
+  onToggleTerminal,
 }: {
   perspective: Perspective
   onPerspectiveChange: (p: Perspective) => void
+  terminalOpen: boolean
+  onToggleTerminal: () => void
 }) {
   const crumbs = useCrumbs()
   const { info } = useClusterInfo()
@@ -340,26 +345,21 @@ export function TopBar({
       <button
         type="button"
         aria-label="Terminal"
-        aria-disabled="true"
-        tabIndex={-1}
-        title="Terminal (not available yet)"
-        className={`p-1.5 rounded-lg border border-transparent text-zinc-600 cursor-default ${FOCUS}`}
+        aria-expanded={terminalOpen}
+        title="Web Terminal"
+        onClick={onToggleTerminal}
+        className={`p-1.5 rounded-lg border transition-colors ${
+          terminalOpen
+            ? 'bg-zinc-700 border-zinc-600 text-zinc-200'
+            : 'border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+        } ${FOCUS}`}
       >
         <Icon name="terminal" className="w-4 h-4" />
       </button>
 
       <NotificationBell />
 
-      <button
-        type="button"
-        aria-label="Help"
-        aria-disabled="true"
-        tabIndex={-1}
-        title="Help (not available yet)"
-        className={`rounded-lg text-zinc-400 text-xs font-bold border border-zinc-700/50 w-7 h-7 flex items-center justify-center cursor-default ${FOCUS}`}
-      >
-        ?
-      </button>
+      <HelpMenu />
 
       <UserMenu />
     </header>
