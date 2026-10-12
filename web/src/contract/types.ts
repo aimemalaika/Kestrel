@@ -35,7 +35,7 @@ export interface K8sObject {
 export type WatchEnvelope =
   | { type: 'added' | 'modified' | 'deleted'; object: K8sObject }
   | { type: 'bookmark'; resourceVersion: string }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; code?: number }
 
 export interface CanIRequest {
   verb: string

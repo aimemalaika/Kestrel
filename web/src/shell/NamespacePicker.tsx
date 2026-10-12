@@ -5,8 +5,12 @@ import { useSelection } from '../state/selection'
 
 export function NamespacePicker() {
   const [namespaces, setNamespaces] = useState<string[]>([])
-  const { namespace } = useSelection()
+  const { namespace, gvr } = useSelection()
   const navigate = useNavigate()
+
+  const onPick = (ns: string) => {
+    navigate(gvr ? `/ns/${ns}/${gvr.group}/${gvr.version}/${gvr.resource}` : `/ns/${ns}`)
+  }
 
   useEffect(() => {
     const stop = createClient().watch(
@@ -29,7 +33,7 @@ export function NamespacePicker() {
       <select
         aria-label="Namespace"
         value={namespace ?? '_all'}
-        onChange={(e) => navigate(`/ns/${e.target.value}`)}
+        onChange={(e) => onPick(e.target.value)}
         className="text-xs bg-zinc-800/70 border border-zinc-700/70 rounded-lg px-2.5 py-1.5 text-zinc-300 focus:outline-none focus:border-brand"
       >
         <option value="_all">All Namespaces</option>

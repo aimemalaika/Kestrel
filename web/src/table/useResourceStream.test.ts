@@ -15,8 +15,15 @@ vi.mock('../client/createClient', () => ({
   }),
 }))
 
-beforeEach(() => (handlers.length = 0))
-afterEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  handlers.length = 0
+  vi.useFakeTimers()
+})
+afterEach(() => {
+  vi.runOnlyPendingTimers()
+  vi.useRealTimers()
+  vi.clearAllMocks()
+})
 
 const pod = (name: string, phase = 'Running') => ({
   apiVersion: 'v1',
@@ -44,17 +51,60 @@ describe('useResourceStream', () => {
     expect(result.current.rows.map((r) => r.metadata.name)).toEqual(['a'])
   })
 
-  it('resyncs on error: clears and re-subscribes', () => {
+  it('does not reconnect immediately on a transient error — waits for a backoff delay', () => {
+    renderHook(() =>
+      useResourceStream({ group: 'core', version: 'v1', resource: 'pods' }, 'default'),
+    )
+    expect(handlers.length).toBe(1)
+    act(() => handlers[0].cb!({ type: 'added', object: pod('a') }))
+    act(() => handlers[0].cb!({ type: 'error', message: 'stream error' }))
+    // No tight loop: still only one subscription right after the error.
+    expect(handlers.length).toBe(1)
+    act(() => vi.advanceTimersByTime(1300)) // past BASE_DELAY_MS (+jitter headroom)
+    expect(handlers.length).toBe(2) // reconnected exactly once
+  })
+
+  it('backs off exponentially and gives up after the attempt cap → terminal error', () => {
     const { result } = renderHook(() =>
       useResourceStream({ group: 'core', version: 'v1', resource: 'pods' }, 'default'),
     )
-    act(() => handlers[0].cb!({ type: 'added', object: pod('a') }))
-    expect(result.current.rows).toHaveLength(1)
-    act(() => handlers[0].cb!({ type: 'error', message: 'resync' }))
-    expect(result.current.rows).toHaveLength(0)
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const h = handlers[handlers.length - 1]
+      act(() => h.cb!({ type: 'error', message: 'stream error' }))
+      act(() => vi.advanceTimersByTime(40000)) // longer than MAX_DELAY_MS
+    }
+    // Final failure exhausts MAX_ATTEMPTS: no further reconnect, status terminal.
+    const countAtCap = handlers.length
+    act(() => vi.advanceTimersByTime(60000))
+    expect(handlers.length).toBe(countAtCap)
+    expect(result.current.status).toBe('error')
+  })
+
+  it('treats a 404 (resource type absent) as terminal — no reconnect, status error', () => {
+    const { result } = renderHook(() =>
+      useResourceStream(
+        { group: 'operators', version: 'v1', resource: 'installedoperators' },
+        undefined,
+      ),
+    )
+    expect(handlers.length).toBe(1)
+    act(() => handlers[0].cb!({ type: 'error', message: 'not found', code: 404 }))
+    act(() => vi.advanceTimersByTime(60000))
+    expect(handlers.length).toBe(1) // never retried
+    expect(result.current.status).toBe('error')
+  })
+
+  it('resets the backoff counter after a successful event', () => {
+    renderHook(() =>
+      useResourceStream({ group: 'core', version: 'v1', resource: 'pods' }, 'default'),
+    )
+    act(() => handlers[0].cb!({ type: 'error', message: 'blip' }))
+    act(() => vi.advanceTimersByTime(1300))
     expect(handlers.length).toBe(2)
-    act(() => handlers[1].cb!({ type: 'added', object: pod('c') }))
-    expect(result.current.rows.map((r) => r.metadata.name)).toEqual(['c'])
+    act(() => handlers[1].cb!({ type: 'added', object: pod('a') })) // success resets attempts
+    act(() => handlers[1].cb!({ type: 'error', message: 'blip' }))
+    act(() => vi.advanceTimersByTime(1300)) // next delay is BASE again, not escalated
+    expect(handlers.length).toBe(3)
   })
 
   it('returns empty + ready when no gvr', () => {
