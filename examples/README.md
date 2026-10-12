@@ -58,7 +58,25 @@ server, failing closed. Writes and the other verbs always run as the user.
 | Local (`--mock` or `--kubeconfig`) | dev, trying it out | [`local/`](./local/) |
 | Docker (`docker run`) | containerized single-operator / demo | [`docker/`](./docker/) |
 | Helm (in-cluster) | real clusters, single-operator or OIDC | [`helm/`](./helm/) |
-| OIDC wiring | enabling multi-user login | [`oidc/`](./oidc/) |
+| OIDC wiring (broker + apiserver) | enabling multi-user login | [`oidc/`](./oidc/) |
+| Local Dex (`make dev-oidc`) | trying the login UX on localhost | [`dev-oidc/`](./dev-oidc/) |
+| Registry module | the image-registry browser | [`registry/`](./registry/) |
+
+### Login methods are the same config everywhere
+
+In OIDC mode you choose which methods the sign-in screen offers (the user picks).
+It's the same set of settings across every deploy path — just passed differently:
+
+| Method | Setting | Flag | Env | Helm value |
+|---|---|---|---|---|
+| Log in with GitHub | GitHub connector | `--oidc-github-connector` | `KESTREL_OIDC_GITHUB_CONNECTOR` | `config.oidc.githubConnector` |
+| Username & password (native form) | password form | `--oidc-password-enable` | `KESTREL_OIDC_PASSWORD_ENABLE` | `config.oidc.passwordEnable` |
+| Username & password (redirect) | password connector | `--oidc-password-connector` | `KESTREL_OIDC_PASSWORD_CONNECTOR` | `config.oidc.passwordConnector` |
+
+GitHub isn't a Kubernetes OIDC issuer, so all methods authenticate through a
+**Dex/Keycloak broker** (`--oidc-issuer`). The broker owns the GitHub app and the
+org/team→groups mapping; Kestrel only names the connector. See [`oidc/`](./oidc/)
+for the broker setup, or [`dev-oidc/`](./dev-oidc/) to try it on localhost.
 
 ### Fastest look (no cluster)
 

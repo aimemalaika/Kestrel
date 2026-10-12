@@ -1,0 +1,52 @@
+# Local Dex for exercising Kestrel's OIDC login in dev. NOT for production.
+# Issuer must exactly match what Kestrel is pointed at (KESTREL_OIDC_ISSUER).
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+# The Kestrel dev client. The secret here matches KESTREL_OIDC_CLIENT_SECRET in
+# the `make dev-oidc` target. Redirect URIs cover the Vite dev server (proxied)
+# and the backend directly.
+staticClients:
+  - id: kestrel
+    name: Kestrel (dev)
+    secret: kestrel-dev-secret
+    redirectURIs:
+      - http://localhost:5173/auth/callback
+      - http://localhost:8080/auth/callback
+
+# Built-in password database so the native username/password form works locally.
+enablePasswordDB: true
+staticPasswords:
+  # Log in with: dev@kestrel.local / password
+  - email: dev@kestrel.local
+    hash: "$2a$10$/VQaU6XfrW9EUAvdRfxn1usYIUGeTQylskzN5pPq/liyA4VixGwjq"
+    username: dev
+    userID: "00000000-0000-0000-0000-000000000001"
+
+# Allow the OAuth2 Resource-Owner-Password (ROPC) grant via the local connector,
+# which is what Kestrel's native password form relays to.
+oauth2:
+  passwordConnector: local
+
+# "Log in with GitHub". Dex runs the GitHub OAuth and mints an id_token Kestrel
+# trusts (GitHub is NOT a k8s OIDC issuer, so the broker is required). The
+# clientID/clientSecret come from a GitHub OAuth app YOU create (env-expanded by
+# Dex), and the app's callback URL must be http://localhost:5556/dex/callback.
+# If $GITHUB_CLIENT_ID is empty the button is advertised but login won't complete
+# until you set it — see this folder's README.
+connectors:
+  - type: github
+    id: github
+    name: GitHub
+    config:
+      clientID: $GITHUB_CLIENT_ID
+      clientSecret: $GITHUB_CLIENT_SECRET
+      redirectURI: http://localhost:5556/dex/callback
+      # Restrict to an org/teams if you want (maps teams → the groups claim):
+      # orgs:
+      #   - name: your-org

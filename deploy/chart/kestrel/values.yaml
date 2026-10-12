@@ -105,6 +105,16 @@ config:
     groupsClaim: "groups"
     # -- id_token claim used for the display username.
     usernameClaim: "email"
+    # Login methods shown on the sign-in screen (the user picks). The broker
+    # (Dex/Keycloak) owns the GitHub OAuth app + org/team→groups mapping; Kestrel
+    # only names which connector to pre-select. Enable any combination; empty
+    # advertises nothing (operator must enable at least one).
+    # -- Dex/Keycloak connector id for the "Log in with GitHub" button. EMPTY hides it.
+    githubConnector: ""
+    # -- Connector id for a redirect-to-IdP username/password option. EMPTY hides it.
+    passwordConnector: ""
+    # -- Enable the native username/password form (ROPC relay to the broker).
+    passwordEnable: false
     # NOTE: the OIDC client secret is NOT set here — see the `secret` /
     # `existingSecret` blocks below (it is injected via an env var).
 

@@ -77,6 +77,15 @@ spec:
             {{- if and .Values.config.oidc.usernameClaim (ne .Values.config.oidc.usernameClaim "email") }}
             - --oidc-username-claim={{ .Values.config.oidc.usernameClaim }}
             {{- end }}
+            {{- with .Values.config.oidc.githubConnector }}
+            - --oidc-github-connector={{ . }}
+            {{- end }}
+            {{- with .Values.config.oidc.passwordConnector }}
+            - --oidc-password-connector={{ . }}
+            {{- end }}
+            {{- if .Values.config.oidc.passwordEnable }}
+            - --oidc-password-enable
+            {{- end }}
             {{- if .Values.config.tls.enabled }}
             - --tls-cert={{ .Values.config.tls.certFile }}
             - --tls-key={{ .Values.config.tls.keyFile }}

@@ -37,13 +37,19 @@ config:
   trustedProxy: true
 
   oidc:
-    # The apiserver MUST trust this SAME issuer (see note at top).
-    issuer: "https://issuer.example.com"
+    # The apiserver MUST trust this SAME issuer (see note at top). Point it at a
+    # Dex/Keycloak broker that fronts GitHub / LDAP / your IdP.
+    issuer: "https://dex.example.com"
     clientId: "kestrel"
     # …/auth/callback on the externally reachable host.
     redirectUrl: "https://kestrel.example.com/auth/callback"
     groupsClaim: "groups"      # id_token claim carrying the user's groups
     usernameClaim: "email"     # id_token claim used for the display username
+    # Login methods the sign-in screen offers (the user picks). Enable any
+    # combination; the broker owns the GitHub app + org/team→groups mapping.
+    githubConnector: "github"  # shows "Log in with GitHub" (Dex connector id)
+    passwordEnable: true       # shows the native username/password form (ROPC)
+    # passwordConnector: "ldap"  # or a redirect-to-IdP password connector instead
     # The OIDC client secret is NOT set here — it comes from existingSecret below.
 
   registry:

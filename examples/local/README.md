@@ -1,7 +1,11 @@
 # Running Kestrel locally
 
-Two local modes: stub data (`--mock`, no cluster needed) and against a real
-cluster via your kubeconfig (single-operator). Neither uses OIDC login.
+Three local modes:
+- **stub data** (`--mock`, no cluster) — explore the UI,
+- **against a real cluster** via your kubeconfig (single-operator, no login),
+- **with real OIDC login** via a throwaway local Dex — see
+  [`../dev-oidc/`](../dev-oidc/) / `make dev-oidc` (GitHub + username/password on
+  localhost, no cluster trust needed; backend runs `--mock`).
 
 ## Build / get the binary
 
@@ -73,10 +77,39 @@ kestrel --kubeconfig ~/.kube/config \
 `--helm-repo` is repeatable and also accepts comma-separated `name=url` pairs in
 one value.
 
+## 3. Try real OIDC login locally (GitHub / username+password)
+
+To see the actual login screen and flow on your machine — without a real IdP or
+cluster trust setup — use the bundled local Dex broker:
+
+```sh
+make dev-oidc
+# → http://localhost:5173, log in with dev@kestrel.local / password
+```
+
+That runs the backend in `--mock` mode with OIDC enabled against a local Dex (so
+forwarded tokens don't need a real apiserver to trust them). It advertises both
+the GitHub button and the username/password form. Full details, and how to add
+your GitHub OAuth app, are in [`../dev-oidc/`](../dev-oidc/).
+
+If you want to point a local run at your **own** broker instead, every setting is
+env-configurable:
+
+```sh
+KESTREL_OIDC_ISSUER=https://dex.example.com \
+KESTREL_OIDC_CLIENT_ID=kestrel \
+KESTREL_OIDC_CLIENT_SECRET=… \
+KESTREL_OIDC_REDIRECT_URL=http://localhost:5173/auth/callback \
+KESTREL_OIDC_PASSWORD_ENABLE=true \
+KESTREL_SESSION_KEY=$(openssl rand -base64 48) \
+kestrel --kubeconfig ~/.kube/config
+```
+
 ## Notes
 
 - Local single-operator mode is fine for one admin. For multiple users, use OIDC
   (see [`../oidc/`](../oidc/)) — which in turn requires the apiserver to trust the
-  same issuer, so it is really a cluster-deploy concern (see [`../helm/`](../helm/)).
-- To require login even locally you can set the full `--oidc-*` flags, but the
-  apiserver-same-issuer requirement still applies.
+  same issuer, so real multi-user access is a cluster-deploy concern (see
+  [`../helm/`](../helm/)).
+- Every `--oidc-*` setting (issuer, client-id, redirect, connectors, password
+  form) is also env-sourceable (`KESTREL_OIDC_*`); the flag wins when both are set.
