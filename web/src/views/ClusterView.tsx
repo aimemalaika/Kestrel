@@ -218,7 +218,7 @@ function MachineSetsTab({ rows }: { rows: K8sObject[] }) {
   return (
     <Table
       aria-label="Machine sets"
-      headers={['Name', 'Zone', 'Instance Type', 'Desired', 'Ready', 'Available', 'Age']}
+      headers={['Name', 'Desired', 'Ready', 'Available', 'Zone', 'Instance Type', 'Age']}
     >
       {sets.map((ms) => {
         const desired = num(ms, 'spec.replicas')
@@ -237,12 +237,6 @@ function MachineSetsTab({ rows }: { rows: K8sObject[] }) {
               <Mono>{ms.metadata.name}</Mono>
             </TD>
             <TD>
-              <span className="text-xs text-zinc-300">{zone}</span>
-            </TD>
-            <TD>
-              <Mono>{itype}</Mono>
-            </TD>
-            <TD>
               <span className="text-xs text-zinc-300">{desired}</span>
             </TD>
             <TD>
@@ -254,6 +248,12 @@ function MachineSetsTab({ rows }: { rows: K8sObject[] }) {
             </TD>
             <TD>
               <span className="text-xs text-zinc-300">{num(ms, 'status.availableReplicas')}</span>
+            </TD>
+            <TD>
+              <span className="text-xs text-zinc-300">{zone}</span>
+            </TD>
+            <TD>
+              <Mono>{itype}</Mono>
             </TD>
             <TD>
               <span className="text-xs text-zinc-500">

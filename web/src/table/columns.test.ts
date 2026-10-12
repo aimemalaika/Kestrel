@@ -118,6 +118,10 @@ describe('per-kind rich columns', () => {
     expect(headers('ServiceAccount')).toEqual(['Name', 'Secrets', 'Image Pull Secrets', 'Age'])
     expect(headers('Role')).toEqual(['Name', 'Type', 'Rules', 'Age'])
     expect(headers('ClusterRole')).toEqual(['Name', 'Type', 'Rules', 'Age'])
+    const headersNs = (k: string) =>
+      columnSpecs(k, { namespaceSelected: false }).map((c) => c.header)
+    expect(headersNs('Role')).toEqual(['Name', 'Type', 'Namespace', 'Rules', 'Age'])
+    expect(headersNs('ClusterRole')).toEqual(['Name', 'Type', 'Namespace', 'Rules', 'Age'])
     expect(headers('RoleBinding')).toEqual(['Name', 'Role Ref', 'Subject', 'Age'])
     expect(headers('StorageClass')).toEqual([
       'Name',
@@ -135,17 +139,21 @@ describe('per-kind rich columns', () => {
       'StorageClass',
       'Age',
     ])
-    expect(headers('PersistentVolume')).toEqual(
-      expect.arrayContaining(['Status', 'Capacity', 'Access Mode', 'Claim', 'StorageClass']),
-    )
+    expect(headers('PersistentVolume')).toEqual([
+      'Name',
+      'Capacity',
+      'Access Mode',
+      'Status',
+      'Claim',
+      'StorageClass',
+      'Age',
+    ])
+    expect(headers('PersistentVolume')).not.toContain('Reclaim')
     expect(headers('Route')).toEqual(
       expect.arrayContaining(['Host', 'Service', 'Port', 'TLS', 'Status']),
     )
     expect(headers('PersistentVolumeClaim')).toEqual(
       expect.arrayContaining(['Status', 'Capacity', 'StorageClass']),
-    )
-    expect(headers('PersistentVolume')).toEqual(
-      expect.arrayContaining(['Capacity', 'Reclaim', 'Status']),
     )
     expect(headers('StorageClass')).toContain('Provisioner')
   })

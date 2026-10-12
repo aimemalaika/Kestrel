@@ -170,7 +170,11 @@ const NO_STATUS_KINDS = new Set([
 ])
 
 /** Kinds whose Status column sits right after Name/Namespace. */
-const STATUS_FIRST_KINDS = new Set(['PersistentVolumeClaim', 'PersistentVolume', 'Pod'])
+const STATUS_FIRST_KINDS = new Set(['PersistentVolumeClaim', 'Pod'])
+
+/** Kinds whose Type (first hint) is emitted before the generic Namespace column
+ *  (mock order: Name, Type, Namespace, …). */
+const TYPE_BEFORE_NAMESPACE_KINDS = new Set(['Role', 'ClusterRole'])
 
 export function hasStatusColumn(kind: string): boolean {
   return !NO_STATUS_KINDS.has(kind)
@@ -293,7 +297,9 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
   PersistentVolume: [
     { header: 'Capacity', path: 'spec.capacity.storage' },
     { header: 'Access Mode', path: 'spec.accessModes', derive: accessMode },
-    { header: 'Reclaim', path: 'spec.persistentVolumeReclaimPolicy' },
+    // Inline status marker: expands into the generic Status column mid-list,
+    // matching the ui/ mock order (…, Access Mode, Status, Claim, …).
+    { header: 'Status', path: 'status', cell: 'status' },
     { header: 'Claim', path: 'spec.claimRef', cell: 'mono', derive: pvClaim },
     { header: 'StorageClass', path: 'spec.storageClassName' },
   ],
@@ -369,9 +375,29 @@ export interface ColumnSpec {
 }
 
 export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }): ColumnSpec[] {
+  const hints = COLUMN_HINTS[kind] ?? []
+  const statusCol: ColumnSpec = {
+    id: 'status',
+    header: 'Status',
+    kind: 'status',
+    value: (o) =>
+      str(getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+  }
+  const pushHint = (h: ColumnHint) =>
+    cols.push({
+      id: h.path,
+      header: h.header,
+      kind: h.cell ?? 'text',
+      align: h.numeric ? 'right' : undefined,
+      value: (o) => str(h.derive ? h.derive(o) : getPath(o, h.path)),
+    })
+
   const cols: ColumnSpec[] = [
     { id: 'name', header: 'Name', kind: 'text', value: (o) => o.metadata.name },
   ]
+  // Narrow rule: Role/ClusterRole put their Type (first hint) before Namespace.
+  const typeFirst = TYPE_BEFORE_NAMESPACE_KINDS.has(kind) && !opts.namespaceSelected && hints.length
+  if (typeFirst) pushHint(hints[0])
   if (!opts.namespaceSelected) {
     cols.push({
       id: 'namespace',
@@ -380,23 +406,15 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       value: (o) => str(o.metadata.namespace),
     })
   }
-  const statusCol: ColumnSpec = {
-    id: 'status',
-    header: 'Status',
-    kind: 'status',
-    value: (o) =>
-      str(getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
-  }
-  const statusEarly = hasStatusColumn(kind) && STATUS_FIRST_KINDS.has(kind)
-  if (statusEarly) cols.push(statusCol)
-  for (const h of COLUMN_HINTS[kind] ?? []) {
-    cols.push({
-      id: h.path,
-      header: h.header,
-      kind: h.cell ?? 'text',
-      align: h.numeric ? 'right' : undefined,
-      value: (o) => str(h.derive ? h.derive(o) : getPath(o, h.path)),
-    })
+  let statusEmitted = hasStatusColumn(kind) && STATUS_FIRST_KINDS.has(kind)
+  if (statusEmitted) cols.push(statusCol)
+  for (const h of typeFirst ? hints.slice(1) : hints) {
+    if (h.cell === 'status') {
+      cols.push(statusCol)
+      statusEmitted = true
+      continue
+    }
+    pushHint(h)
   }
   if (kind === 'PipelineRun') {
     cols.push({
@@ -406,7 +424,7 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       value: (o) => JSON.stringify(scanSummary(o) ?? {}),
     })
   }
-  if (hasStatusColumn(kind) && !statusEarly) cols.push(statusCol)
+  if (hasStatusColumn(kind) && !statusEmitted) cols.push(statusCol)
   cols.push({
     id: 'age',
     header: 'Age',

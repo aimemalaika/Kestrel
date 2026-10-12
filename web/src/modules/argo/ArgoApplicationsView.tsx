@@ -48,7 +48,7 @@ export function ArgoApplicationsView() {
   return (
     <div className="p-6">
       <ViewHeader
-        title="Applications"
+        title="GitOps Applications"
         count={filtered.length}
         action={
           <PrimaryBtn>

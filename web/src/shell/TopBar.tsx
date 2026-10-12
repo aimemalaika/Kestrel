@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { NamespacePicker } from './NamespacePicker'
-import { Icon } from '../ui'
+import { Icon, Modal } from '../ui'
 import { useAuth } from '../auth/AuthProvider'
 import { useSelection } from '../state/selection'
 import type { Perspective } from '../nav/categoryMap'
@@ -9,6 +9,7 @@ import { firingAlerts } from '../modules/alerts/alertsMock'
 import { useClusterInfo } from '../cluster/useClusterInfo'
 import { createClient } from '../client/createClient'
 import { HelpMenu } from './HelpMenu'
+import { loadDefaultPerspective, saveDefaultPerspective } from './perspectivePref'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -35,9 +36,16 @@ function useCrumbs(): string[] {
   return crumbs
 }
 
-function UserMenu() {
+function UserMenu({
+  perspective,
+  onPerspectiveChange,
+}: {
+  perspective: Perspective
+  onPerspectiveChange: (p: Perspective) => void
+}) {
   const { identity, signOut, mode } = useAuth()
   const [open, setOpen] = useState(false)
+  const [prefsOpen, setPrefsOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const copyLoginCommand = async () => {
     try {
@@ -158,8 +166,61 @@ function UserMenu() {
               </button>
             </>
           )}
+          <button
+            type="button"
+            role="menuitem"
+            tabIndex={-1}
+            onClick={() => {
+              setOpen(false)
+              setPrefsOpen(true)
+            }}
+            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
+          >
+            User preferences
+          </button>
         </div>
       )}
+
+      <Modal
+        open={prefsOpen}
+        onClose={() => setPrefsOpen(false)}
+        title="User preferences"
+        description="Preferences are stored in this browser."
+      >
+        <div className="space-y-4">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-zinc-400">Default perspective</span>
+            <select
+              aria-label="Default perspective"
+              defaultValue={loadDefaultPerspective()}
+              onChange={(e) => {
+                const p = e.target.value as Perspective
+                saveDefaultPerspective(p)
+                onPerspectiveChange(p)
+              }}
+              className="px-3 py-2 text-sm bg-[#0d1117] border border-zinc-700 rounded-md text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand/60"
+            >
+              <option value="admin">Administrator</option>
+              <option value="developer">Developer</option>
+            </select>
+            <span className="text-[10px] text-zinc-600">
+              The perspective the console opens in (currently: {perspective}).
+            </span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-zinc-400">Theme</span>
+            <select
+              aria-label="Theme"
+              disabled
+              value="dark"
+              className="px-3 py-2 text-sm bg-[#0d1117] border border-zinc-800 rounded-md text-zinc-500 cursor-not-allowed"
+            >
+              <option value="dark">Dark</option>
+            </select>
+            <span className="text-[10px] text-zinc-600">Kestrel is dark-only.</span>
+          </label>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -361,7 +422,7 @@ export function TopBar({
 
       <HelpMenu />
 
-      <UserMenu />
+      <UserMenu perspective={perspective} onPerspectiveChange={onPerspectiveChange} />
     </header>
   )
 }

@@ -39,6 +39,11 @@ describe('ArgoApplicationsView filtering/pagination', () => {
     rows = []
   })
 
+  it('uses the GitOps Applications title (matches the ui/ mock)', () => {
+    render(<ArgoApplicationsView />)
+    expect(screen.getByRole('heading', { name: 'GitOps Applications' })).toBeInTheDocument()
+  })
+
   it('filters applications by name', () => {
     rows = [app('web', 'team-a'), app('api', 'team-a'), app('billing', 'team-b')]
     render(<ArgoApplicationsView />)

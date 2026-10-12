@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useResourceStream } from '../table/useResourceStream'
 import { TOPOLOGY_EDGES } from '../modules/topology/topologyEdges'
-import { Card, EmptyState, Icon, SecondaryBtn, ViewHeader } from '../ui'
+import { Card, EmptyState, Icon, MiniBar, SecondaryBtn, ViewHeader } from '../ui'
 import {
   layoutTopology,
   toWorkload,
@@ -337,6 +337,13 @@ export function TopologyView() {
                     <span className="text-zinc-200 font-medium text-right break-all">{value}</span>
                   </div>
                 ))}
+                <div className="pt-2 border-t border-zinc-800 space-y-2">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Pod Health</p>
+                  <MiniBar
+                    value={selected.desired > 0 ? (selected.ready / selected.desired) * 100 : 0}
+                    className="w-full"
+                  />
+                </div>
                 <div className="pt-2 border-t border-zinc-800">
                   <Link to={drawerPath(selected)} className="text-sky-400 hover:text-sky-300">
                     Open details

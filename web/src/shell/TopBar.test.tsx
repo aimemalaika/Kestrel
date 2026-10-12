@@ -20,14 +20,18 @@ vi.mock('../cluster/useClusterInfo', () => ({
 
 function renderAt(
   path: string,
-  props: { terminalOpen?: boolean; onToggleTerminal?: () => void } = {},
+  props: {
+    terminalOpen?: boolean
+    onToggleTerminal?: () => void
+    onPerspectiveChange?: (p: 'admin' | 'developer') => void
+  } = {},
 ) {
   return render(
     <AuthProvider>
       <MemoryRouter initialEntries={[path]}>
         <TopBar
           perspective="admin"
-          onPerspectiveChange={() => {}}
+          onPerspectiveChange={props.onPerspectiveChange ?? (() => {})}
           terminalOpen={props.terminalOpen ?? false}
           onToggleTerminal={props.onToggleTerminal ?? (() => {})}
         />
@@ -50,6 +54,21 @@ describe('TopBar namespace selector visibility', () => {
   it('hides the namespace selector on Projects (it is the namespace list)', () => {
     renderAt('/projects')
     expect(screen.queryByRole('combobox', { name: /namespace/i })).toBeNull()
+  })
+})
+
+describe('TopBar user preferences', () => {
+  it('opens a preferences modal and persists the default perspective', async () => {
+    const onPerspectiveChange = vi.fn()
+    renderAt('/overview', { onPerspectiveChange })
+    fireEvent.click(await screen.findByRole('button', { name: 'User menu' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /user preferences/i }))
+    const dialog = screen.getByRole('dialog', { name: /user preferences/i })
+    const select = within(dialog).getByRole('combobox', { name: /default perspective/i })
+    fireEvent.change(select, { target: { value: 'developer' } })
+    expect(onPerspectiveChange).toHaveBeenCalledWith('developer')
+    const { loadDefaultPerspective } = await import('./perspectivePref')
+    expect(loadDefaultPerspective()).toBe('developer')
   })
 })
 

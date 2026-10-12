@@ -47,6 +47,20 @@ describe('ClusterView', () => {
     expect(await screen.findByText('worker-us-east-1a')).toBeInTheDocument()
     expect(screen.getByText('Instance Type')).toBeInTheDocument()
     expect(screen.getByText('c5.xlarge')).toBeInTheDocument()
+    // Column order matches the ui/ mock.
+    const labels = screen
+      .getAllByRole('columnheader')
+      .map((th) => th.textContent)
+      .filter((t) => t && t.trim())
+    expect(labels).toEqual([
+      'Name',
+      'Desired',
+      'Ready',
+      'Available',
+      'Zone',
+      'Instance Type',
+      'Age',
+    ])
     fireEvent.click(screen.getByRole('button', { name: 'Cluster Settings' }))
     expect(screen.getByText('brd-hq-cluster')).toBeInTheDocument()
   })

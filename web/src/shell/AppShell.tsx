@@ -8,11 +8,12 @@ import { LoginScreen } from '../auth/LoginScreen'
 import { CommandPalette } from '../search/CommandPalette'
 import { ErrorBoundary } from './ErrorBoundary'
 import { WebTerminalDrawer } from './WebTerminalDrawer'
+import { loadDefaultPerspective } from './perspectivePref'
 import type { Perspective } from '../nav/categoryMap'
 
 export function AppShell() {
   const { status } = useAuth()
-  const [perspective, setPerspective] = useState<Perspective>('admin')
+  const [perspective, setPerspective] = useState<Perspective>(() => loadDefaultPerspective())
   const [terminalOpen, setTerminalOpen] = useState(false)
   if (status === 'loading')
     return (

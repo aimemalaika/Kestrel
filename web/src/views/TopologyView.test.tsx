@@ -60,6 +60,8 @@ describe('TopologyView', () => {
     fireEvent.click(screen.getByTestId('node-api-gateway'))
     const panel = screen.getByTestId('topology-panel')
     expect(within(panel).getByText('3/3 ready')).toBeInTheDocument()
+    expect(within(panel).getByText('Pod Health')).toBeInTheDocument()
+    expect(within(panel).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100')
     expect(screen.getByRole('link', { name: 'Open details' })).toHaveAttribute(
       'href',
       '/ns/production/apps/v1/deployments/api-gateway',
