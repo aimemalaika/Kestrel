@@ -97,6 +97,21 @@ helm install kestrel deploy/chart/kestrel \
 - `ingress.host` and TLS are required. The kube-apiserver must also trust
   `https://<host>/dex`; see [`../oidc/apiserver-trust.md`](../oidc/apiserver-trust.md).
 
+### Ingress TLS
+
+`ingress.tls.mode` picks how the ingress gets its cert (the OIDC issuer must be
+HTTPS):
+
+- `secret` — use an existing TLS Secret (`ingress.tls.secretName`); also the
+  cert-manager path (set the cert-manager annotation + the `secretName` it issues).
+- `selfSigned` — the chart **generates a self-signed cert** into a Secret (no
+  cert-manager dependency; stable across upgrades). Good for a self-contained
+  addon. Clients (browser, `kubelogin`) and the kube-apiserver
+  (`--oidc-ca-file`) must trust the CA.
+- `disabled` — no TLS.
+
+`ingress.tls.enabled: true` still works and maps to `secret` mode.
+
 ## Key points about these values
 
 - `config.*` maps 1:1 to the binary's CLI flags; the chart only emits a flag when

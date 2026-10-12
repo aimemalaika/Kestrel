@@ -126,3 +126,23 @@ Whether any sensitive value is wired in (controls whether secret env is added).
 {{- $v -}}
 {{- end -}}
 {{- end }}
+
+{{/* Effective ingress TLS mode: explicit mode, else derive from enabled (back-compat). */}}
+{{- define "kestrel.ingressTLSMode" -}}
+{{- if .Values.ingress.tls.mode -}}
+{{- .Values.ingress.tls.mode -}}
+{{- else if .Values.ingress.tls.enabled -}}
+secret
+{{- else -}}
+disabled
+{{- end -}}
+{{- end }}
+
+{{/* TLS Secret name the Ingress references: provided (secret mode) or chart-generated (selfSigned). */}}
+{{- define "kestrel.ingressTLSSecretName" -}}
+{{- if eq (include "kestrel.ingressTLSMode" .) "selfSigned" -}}
+{{- default (printf "%s-tls" (include "kestrel.fullname" .)) .Values.ingress.tls.secretName -}}
+{{- else -}}
+{{- required "ingress.tls.secretName is required when ingress.tls.mode=secret" .Values.ingress.tls.secretName -}}
+{{- end -}}
+{{- end }}

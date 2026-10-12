@@ -250,9 +250,16 @@ ingress:
   # Each entry: {host, paths: [{path, pathType}]}.
   hosts: []
   tls:
-    # -- Enable TLS on the Ingress.
+    # -- TLS mode: "secret" (use an operator-provided `secretName`, also the
+    # cert-manager path via annotations), "selfSigned" (the chart generates a
+    # self-signed cert into a Secret — no cert-manager needed; browsers/apiserver
+    # must trust the CA), or "disabled". Empty derives from `enabled` for
+    # back-compat (enabled=true => secret).
+    mode: ""
+    # -- Enable TLS on the Ingress (back-compat; prefer `mode`). true => secret mode.
     enabled: false
-    # -- Secret holding the TLS cert for the host(s).
+    # -- mode=secret: the existing TLS Secret to use. mode=selfSigned: the name of
+    # the generated Secret (defaults to <fullname>-tls).
     secretName: ""
     # -- Hosts covered by the TLS cert. Defaults to ingress.host when empty.
     hosts: []

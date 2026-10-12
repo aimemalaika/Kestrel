@@ -95,7 +95,11 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
   tls:
-    enabled: true
+    # mode "secret": use a provided cert (here, issued by cert-manager via the
+    # annotation above into kestrel-tls). Alternatives: "selfSigned" (chart
+    # generates a self-signed cert — no cert-manager; trust the CA on clients +
+    # apiserver) or "disabled".
+    mode: secret
     secretName: kestrel-tls
 
 service:
