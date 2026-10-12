@@ -127,6 +127,48 @@ Whether any sensitive value is wired in (controls whether secret env is added).
 {{- end -}}
 {{- end }}
 
+{{/* Resolve the admin bcrypt hash. Reuse the existing Secret's admin-hash ONLY
+     while the stored admin-password still matches the resolved plaintext — so
+     the Dex config/checksum stays stable across upgrades (no restart churn)
+     when the password is unchanged, but a changed password (generated or
+     `--set dex.admin.password=...`) is re-hashed, keeping admin-hash and
+     admin-password consistent. Cached per render. */}}
+{{- define "kestrel.dexAdminHash" -}}
+{{- if .Values.dex.admin._genHash -}}
+{{- .Values.dex.admin._genHash -}}
+{{- else -}}
+{{- $pw := include "kestrel.dexAdminPassword" . -}}
+{{- $s := (lookup "v1" "Secret" .Release.Namespace (include "kestrel.dexFullname" .)) -}}
+{{- $v := "" -}}
+{{- if and $s $s.data (index $s.data "admin-hash") (index $s.data "admin-password") (eq (index $s.data "admin-password" | b64dec) $pw) -}}
+{{- $v = index $s.data "admin-hash" | b64dec -}}
+{{- else -}}
+{{- $v = htpasswd "admin" $pw | trimPrefix "admin:" -}}
+{{- end -}}
+{{- $_ := set .Values.dex.admin "_genHash" $v -}}
+{{- $v -}}
+{{- end -}}
+{{- end }}
+
+{{/* Resolve the session HMAC key: value, else existing Secret, else generated (cached per render). */}}
+{{- define "kestrel.sessionKey" -}}
+{{- if .Values.secret.sessionKey -}}
+{{- .Values.secret.sessionKey -}}
+{{- else if .Values.secret._genSessionKey -}}
+{{- .Values.secret._genSessionKey -}}
+{{- else -}}
+{{- $s := (lookup "v1" "Secret" .Release.Namespace (include "kestrel.fullname" .)) -}}
+{{- $v := "" -}}
+{{- if and $s $s.data (index $s.data .Values.existingSecret.sessionKeyKey) -}}
+{{- $v = index $s.data .Values.existingSecret.sessionKeyKey | b64dec -}}
+{{- else -}}
+{{- $v = randAlphaNum 64 -}}
+{{- end -}}
+{{- $_ := set .Values.secret "_genSessionKey" $v -}}
+{{- $v -}}
+{{- end -}}
+{{- end }}
+
 {{/* Effective ingress TLS mode: explicit mode, else derive from enabled (back-compat). */}}
 {{- define "kestrel.ingressTLSMode" -}}
 {{- if .Values.ingress.tls.mode -}}
