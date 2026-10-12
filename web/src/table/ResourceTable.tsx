@@ -222,7 +222,16 @@ export function ResourceTable({
           )
         if (s.kind === 'mono')
           return v === '—' ? <span className="text-zinc-500">—</span> : <Mono>{v}</Mono>
-        return s.kind === 'text' && s.id !== 'name' ? <span className="text-zinc-300">{v}</span> : v
+        return s.kind === 'text' && s.id !== 'name' ? (
+          <span
+            className="text-zinc-300 inline-block max-w-[24rem] truncate align-bottom"
+            title={v}
+          >
+            {v}
+          </span>
+        ) : (
+          v
+        )
       },
     }))
   }, [kind, namespace, gvr])
