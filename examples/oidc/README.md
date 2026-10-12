@@ -49,6 +49,11 @@ you give the apiserver determine the identity your RBAC `RoleBinding`s must name
 keep them consistent with Kestrel's `--oidc-username-claim` /
 `--oidc-groups-claim`.
 
+> **How and where to set these durably** — step-by-step for **kubeadm** and
+> **Kubespray** (and managed clusters), including why a raw manifest edit is lost
+> on upgrade and how to make it survive: see
+> [`apiserver-trust.md`](./apiserver-trust.md).
+
 ## Redirect URL
 
 - Set `--oidc-redirect-url` (chart: `config.oidc.redirectUrl`) to the externally
