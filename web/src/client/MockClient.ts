@@ -1664,6 +1664,10 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
       // Clearly a mock, not a fabricated real cluster.
       return { clusterName: 'kestrel-mock', serverVersion: 'v0.0.0-mock', apiServerURL: '' }
     },
+    async authInfo() {
+      // UI-only/dev mode: single-operator so the SPA renders without a backend.
+      return { mode: 'single-operator', user: { name: 'kestrel-operator' }, options: [] }
+    },
     async get(ref: ResourceRef) {
       const o = store.get(`${ref.namespace}/${ref.name}`)
       if (!o)
@@ -1680,7 +1684,8 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
       store.delete(`${ref.namespace}/${ref.name}`)
     },
     canI: async (req) => {
-      if (getIdentity()?.role === 'viewer') {
+      // Mock RBAC: an identity in the "viewers" group is read-only.
+      if (getIdentity()?.groups?.includes('viewers')) {
         return {
           allowed: !(
             req.verb === 'create' ||

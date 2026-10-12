@@ -1,25 +1,66 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { getIdentity, setIdentity, subscribe } from './identity'
+import { setIdentity } from './identity'
 import type { Identity } from './identity'
+import type { AuthInfo, AuthOption } from './authInfo'
+import { createClient } from '../client/createClient'
+import { redirectTo } from './redirect'
+
+type Status = 'loading' | 'needs-login' | 'authed'
+type Mode = 'single-operator' | 'oidc'
 
 interface AuthValue {
+  status: Status
+  mode: Mode
   identity: Identity | null
-  signIn: (id: Identity) => void
+  options: AuthOption[]
   signOut: () => void
 }
 
 const AuthContext = createContext<AuthValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [identity, setState] = useState<Identity | null>(getIdentity())
+  const [status, setStatus] = useState<Status>('loading')
+  const [mode, setMode] = useState<Mode>('oidc')
+  const [identity, setLocalIdentity] = useState<Identity | null>(null)
+  const [options, setOptions] = useState<AuthOption[]>([])
+
   useEffect(() => {
-    setState(getIdentity())
-    return subscribe(() => setState(getIdentity()))
+    let live = true
+    createClient()
+      .authInfo()
+      .then((info: AuthInfo) => {
+        if (!live) return
+        const id: Identity | null = info.user
+          ? { name: info.user.name, groups: info.user.groups }
+          : info.mode === 'single-operator'
+            ? { name: 'kestrel-operator' }
+            : null
+        setMode(info.mode)
+        setOptions(info.options ?? [])
+        setLocalIdentity(id)
+        setIdentity(id) // sync the module store (useCanI / mock canI observe it)
+        setStatus(id ? 'authed' : 'needs-login')
+      })
+      .catch(() => {
+        if (!live) return
+        // Fail closed: show the login screen with whatever options we have (none).
+        setStatus('needs-login')
+      })
+    return () => {
+      live = false
+    }
   }, [])
-  const signIn = useCallback((id: Identity) => setIdentity(id), [])
-  const signOut = useCallback(() => setIdentity(null), [])
-  const value = useMemo(() => ({ identity, signIn, signOut }), [identity, signIn, signOut])
+
+  const signOut = useCallback(() => {
+    // OIDC: end the server session. Single-operator has no session to end.
+    if (mode === 'oidc') redirectTo('/auth/logout')
+  }, [mode])
+
+  const value = useMemo<AuthValue>(
+    () => ({ status, mode, identity, options, signOut }),
+    [status, mode, identity, options, signOut],
+  )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 

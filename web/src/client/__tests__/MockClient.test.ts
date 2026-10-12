@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createMockClient } from '../MockClient'
-import { setIdentity, IDENTITY_PRESETS } from '../../auth/identity'
+import { setIdentity } from '../../auth/identity'
 import { isDeltaEnvelope, type WatchEnvelope } from '../../contract/types'
 
 beforeEach(() => vi.useFakeTimers())
@@ -231,7 +231,8 @@ describe('MockClient U7 seeds', () => {
 })
 
 describe('MockClient canI identity', () => {
-  const [operator, viewer] = IDENTITY_PRESETS
+  const operator = { name: 'operator@kestrel', groups: ['system:masters'] }
+  const viewer = { name: 'viewer@kestrel', groups: ['viewers'] }
   const pods = { group: 'core', version: 'v1', resource: 'pods' }
 
   it('viewer denies writes and allows reads', async () => {

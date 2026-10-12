@@ -1,80 +1,141 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthProvider'
 import { LoginScreen } from './LoginScreen'
-import { IDENTITY_PRESETS, getIdentity, setIdentity } from './identity'
-import { useCanI } from '../write/useCanI'
+import type { AuthInfo } from './authInfo'
 
-const [operator, viewer] = IDENTITY_PRESETS
+const authInfo = vi.fn<() => Promise<AuthInfo>>()
+vi.mock('../client/createClient', () => ({
+  createClient: () => ({ authInfo }),
+}))
+
+const redirectTo = vi.fn()
+vi.mock('./redirect', () => ({ redirectTo: (url: string) => redirectTo(url) }))
+
+afterEach(() => {
+  authInfo.mockReset()
+  redirectTo.mockReset()
+})
 
 function AuthProbe() {
-  const { identity, signIn, signOut } = useAuth()
+  const { status, mode, identity, options, signOut } = useAuth()
   return (
     <div>
-      <span data-testid="who">{identity?.user ?? 'none'}</span>
-      <button onClick={() => signIn(viewer)}>in-viewer</button>
-      <button onClick={() => signIn(operator)}>in-operator</button>
+      <span data-testid="status">{status}</span>
+      <span data-testid="mode">{mode}</span>
+      <span data-testid="who">{identity?.name ?? 'none'}</span>
+      <span data-testid="opts">{options.map((o) => o.id).join(',')}</span>
       <button onClick={signOut}>out</button>
     </div>
   )
 }
 
-function CanIProbe() {
-  const ok = useCanI({
-    verb: 'delete',
-    group: '',
-    version: 'v1',
-    resource: 'pods',
-    namespace: 'default',
-    name: 'x',
-  })
-  return <span data-testid="ok">{String(ok)}</span>
-}
-
-afterEach(() => setIdentity(null))
-
-describe('auth', () => {
-  it('signIn / signOut update identity', () => {
+describe('AuthProvider', () => {
+  it('single-operator → authed as the reported operator, no login options', async () => {
+    authInfo.mockResolvedValue({
+      mode: 'single-operator',
+      user: { name: 'kestrel-operator' },
+      options: [],
+    })
     render(
       <AuthProvider>
         <AuthProbe />
       </AuthProvider>,
     )
-    expect(screen.getByTestId('who').textContent).toBe('none')
-    fireEvent.click(screen.getByText('in-viewer'))
-    expect(screen.getByTestId('who').textContent).toBe(viewer.user)
-    expect(getIdentity()).toEqual(viewer)
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'))
+    expect(screen.getByTestId('who')).toHaveTextContent('kestrel-operator')
+    expect(screen.getByTestId('mode')).toHaveTextContent('single-operator')
+  })
+
+  it('oidc + no user → needs-login', async () => {
+    authInfo.mockResolvedValue({
+      mode: 'oidc',
+      user: null,
+      options: [{ id: 'oidc', label: 'Log in', start: '/auth/login' }],
+    })
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('needs-login'))
+    expect(screen.getByTestId('who')).toHaveTextContent('none')
+    expect(screen.getByTestId('opts')).toHaveTextContent('oidc')
+  })
+
+  it('oidc + user present → authed as that user', async () => {
+    authInfo.mockResolvedValue({
+      mode: 'oidc',
+      user: { name: 'alice@corp.com', groups: ['developers'] },
+      options: [],
+    })
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'))
+    expect(screen.getByTestId('who')).toHaveTextContent('alice@corp.com')
+  })
+
+  it('signOut in oidc mode redirects to /auth/logout', async () => {
+    authInfo.mockResolvedValue({
+      mode: 'oidc',
+      user: { name: 'alice@corp.com' },
+      options: [],
+    })
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'))
     fireEvent.click(screen.getByText('out'))
-    expect(screen.getByTestId('who').textContent).toBe('none')
+    expect(redirectTo).toHaveBeenCalledWith('/auth/logout')
+  })
+
+  it('signOut in single-operator mode does nothing (no session to end)', async () => {
+    authInfo.mockResolvedValue({
+      mode: 'single-operator',
+      user: { name: 'kestrel-operator' },
+      options: [],
+    })
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('authed'))
+    fireEvent.click(screen.getByText('out'))
+    expect(redirectTo).not.toHaveBeenCalled()
   })
 
   it('useAuth throws outside provider', () => {
+    // Suppress React's error-boundary console noise for the expected throw.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(() => render(<AuthProbe />)).toThrow()
+    spy.mockRestore()
   })
+})
 
-  it('LoginScreen signs in a preset', () => {
+describe('LoginScreen', () => {
+  it('renders each advertised option and redirects to its start URL on click', async () => {
+    authInfo.mockResolvedValue({
+      mode: 'oidc',
+      user: null,
+      options: [
+        { id: 'github', label: 'Login with GitHub', start: '/auth/login?c=github' },
+        { id: 'password', label: 'Username & password', start: '/auth/login?c=ldap' },
+      ],
+    })
     render(
       <AuthProvider>
         <LoginScreen />
-        <AuthProbe />
       </AuthProvider>,
     )
-    fireEvent.click(screen.getByText(viewer.user))
-    expect(screen.getByTestId('who').textContent).toBe(viewer.user)
-  })
-
-  it('useCanI follows identity changes', async () => {
-    setIdentity(viewer)
-    render(
-      <AuthProvider>
-        <AuthProbe />
-        <CanIProbe />
-      </AuthProvider>,
-    )
-    await waitFor(() => expect(screen.getByTestId('ok').textContent).toBe('false'))
-    await act(async () => {
-      fireEvent.click(screen.getByText('in-operator'))
-    })
-    await waitFor(() => expect(screen.getByTestId('ok').textContent).toBe('true'))
+    const github = await screen.findByText('Login with GitHub')
+    expect(screen.getByText('Username & password')).toBeInTheDocument()
+    fireEvent.click(github)
+    expect(redirectTo).toHaveBeenCalledWith('/auth/login?c=github')
   })
 })

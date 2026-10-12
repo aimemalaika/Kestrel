@@ -34,7 +34,7 @@ function useCrumbs(): string[] {
 }
 
 function UserMenu() {
-  const { identity, signOut } = useAuth()
+  const { identity, signOut, mode } = useAuth()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -96,9 +96,9 @@ function UserMenu() {
         className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors border border-transparent hover:border-zinc-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60"
       >
         <div className="w-6 h-6 rounded-full bg-brand flex items-center justify-center text-white text-[10px] font-bold">
-          {identity.user.charAt(0).toUpperCase()}
+          {identity.name.charAt(0).toUpperCase()}
         </div>
-        <span className="text-xs text-zinc-300 hidden lg:block">{identity.user}</span>
+        <span className="text-xs text-zinc-300 hidden lg:block">{identity.name}</span>
         <Icon name="chevronD" className="w-3 h-3 text-zinc-500 hidden lg:block" />
       </button>
       {open && (
@@ -109,18 +109,22 @@ function UserMenu() {
           className="absolute right-0 top-full mt-1 w-48 bg-header border border-zinc-700 rounded-lg shadow-xl z-50 py-1"
         >
           <div className="px-3 py-2 border-b border-zinc-800">
-            <p className="text-xs font-medium text-zinc-200 truncate">{identity.user}</p>
-            <p className="text-[10px] text-zinc-500">{identity.role}</p>
+            <p className="text-xs font-medium text-zinc-200 truncate">{identity.name}</p>
+            {identity.groups && identity.groups.length > 0 && (
+              <p className="text-[10px] text-zinc-500 truncate">{identity.groups.join(', ')}</p>
+            )}
           </div>
-          <button
-            type="button"
-            role="menuitem"
-            tabIndex={-1}
-            onClick={signOut}
-            className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
-          >
-            Sign out
-          </button>
+          {mode === 'oidc' && (
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              onClick={signOut}
+              className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 focus:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset"
+            >
+              Sign out
+            </button>
+          )}
         </div>
       )}
     </div>

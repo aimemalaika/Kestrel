@@ -1,8 +1,10 @@
+// The signed-in identity, as reported by the backend's /authinfo (never a
+// client-side mock). A small module store lets non-React consumers (useCanI,
+// the mock client's canI) observe identity changes; AuthProvider owns the
+// authoritative state and writes it here when /authinfo resolves.
 export type Identity = {
-  user: string
-  groups: string[]
-  serviceAccount?: string
-  role: 'operator' | 'viewer'
+  name: string
+  groups?: string[]
 }
 
 let current: Identity | null = null
@@ -23,13 +25,3 @@ export function subscribe(cb: () => void): () => void {
     subscribers.delete(cb)
   }
 }
-
-export const IDENTITY_PRESETS: Identity[] = [
-  {
-    user: 'operator@kestrel',
-    groups: ['system:masters'],
-    serviceAccount: 'kestrel-operator',
-    role: 'operator',
-  },
-  { user: 'viewer@kestrel', groups: ['viewers'], role: 'viewer' },
-]
