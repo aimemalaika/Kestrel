@@ -133,16 +133,16 @@ describe('AppShell', () => {
       expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument()
     })
 
-    it('user menu: focuses item on open, Escape closes and restores trigger focus', async () => {
+    it('user menu: focuses first item on open, ArrowDown advances, Escape restores trigger focus', async () => {
       renderShell()
       await screen.findByTestId('sidebar')
       const trigger = screen.getByRole('button', { name: 'User menu' })
       fireEvent.click(trigger)
-      const item = screen.getByRole('menuitem', { name: 'Sign out' })
-      expect(item).toHaveFocus()
-      fireEvent.keyDown(item, { key: 'ArrowDown' })
-      expect(item).toHaveFocus() // single item wraps to itself
-      fireEvent.keyDown(item, { key: 'Escape' })
+      const items = screen.getAllByRole('menuitem')
+      expect(items[0]).toHaveFocus() // first item focused on open
+      fireEvent.keyDown(items[0], { key: 'ArrowDown' })
+      expect(items[1]).toHaveFocus() // advances to the next item
+      fireEvent.keyDown(items[1], { key: 'Escape' })
       expect(screen.queryByRole('menu')).toBeNull()
       expect(trigger).toHaveFocus()
     })

@@ -33,6 +33,7 @@ type Deps struct {
 	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
 	Helm        http.Handler // /api/helm/* (releases + chart repos)
 	ServiceMap  http.Handler // /api/servicemap (store + validate; ConfigMap-backed)
+	Kubeconfig  http.Handler // /api/kubeconfig[/command] (own-identity download/login-cmd); 503 in single-operator/mock
 	// ClusterName is the display name for the connected cluster, from
 	// --cluster-name / $KESTREL_CLUSTER_NAME. May be "" (no hardcoded default).
 	ClusterName string
@@ -78,6 +79,14 @@ func New(d Deps) http.Handler {
 	}
 	if d.ServiceMap == nil {
 		d.ServiceMap = servicemap.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), servicemap.Config{})
+	}
+	if d.Kubeconfig == nil {
+		// Single-operator / --mock: there is no per-user OIDC identity to mint a
+		// kubeconfig for (the operator already has a local kubeconfig).
+		d.Kubeconfig = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeStatus(w, http.StatusServiceUnavailable, "ServiceUnavailable",
+				"kubeconfig download is unavailable (single-operator mode)")
+		})
 	}
 	a := &api{d: d, pf: newPFRegistry()}
 	return auth.Middleware(http.HandlerFunc(a.route))
@@ -151,6 +160,10 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 	case "servicemap":
 		// ServiceMap owns its own method handling (GET/PUT, 405 otherwise).
 		a.d.ServiceMap.ServeHTTP(w, r)
+	case "kubeconfig":
+		// Kubeconfig owns its own method/identity/HTTPS handling. Inside the /api
+		// gate, so an unauthenticated caller is already 401'd by the middleware.
+		a.d.Kubeconfig.ServeHTTP(w, r)
 	default:
 		a.resource(w, r, segs)
 	}

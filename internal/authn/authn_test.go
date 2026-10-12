@@ -21,10 +21,25 @@ type fakeOAuth struct {
 	exchErr  error
 	ts       oauth2.TokenSource
 	lastCode string
+
+	pwToken            *oauth2.Token
+	pwErr              error
+	lastUser, lastPass string
 }
 
-func (f *fakeOAuth) AuthCodeURL(state string, _ ...oauth2.AuthCodeOption) string {
-	return "https://idp.example.com/authorize?state=" + state
+func (f *fakeOAuth) PasswordCredentialsToken(_ context.Context, u, p string) (*oauth2.Token, error) {
+	f.lastUser, f.lastPass = u, p
+	if f.pwErr != nil {
+		return nil, f.pwErr
+	}
+	return f.pwToken, nil
+}
+
+func (f *fakeOAuth) AuthCodeURL(state string, opts ...oauth2.AuthCodeOption) string {
+	// Render through a real throwaway config so applied opts (connector_id, nonce)
+	// become visible in the returned URL — exercised via the public API only.
+	real := &oauth2.Config{Endpoint: oauth2.Endpoint{AuthURL: "https://idp.example.com/authorize"}}
+	return real.AuthCodeURL(state, opts...)
 }
 func (f *fakeOAuth) Exchange(_ context.Context, code string, _ ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	f.lastCode = code

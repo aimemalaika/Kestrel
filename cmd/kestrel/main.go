@@ -20,6 +20,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/helm"
 	"github.com/aimemalaika/Kestrel/internal/httpapi"
 	"github.com/aimemalaika/Kestrel/internal/k8s"
+	kubeconfigsvc "github.com/aimemalaika/Kestrel/internal/kubeconfig"
 	"github.com/aimemalaika/Kestrel/internal/obs"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
@@ -51,6 +52,9 @@ func main() {
 	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback)")
 	oidcGroupsClaim := flag.String("oidc-groups-claim", "groups", "id_token claim carrying the user's groups")
 	oidcUsernameClaim := flag.String("oidc-username-claim", "email", "id_token claim used for the display username")
+	oidcGitHubConnector := flag.String("oidc-github-connector", "", "Dex/Keycloak connector id for the \"Log in with GitHub\" option; empty hides it (the broker handles the GitHub OAuth + org→groups mapping)")
+	oidcPasswordConnector := flag.String("oidc-password-connector", "", "connector id for the username/password option (redirect-to-IdP); empty + --oidc-password-enable=false hides it")
+	oidcPasswordEnable := flag.Bool("oidc-password-enable", false, "enable the native username/password form (ROPC relay to the broker token endpoint); use only when a redirect connector is not viable")
 	sessionKey := flag.String("session-key", "", "HMAC key for session cookies (falls back to $KESTREL_SESSION_KEY when empty); empty generates a random key (sessions won't survive restart)")
 
 	tlsCert := flag.String("tls-cert", "", "TLS certificate file; with --tls-key, serve HTTPS")
@@ -156,6 +160,24 @@ func main() {
 		deps.Logs = k8s.NewRealLogs(acc)
 		deps.Exec = k8s.NewRealExec(acc)
 		deps.PortForward = k8s.NewRealPortForward(acc)
+		// Per-user kubeconfig download only makes sense with OIDC (a real user
+		// identity + id_token). Host/CA come from the live rest.Config, never literals.
+		if *oidcIssuer != "" {
+			caData := cfg.CAData
+			if len(caData) == 0 && cfg.CAFile != "" {
+				if b, readErr := os.ReadFile(cfg.CAFile); readErr == nil {
+					caData = b
+				}
+			}
+			deps.Kubeconfig = kubeconfigsvc.Handler(kubeconfigsvc.Config{
+				Issuer:      *oidcIssuer,
+				ClientID:    *oidcClientID,
+				APIServer:   cfg.Host,
+				CAData:      caData,
+				ClusterName: deps.ClusterName,
+				TrustProxy:  *trustedProxy,
+			})
+		}
 		slog.Info("connected to cluster", slog.String("host", cfg.Host))
 	} else {
 		deps.Resources = resource.NewServiceWith(k8s.Stub{}, protected, auditor)
@@ -197,12 +219,23 @@ func main() {
 		mux.HandleFunc("/auth/login", authr.Login)
 		mux.HandleFunc("/auth/callback", authr.Callback)
 		mux.HandleFunc("/auth/logout", authr.Logout)
+		// Native username/password (ROPC) endpoint, only when the operator enabled
+		// the native form. It enforces POST itself (credentials never in a URL) and
+		// is on the bare mux outside /api/, like the other /auth/* routes.
+		if *oidcPasswordEnable {
+			mux.HandleFunc("/auth/password", authr.PasswordLogin)
+		}
 		// Unauthenticated discovery endpoint (outside the /api/ authn gate, like
 		// /healthz and /auth/*) so the SPA can learn the mode + login options and
-		// the current user (best-effort, when a session is present).
+		// the current user (best-effort, when a session is present). Options are
+		// built purely from flags — the operator must enable at least one method.
 		mux.Handle("/authinfo", authn.AuthInfoHandler(authn.AuthInfo{
-			Mode:    "oidc",
-			Options: []authn.AuthOption{{ID: "oidc", Label: "Log in", Start: "/auth/login"}},
+			Mode: "oidc",
+			Options: authn.BuildOptions(authn.OptionsConfig{
+				GitHubConnector:   *oidcGitHubConnector,
+				PasswordConnector: *oidcPasswordConnector,
+				PasswordEnable:    *oidcPasswordEnable,
+			}),
 		}, authr))
 		authnMW = authr.Middleware
 		slog.Info("OIDC login enabled; forwarding user id_tokens to the apiserver",

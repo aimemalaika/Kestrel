@@ -89,6 +89,77 @@ When an Ingress or reverse proxy terminates TLS in front of Kestrel, also set
 `X-Forwarded-For` is used for rate limiting and request logs. Only enable it when
 something in front actually rewrites those headers.
 
+## Login with GitHub (via a Dex/Keycloak broker)
+
+GitHub is **not** a Kubernetes OIDC issuer — its OAuth tokens are opaque, not
+verifiable `id_token`s the apiserver can check. So "Log in with GitHub" is done
+through a **broker** (Dex or Keycloak) that Kestrel's `--oidc-issuer` points at:
+
+- The broker runs the GitHub OAuth, maps GitHub **org/team → the `groups` claim**,
+  and mints a standard OIDC `id_token` signed by the broker.
+- The **GitHub org/enterprise slug and GitHub OAuth client-id/secret live only in
+  the broker** — never in Kestrel.
+- Kestrel's only new knowledge is *which connector to pre-select*, passed as a
+  non-secret connector id:
+
+```sh
+kestrel \
+  --oidc-issuer https://dex.example.com \
+  --oidc-client-id kestrel \
+  --oidc-github-connector github      # advertises "Log in with GitHub"
+```
+
+Clicking the button sends the user to `/auth/login?connector=github`, which
+forwards `connector_id=github` to the broker (Dex's connector-selection param).
+
+Example Dex connector:
+
+```yaml
+connectors:
+  - type: github
+    id: github
+    name: GitHub
+    config:
+      clientID: $GITHUB_CLIENT_ID
+      clientSecret: $GITHUB_CLIENT_SECRET
+      orgs:
+        - name: your-org
+```
+
+> **Same hard requirement as above:** the kube-apiserver must trust the **broker**
+> issuer (`--oidc-issuer-url=https://dex.example.com`). Otherwise login succeeds
+> but every `/api` call 401s at the apiserver. This is the #1 cause of "login
+> works but nothing loads".
+
+## Username & password
+
+Two ways, both through the broker:
+
+- **Preferred — redirect connector** (`--oidc-password-connector <id>`): the user
+  is sent to the broker's own login page (e.g. an LDAP or Keycloak connector). No
+  credentials ever touch Kestrel.
+- **Fallback — native form** (`--oidc-password-enable`): Kestrel renders a
+  username/password form and relays the credentials to the broker's token
+  endpoint via the OAuth2 **Resource-Owner-Password (ROPC)** grant, over TLS, in
+  the POST body only (never logged, never in a URL). ROPC is discouraged by
+  OAuth 2.1 and **not supported by GitHub-via-Dex** — use it only against a
+  connector that supports the password grant (Keycloak direct-access-grants,
+  LDAP). Kestrel stores no passwords.
+
+## Download kubeconfig / copy login command
+
+A logged-in user can, from the user menu (OIDC mode only):
+
+- **Download kubeconfig** — a kubeconfig wired to the `kubectl oidc-login`
+  (kubelogin) exec plugin against the same issuer/client-id. It carries **no
+  bearer token**; `kubectl` triggers a fresh login. Install kubelogin
+  (`kubectl krew install oidc-login`) to use it.
+- **Copy login command** — a one-shot `kubectl config …` embedding the user's
+  **own** short-lived `id_token`.
+
+Both endpoints are **HTTPS-only** (or `--trusted-proxy` + `X-Forwarded-Proto:
+https`), serve the caller's own identity only, and refuse over plain HTTP.
+
 ## Note on the informer cache vs. per-user view
 
 Kestrel's live catalog and SSE streams are filled by a shared informer that

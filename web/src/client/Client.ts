@@ -25,6 +25,9 @@ export interface Client {
   catalog(): Promise<CatalogEntry[]>
   clusterInfo(): Promise<ClusterInfo>
   authInfo(): Promise<AuthInfo>
+  passwordLogin(username: string, password: string): Promise<void>
+  kubeconfigUrl(): string
+  loginCommand(): Promise<{ command: string }>
   get(ref: ResourceRef): Promise<K8sObject>
   apply(obj: K8sObject, opts?: { dryRun?: boolean }): Promise<K8sObject>
   delete(ref: ResourceRef, opts?: { dryRun?: boolean }): Promise<void>
