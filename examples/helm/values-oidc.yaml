@@ -52,6 +52,20 @@ config:
     # passwordConnector: "ldap"  # or a redirect-to-IdP password connector instead
     # The OIDC client secret is NOT set here — it comes from existingSecret below.
 
+# --- Option B: bundled Dex (no external broker) ---------------------------
+# Instead of pointing config.oidc.issuer at your own broker, let the chart run
+# Dex in-cluster on this same host under /dex. Then you do NOT set config.oidc.*.
+#   dex:
+#     enabled: true
+#     admin:
+#       user: admin@example.com
+#       password: ""            # generated + printed in NOTES if empty
+#       groups: [kestrel-admins]
+#     github:
+#       clientId: ""            # set + clientSecret to add "Log in with GitHub"
+# (ingress.host + TLS required; the apiserver must trust https://<host>/dex —
+#  see examples/oidc/apiserver-trust.md.)
+
   registry:
     url: "https://registry.example.com"
     username: "robot"

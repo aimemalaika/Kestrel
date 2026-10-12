@@ -62,6 +62,16 @@ spec:
             # via get/list). See rbac.excludeSecrets in values.yaml.
             - --no-watch-resources=secrets
             {{- end }}
+            {{- if .Values.dex.enabled }}
+            - --oidc-issuer={{ include "kestrel.dexIssuer" . }}
+            - --oidc-client-id={{ .Values.dex.clientId }}
+            {{- if .Values.dex.admin.enabled }}
+            - --oidc-password-enable
+            {{- end }}
+            {{- if .Values.dex.github.clientId }}
+            - --oidc-github-connector=github
+            {{- end }}
+            {{- else }}
             {{- with .Values.config.oidc.issuer }}
             - --oidc-issuer={{ . }}
             {{- end }}
@@ -85,6 +95,7 @@ spec:
             {{- end }}
             {{- if .Values.config.oidc.passwordEnable }}
             - --oidc-password-enable
+            {{- end }}
             {{- end }}
             {{- if .Values.config.tls.enabled }}
             - --tls-cert={{ .Values.config.tls.certFile }}
@@ -112,7 +123,14 @@ spec:
           # var is used when the matching flag is empty, so the value never lands
           # on the process command line (not visible in `ps` or the pod spec).
           env:
-            {{- if .Values.config.oidc.issuer }}
+            {{- if .Values.dex.enabled }}
+            - name: KESTREL_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kestrel.dexFullname" . }}
+                  key: client-secret
+                  optional: true
+            {{- else if .Values.config.oidc.issuer }}
             - name: KESTREL_OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

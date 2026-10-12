@@ -1,0 +1,47 @@
+{{- if .Values.dex.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kestrel.dexFullname" . }}
+  labels:
+    {{- include "kestrel.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "kestrel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: dex
+  template:
+    metadata:
+      labels:
+        {{- include "kestrel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: dex
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/dex-configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "kestrel.dexFullname" . }}
+      containers:
+        - name: dex
+          image: {{ .Values.dex.image | quote }}
+          args: ["dex", "serve", "/etc/dex/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 5556
+          {{- if .Values.dex.github.clientId }}
+          env:
+            - name: GITHUB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kestrel.dexFullname" . }}
+                  key: github-client-secret
+                  optional: true
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dex
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kestrel.dexFullname" . }}
+{{- end }}

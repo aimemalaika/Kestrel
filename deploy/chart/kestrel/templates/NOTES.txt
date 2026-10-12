@@ -13,6 +13,24 @@ Kestrel {{ .Chart.AppVersion }} has been deployed as release "{{ .Release.Name }
   Kestrel forwards each user's token to the apiserver (token forwarding).
 {{- end }}
 
+{{- if .Values.dex.enabled }}
+
+  Bundled Dex is enabled. OIDC issuer:
+    {{ include "kestrel.dexIssuer" . }}
+
+  Log in at https://{{ .Values.ingress.host }}/ with:
+    user:     {{ .Values.dex.admin.user }}
+    password: {{ if .Values.dex.admin.password }}(as configured){{ else }}{{ include "kestrel.dexAdminPassword" . }}{{ end }}
+
+  >>> REQUIRED: the kube-apiserver must TRUST this issuer, or every /api call 401s.
+      Add to your cluster's source of truth (durable across upgrades):
+        --oidc-issuer-url={{ include "kestrel.dexIssuer" . }}
+        --oidc-client-id={{ .Values.dex.clientId }}
+        --oidc-username-claim=email  --oidc-groups-claim=groups
+      kubeadm: ClusterConfiguration.apiServer.extraArgs · Kubespray: kube_oidc_* vars
+      See examples/oidc/apiserver-trust.md.
+{{- end }}
+
 Access:
 {{- if .Values.ingress.enabled }}
 {{- if .Values.ingress.host }}

@@ -1,0 +1,212 @@
+# Dex storage CRDs (dexidp/dex v2.41.x storage/kubernetes/types.go). Installed once by
+# Helm from crds/ and never deleted or upgraded, so Dex's data survives helm upgrade.
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: authcodes.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: authcodes
+    singular: authcode
+    kind: AuthCode
+    listKind: AuthCodeList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: authrequests.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: authrequests
+    singular: authrequest
+    kind: AuthRequest
+    listKind: AuthRequestList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: oauth2clients.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: oauth2clients
+    singular: oauth2client
+    kind: OAuth2Client
+    listKind: OAuth2ClientList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: signingkeies.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: signingkeies
+    singular: signingkey
+    kind: SigningKey
+    listKind: SigningKeyList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: refreshtokens.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: refreshtokens
+    singular: refreshtoken
+    kind: RefreshToken
+    listKind: RefreshTokenList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: passwords.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: passwords
+    singular: password
+    kind: Password
+    listKind: PasswordList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: offlinesessionses.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: offlinesessionses
+    singular: offlinesessions
+    kind: OfflineSessions
+    listKind: OfflineSessionsList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: connectors.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: connectors
+    singular: connector
+    kind: Connector
+    listKind: ConnectorList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: devicerequests.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: devicerequests
+    singular: devicerequest
+    kind: DeviceRequest
+    listKind: DeviceRequestList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: devicetokens.dex.coreos.com
+spec:
+  group: dex.coreos.com
+  scope: Namespaced
+  names:
+    plural: devicetokens
+    singular: devicetoken
+    kind: DeviceToken
+    listKind: DeviceTokenList
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true

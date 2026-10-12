@@ -1,0 +1,17 @@
+{{- if .Values.dex.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kestrel.dexFullname" . }}
+  labels:
+    {{- include "kestrel.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "kestrel.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: dex
+  ports:
+    - name: http
+      port: 5556
+      targetPort: 5556
+{{- end }}
