@@ -86,10 +86,29 @@ go build ./... && go test -race ./internal/...
 
 # frontend
 cd web && npm ci
-npm run dev        # Vite dev server
+npm run dev        # Vite dev server (mock client — no backend needed)
 npm test           # vitest
 npm run build      # typecheck + production build
 ```
+
+### Dev mode (hot reload against a live cluster)
+
+Run the Go backend and the Vite dev server together: edit frontend code and it
+hot-reloads while talking to a **real cluster** (no SPA rebuild). Vite serves the
+UI and proxies `/api` (including SSE streams and exec/port-forward WebSockets) to
+the backend.
+
+```bash
+make dev        # backend (:8080, your kubeconfig) + Vite HMR → http://localhost:5173
+make dev-mock   # same, but the backend serves --mock stub data (no cluster)
+make dev-ui     # UI only, mock client, no backend (same as: cd web && npm run dev)
+make dev-api    # backend only on :8080
+```
+
+Open **http://localhost:5173** (not :8080). Under the hood `make dev` runs
+`go run ./cmd/kestrel` plus `npm run dev:live` (which pins `VITE_CLIENT=http` via
+`web/.env.live`); Ctrl-C stops both. Point at a backend on another port with
+`KESTREL_BACKEND=http://localhost:9000 make dev` (set `BACKEND_ADDR` to match).
 
 **The checks CI enforces** (run them before you push):
 
