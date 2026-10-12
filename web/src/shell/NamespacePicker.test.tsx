@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { NamespacePicker } from './NamespacePicker'
 
@@ -42,10 +42,16 @@ describe('NamespacePicker', () => {
     expect(screen.getByTestId('path').textContent).toBe('/ns/_all/core/v1/pods')
   })
 
-  it('navigates to bare /ns/<ns> when no resource is selected', async () => {
+  it('is hidden when there is no resource in scope (no gvr)', () => {
     renderAt('/ns/sonarqube')
-    const select = (await screen.findByRole('combobox')) as HTMLSelectElement
-    fireEvent.change(select, { target: { value: 'shop' } })
-    expect(screen.getByTestId('path').textContent).toBe('/ns/shop')
+    expect(screen.queryByRole('combobox', { name: /namespace/i })).toBeNull()
+  })
+
+  it('hides on a cluster-scoped resource view (e.g. PersistentVolumes)', async () => {
+    renderAt('/ns/_all/core/v1/persistentvolumes')
+    // Once the catalog resolves, a cluster-scoped resource hides the selector.
+    await waitFor(() => {
+      expect(screen.queryByRole('combobox', { name: /namespace/i })).toBeNull()
+    })
   })
 })

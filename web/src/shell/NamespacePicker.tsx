@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createClient } from '../client/createClient'
 import { useSelection } from '../state/selection'
+import type { CatalogEntry } from '../contract/types'
 
 export function NamespacePicker() {
   const [namespaces, setNamespaces] = useState<string[]>([])
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([])
   const { namespace, gvr } = useSelection()
   const navigate = useNavigate()
 
@@ -27,8 +29,29 @@ export function NamespacePicker() {
     return stop
   }, [])
 
+  useEffect(() => {
+    let active = true
+    createClient()
+      .catalog()
+      .then((c) => active && setCatalog(c))
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // The selector only makes sense on a namespaced-resource view. Hide it on every
+  // bespoke/cluster-scoped page (Overview, Projects, Nodes, Operators, Registry,
+  // Service Map, Cluster, API Explorer, Dashboards, …) — those have no gvr — and
+  // on cluster-scoped resources (PersistentVolumes, StorageClasses, CRDs, …).
+  if (!gvr) return null
+  const entry =
+    catalog.find((c) => c.resource === gvr.resource && c.group === gvr.group) ??
+    catalog.find((c) => c.resource === gvr.resource)
+  if (entry && !entry.namespaced) return null
+
   return (
-    <label className="flex items-center gap-2">
+    <label className="hidden md:flex items-center gap-2">
       <span className="sr-only">Namespace</span>
       <select
         aria-label="Namespace"
