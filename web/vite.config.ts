@@ -27,12 +27,19 @@ function keepDistPlaceholder(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), keepDistPlaceholder()],
-  // Proxy the API — including SSE streams and exec/port-forward WebSockets — to
-  // the Go backend, so `npm run dev:live` serves the SPA with HMR while talking
-  // to a real cluster. Harmless for `npm run dev` (mock client, never hits /api).
+  // Proxy the backend surfaces to the Go server so `npm run dev:live` serves the
+  // SPA with HMR while talking to a real backend:
+  //   /api       — resources, SSE streams, exec/port-forward WebSockets
+  //   /authinfo  — unauthenticated login-discovery (mode + options + current user)
+  //   /auth      — OIDC login/callback/logout + native password POST
+  // Without /authinfo and /auth here, the dev SPA can't reach the auth endpoints
+  // and the login screen falls back to "No login methods configured".
+  // Harmless for `npm run dev` (mock client, never hits the backend).
   server: {
     proxy: {
       '/api': { target: backend, changeOrigin: true, ws: true },
+      '/authinfo': { target: backend, changeOrigin: true },
+      '/auth': { target: backend, changeOrigin: true },
     },
   },
   test: { environment: 'jsdom', globals: true, setupFiles: ['./src/setupTests.ts'] },

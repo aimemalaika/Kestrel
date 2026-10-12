@@ -46,10 +46,10 @@ func main() {
 
 	// OIDC login + token forwarding. If --oidc-issuer is empty, OIDC is disabled
 	// and Kestrel runs as the single operator (its own ServiceAccount credentials).
-	oidcIssuer := flag.String("oidc-issuer", "", "OIDC issuer URL; empty disables login (single-operator mode)")
-	oidcClientID := flag.String("oidc-client-id", "", "OIDC client id")
+	oidcIssuer := flag.String("oidc-issuer", "", "OIDC issuer URL; empty disables login (single-operator mode). Falls back to $KESTREL_OIDC_ISSUER")
+	oidcClientID := flag.String("oidc-client-id", "", "OIDC client id. Falls back to $KESTREL_OIDC_CLIENT_ID")
 	oidcClientSecret := flag.String("oidc-client-secret", "", "OIDC client secret (falls back to $KESTREL_OIDC_CLIENT_SECRET when empty)")
-	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback)")
+	oidcRedirectURL := flag.String("oidc-redirect-url", "", "OIDC redirect URL (…/auth/callback). Falls back to $KESTREL_OIDC_REDIRECT_URL")
 	oidcGroupsClaim := flag.String("oidc-groups-claim", "groups", "id_token claim carrying the user's groups")
 	oidcUsernameClaim := flag.String("oidc-username-claim", "email", "id_token claim used for the display username")
 	oidcGitHubConnector := flag.String("oidc-github-connector", "", "Dex/Keycloak connector id for the \"Log in with GitHub\" option; empty hides it (the broker handles the GitHub OAuth + org→groups mapping). Falls back to $KESTREL_OIDC_GITHUB_CONNECTOR")
@@ -95,7 +95,11 @@ func main() {
 	sessionKeyVal := flagOrEnv(*sessionKey, "KESTREL_SESSION_KEY")
 	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
 	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
-	// Login-method config is env-sourceable too (config-free; flag wins when set).
+	// OIDC + login-method config is env-sourceable too (config-free; flag wins when
+	// set). The issuer being non-empty is what switches on OIDC mode.
+	oidcIssuerVal := flagOrEnv(*oidcIssuer, "KESTREL_OIDC_ISSUER")
+	oidcClientIDVal := flagOrEnv(*oidcClientID, "KESTREL_OIDC_CLIENT_ID")
+	oidcRedirectURLVal := flagOrEnv(*oidcRedirectURL, "KESTREL_OIDC_REDIRECT_URL")
 	oidcGitHubConnectorVal := flagOrEnv(*oidcGitHubConnector, "KESTREL_OIDC_GITHUB_CONNECTOR")
 	oidcPasswordConnectorVal := flagOrEnv(*oidcPasswordConnector, "KESTREL_OIDC_PASSWORD_CONNECTOR")
 	oidcPasswordEnableVal := *oidcPasswordEnable || envBool("KESTREL_OIDC_PASSWORD_ENABLE")
@@ -166,7 +170,7 @@ func main() {
 		deps.PortForward = k8s.NewRealPortForward(acc)
 		// Per-user kubeconfig download only makes sense with OIDC (a real user
 		// identity + id_token). Host/CA come from the live rest.Config, never literals.
-		if *oidcIssuer != "" {
+		if oidcIssuerVal != "" {
 			caData := cfg.CAData
 			if len(caData) == 0 && cfg.CAFile != "" {
 				if b, readErr := os.ReadFile(cfg.CAFile); readErr == nil {
@@ -174,8 +178,8 @@ func main() {
 				}
 			}
 			deps.Kubeconfig = kubeconfigsvc.Handler(kubeconfigsvc.Config{
-				Issuer:      *oidcIssuer,
-				ClientID:    *oidcClientID,
+				Issuer:      oidcIssuerVal,
+				ClientID:    oidcClientIDVal,
 				APIServer:   cfg.Host,
 				CAData:      caData,
 				ClusterName: deps.ClusterName,
@@ -205,13 +209,13 @@ func main() {
 
 	// authn is the outer middleware; nil when OIDC is disabled.
 	var authnMW func(http.Handler) http.Handler
-	if *oidcIssuer != "" {
+	if oidcIssuerVal != "" {
 		key := sessionKeyBytes(sessionKeyVal)
 		authr, err := authn.NewAuthenticator(context.Background(), authn.Config{
-			Issuer:        *oidcIssuer,
-			ClientID:      *oidcClientID,
+			Issuer:        oidcIssuerVal,
+			ClientID:      oidcClientIDVal,
 			ClientSecret:  oidcClientSecretVal,
-			RedirectURL:   *oidcRedirectURL,
+			RedirectURL:   oidcRedirectURLVal,
 			GroupsClaim:   *oidcGroupsClaim,
 			UsernameClaim: *oidcUsernameClaim,
 			TrustProxy:    *trustedProxy,
@@ -243,7 +247,7 @@ func main() {
 		}, authr))
 		authnMW = authr.Middleware
 		slog.Info("OIDC login enabled; forwarding user id_tokens to the apiserver",
-			slog.String("issuer", *oidcIssuer))
+			slog.String("issuer", oidcIssuerVal))
 		slog.Info("NOTE: the kube-apiserver must trust this SAME issuer for forwarded tokens to authenticate")
 	} else {
 		mux.Handle("/auth/", authn.NotConfiguredHandler())

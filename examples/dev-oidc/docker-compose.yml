@@ -1,0 +1,20 @@
+# Local Dex broker for Kestrel dev login. Start with:
+#   docker compose -f examples/dev-oidc/docker-compose.yml up -d
+# or just run `make dev-oidc` from the repo root, which brings this up for you.
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:v2.41.1
+    command: ["dex", "serve", "/etc/dex/dex.yaml"]
+    ports:
+      - "5556:5556"
+    volumes:
+      - ./dex.yaml:/etc/dex/dex.yaml:ro
+    # GitHub OAuth app credentials (optional). Set these in your shell before
+    # `make dev-oidc`/`docker compose up` to enable "Log in with GitHub". Empty
+    # is fine — the password form still works; the GitHub button just won't
+    # complete until these are set. The GitHub app's callback URL must be
+    # http://localhost:5556/dex/callback
+    environment:
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+    restart: unless-stopped

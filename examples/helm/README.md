@@ -53,7 +53,27 @@ helm install kestrel ../../deploy/chart/kestrel \
 ```
 
 > **Hard requirement:** the kube-apiserver must trust the **same** OIDC issuer
-> you set in `config.oidc.issuer`. See [`../oidc/`](../oidc/).
+> you set in `config.oidc.issuer` (a Dex/Keycloak broker). See [`../oidc/`](../oidc/).
+
+### Choosing login methods
+
+The sign-in screen offers exactly the methods you enable (the user picks one).
+Set them under `config.oidc` (see `values-oidc.yaml`):
+
+```yaml
+config:
+  oidc:
+    issuer: "https://dex.example.com"   # a Dex/Keycloak broker
+    clientId: "kestrel"
+    redirectUrl: "https://kestrel.example.com/auth/callback"
+    githubConnector: "github"           # shows "Log in with GitHub"
+    passwordEnable: true                # shows the native username/password form
+    # passwordConnector: "ldap"         # or a redirect-to-IdP password connector
+```
+
+The broker owns the GitHub OAuth app + org/team→groups mapping; Kestrel only
+names which connector to pre-select. Enable any combination; empty advertises
+nothing (you must enable at least one in OIDC mode).
 
 ## Key points about these values
 

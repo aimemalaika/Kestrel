@@ -36,30 +36,36 @@ The container runs as a non-root user with a read-only root filesystem, so mount
 inputs read-only (`:ro`). On a cluster you would normally use the in-cluster
 ServiceAccount via the Helm chart instead (see [`../helm/`](../helm/)).
 
-## Passing secrets via the environment
+## Passing config & secrets via the environment
 
-Sensitive flag values can be sourced from env vars rather than typed on the
-command line:
+Kestrel reads config **env-natively**: for most flags, a matching `KESTREL_*`
+environment variable is used when the flag is empty, so the value never lands on
+the process command line (not visible in `docker inspect` / `ps`). Prefer env for
+anything sensitive.
 
 ```sh
 docker run --rm -p 8080:8080 -p 9090:9090 \
-  -e SESSION_KEY \
-  -e REGISTRY_PASSWORD \
+  -e KESTREL_SESSION_KEY \
+  -e KESTREL_REGISTRY_PASSWORD \
   kestrel:1.0.0 \
   --kubeconfig /kube/config \
-  --session-key "$SESSION_KEY" \
   --registry-url https://registry.example.com \
-  --registry-username robot \
-  --registry-password "$REGISTRY_PASSWORD"
+  --registry-username robot
 ```
 
-> Note: Kestrel currently reads these as **flags**, so even when sourced from env
-> the value lands on the process command line (visible in `docker inspect` /
-> `ps`). Prefer a locked-down host. Env-native secret reading is a tracked
-> hardening follow-up.
+Common env vars (flag still wins when both are set):
 
-`--session-key` must be at least 32 bytes. If omitted, the binary generates a
-random key at startup and logs a warning (sessions won't survive a restart).
+| Setting | Env var |
+| --- | --- |
+| Session HMAC key | `KESTREL_SESSION_KEY` |
+| OIDC issuer / client-id / redirect | `KESTREL_OIDC_ISSUER` / `KESTREL_OIDC_CLIENT_ID` / `KESTREL_OIDC_REDIRECT_URL` |
+| OIDC client secret | `KESTREL_OIDC_CLIENT_SECRET` |
+| Login methods | `KESTREL_OIDC_GITHUB_CONNECTOR` / `KESTREL_OIDC_PASSWORD_CONNECTOR` / `KESTREL_OIDC_PASSWORD_ENABLE` |
+| Registry password | `KESTREL_REGISTRY_PASSWORD` |
+| Cluster display name | `KESTREL_CLUSTER_NAME` |
+
+`KESTREL_SESSION_KEY` must be at least 32 bytes. If omitted, the binary generates
+a random key at startup and logs a warning (sessions won't survive a restart).
 
 ## Mounting TLS certs (serve HTTPS in-container)
 
@@ -76,26 +82,31 @@ docker run --rm -p 8443:8443 -p 9090:9090 \
 Usually you terminate TLS at an ingress/reverse proxy instead; do that in the
 Helm deployment.
 
-## OIDC (multi-user) with Docker — note
+## OIDC (multi-user login) with Docker
 
-You *can* pass the `--oidc-*` flags to `docker run`, but OIDC multi-user mode is
-only useful when the **kube-apiserver trusts the same issuer** Kestrel logs users
-in against (see [`../oidc/`](../oidc/)), and you will also need a stable
-`--session-key` and a reachable `--oidc-redirect-url` (`…/auth/callback`). Behind
-a reverse proxy, add `--trusted-proxy` so the real client IP is honored. For
-real multi-user deployments use the Helm chart (see [`../helm/`](../helm/)).
+OIDC multi-user mode is only useful when the **kube-apiserver trusts the same
+issuer** Kestrel logs users in against — a Dex/Keycloak broker (see
+[`../oidc/`](../oidc/) for the full broker + apiserver-trust guide). You choose
+which **login methods** to advertise; the user picks one on the sign-in screen.
 
-Example (single container behind a TLS-terminating proxy):
+Everything is env-configurable (nothing hardcoded). Behind a TLS-terminating
+proxy, add `--trusted-proxy`:
 
 ```sh
 docker run --rm -p 8080:8080 -p 9090:9090 \
-  -e OIDC_CLIENT_SECRET -e SESSION_KEY \
+  -e KESTREL_OIDC_CLIENT_SECRET -e KESTREL_SESSION_KEY \
+  -e KESTREL_OIDC_ISSUER=https://dex.example.com \
+  -e KESTREL_OIDC_CLIENT_ID=kestrel \
+  -e KESTREL_OIDC_REDIRECT_URL=https://kestrel.example.com/auth/callback \
+  -e KESTREL_OIDC_GITHUB_CONNECTOR=github \
+  -e KESTREL_OIDC_PASSWORD_ENABLE=true \
   kestrel:1.0.0 \
   --kubeconfig /kube/config \
-  --oidc-issuer https://issuer.example.com \
-  --oidc-client-id kestrel \
-  --oidc-client-secret "$OIDC_CLIENT_SECRET" \
-  --oidc-redirect-url https://kestrel.example.com/auth/callback \
-  --session-key "$SESSION_KEY" \
   --trusted-proxy
 ```
+
+This advertises **both** "Log in with GitHub" and a username/password form —
+drop either env var to hide that method. For real multi-user deployments prefer
+the Helm chart (see [`../helm/`](../helm/)). To just try the login flow locally
+without a real broker/cluster, see [`../dev-oidc/`](../dev-oidc/) (local Dex +
+`make dev-oidc`).

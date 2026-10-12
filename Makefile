@@ -16,7 +16,7 @@ BACKEND_ADDR ?= :8080
 # (-> localhost:8080); override if you bind a specific host in BACKEND_ADDR.
 HEALTH_URL ?= http://localhost$(BACKEND_ADDR)/healthz
 
-.PHONY: dev dev-mock dev-api dev-ui build
+.PHONY: dev dev-mock dev-oidc dev-api dev-ui build
 
 dev-api:
 	go run ./cmd/kestrel --addr $(BACKEND_ADDR)
@@ -41,6 +41,37 @@ dev:
 dev-mock:
 	@echo "Kestrel dev (mock backend): backend $(BACKEND_ADDR) + Vite (HMR) -> http://localhost:5173"
 	@trap 'kill 0' EXIT INT TERM; \
+	  go run ./cmd/kestrel --addr $(BACKEND_ADDR) --mock & \
+	  printf 'waiting for backend '; \
+	  for i in $$(seq 1 120); do \
+	    curl -sf $(HEALTH_URL) >/dev/null 2>&1 && { echo 'ready'; break; }; \
+	    printf '.'; sleep 0.5; \
+	  done; \
+	  ( cd web && npm run dev:live ); \
+	  wait
+
+# Dev with real OIDC login via a local Dex broker (mock backend so /api returns
+# stub data and forwarded tokens don't 401 at a real apiserver). Log in at
+# http://localhost:5173 with the native password form: dev@kestrel.local / password.
+dev-oidc:
+	@echo "Starting local Dex (examples/dev-oidc) ..."
+	@docker compose -f examples/dev-oidc/docker-compose.yml up -d
+	@printf 'waiting for Dex '; \
+	  for i in $$(seq 1 60); do \
+	    curl -sf http://localhost:5556/dex/.well-known/openid-configuration >/dev/null 2>&1 && { echo 'ready'; break; }; \
+	    printf '.'; sleep 0.5; \
+	  done
+	@echo "Kestrel dev (OIDC): mock backend $(BACKEND_ADDR) + Vite (HMR) -> http://localhost:5173"
+	@echo "Login methods: username/password (dev@kestrel.local / password) and GitHub."
+	@echo "GitHub needs a GitHub OAuth app: export GITHUB_CLIENT_ID/GITHUB_CLIENT_SECRET first (see examples/dev-oidc/README.md)."
+	@trap 'kill 0' EXIT INT TERM; \
+	  KESTREL_OIDC_ISSUER=http://localhost:5556/dex \
+	  KESTREL_OIDC_CLIENT_ID=kestrel \
+	  KESTREL_OIDC_CLIENT_SECRET=kestrel-dev-secret \
+	  KESTREL_OIDC_REDIRECT_URL=http://localhost:5173/auth/callback \
+	  KESTREL_OIDC_PASSWORD_ENABLE=true \
+	  KESTREL_OIDC_GITHUB_CONNECTOR=github \
+	  KESTREL_SESSION_KEY=kestrel-dev-session-key-0123456789ab \
 	  go run ./cmd/kestrel --addr $(BACKEND_ADDR) --mock & \
 	  printf 'waiting for backend '; \
 	  for i in $$(seq 1 120); do \
