@@ -1,4 +1,5 @@
 export * from './Icon'
+export * from './Modal'
 export * from './badges'
 export * from './primitives'
 export * from './Table'

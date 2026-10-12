@@ -33,6 +33,13 @@ function score(text: string, q: string): number {
 const MIN_SCORE = 0.5 // results below this are dropped
 const MAX = 50
 
+// True when the event target is an editable element, so a typed "/" is left alone.
+function isEditableTarget(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+}
+
 export function CommandPalette() {
   const navigate = useNavigate()
   const match = useMatch('/ns/:namespace/:group/:version/:resource/*')
@@ -57,6 +64,16 @@ export function CommandPalette() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setOpen((o) => !o)
+      } else if (
+        e.key === '/' &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !isEditableTarget(e.target)
+      ) {
+        // "/" opens global search (unless typing in a field), matching the ui/ mock.
+        e.preventDefault()
+        setOpen(true)
       } else if (e.key === 'Escape') {
         setOpen(false)
       }

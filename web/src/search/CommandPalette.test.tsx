@@ -49,6 +49,22 @@ describe('CommandPalette', () => {
     expect(navigate).toHaveBeenCalledWith('/ns/default/core/v1/pods/web-2')
   })
 
+  it('opens on "/" when not typing in a field', () => {
+    setup()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    fireEvent.keyDown(window, { key: '/' })
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('does not open on "/" typed inside a text input', () => {
+    setup()
+    const input = document.createElement('input')
+    document.body.appendChild(input)
+    fireEvent.keyDown(input, { key: '/' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    input.remove()
+  })
+
   it('shows "No results" for a query that matches no kind', async () => {
     setup()
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true })

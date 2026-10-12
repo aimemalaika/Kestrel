@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { OperatorsView } from './OperatorsView'
-import { Card, Icon, FilterBar, EmptyState } from '../ui'
+import { Card, Icon, FilterBar, EmptyState, Modal, PrimaryBtn, SecondaryBtn } from '../ui'
+import { useToast } from '../toast/ToastProvider'
 
 interface CatalogItem {
   name: string
   provider: string
   category: string
   desc: string
+  channel?: string // default 'stable'
+  installMode?: string // default 'All namespaces'
 }
 
 const CATEGORIES = ['All', 'AI/ML', 'Databases', 'Networking', 'Monitoring', 'Security', 'Storage']
@@ -68,8 +71,11 @@ export function OperatorHubView() {
 }
 
 export function OperatorHubCatalog() {
+  const notify = useToast()
   const [q, setQ] = useState('')
   const [cat, setCat] = useState('All')
+  const [selected, setSelected] = useState<CatalogItem | null>(null)
+  const [installed, setInstalled] = useState<string[]>([])
   const needle = q.toLowerCase()
   const items = CATALOG.filter(
     (i) =>
@@ -105,21 +111,75 @@ export function OperatorHubCatalog() {
         />
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {items.map((item) => (
-            <Card key={item.name} className="p-3 hover:border-zinc-600 transition-colors">
-              <div className="w-8 h-8 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center mb-2">
-                <Icon name="puzzle" className="w-4 h-4 text-zinc-500" />
-              </div>
-              <p className="text-xs font-semibold text-zinc-200 mb-0.5">{item.name}</p>
-              <p className="text-[10px] text-zinc-500 mb-1">{item.provider}</p>
-              <p className="text-[10px] text-zinc-600 leading-relaxed">{item.desc}</p>
-              <span className="text-[9px] mt-2 inline-block px-1.5 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-zinc-500">
-                {item.category}
-              </span>
-            </Card>
-          ))}
+          {items.map((item) => {
+            const isInstalled = installed.includes(item.name)
+            return (
+              <button
+                key={item.name}
+                type="button"
+                onClick={() => setSelected(item)}
+                className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 rounded-xl"
+              >
+                <Card className="p-3 h-full hover:border-zinc-600 transition-colors">
+                  <div className="w-8 h-8 rounded-md bg-zinc-800 border border-zinc-700 flex items-center justify-center mb-2">
+                    <Icon name="puzzle" className="w-4 h-4 text-zinc-500" />
+                  </div>
+                  <p className="text-xs font-semibold text-zinc-200 mb-0.5">{item.name}</p>
+                  <p className="text-[10px] text-zinc-500 mb-1">{item.provider}</p>
+                  <p className="text-[10px] text-zinc-600 leading-relaxed">{item.desc}</p>
+                  <span
+                    className={`text-[9px] mt-2 inline-block px-1.5 py-0.5 rounded border ${
+                      isInstalled
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                        : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+                    }`}
+                  >
+                    {isInstalled ? 'Installed' : item.category}
+                  </span>
+                </Card>
+              </button>
+            )
+          })}
         </div>
       )}
+
+      <Modal
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected?.name ?? ''}
+        description={selected ? `Provided by ${selected.provider}` : undefined}
+        footer={
+          selected && (
+            <>
+              <SecondaryBtn onClick={() => setSelected(null)}>Cancel</SecondaryBtn>
+              <PrimaryBtn
+                onClick={() => {
+                  const name = selected.name
+                  setInstalled((prev) => (prev.includes(name) ? prev : [...prev, name]))
+                  notify('ok', `${name} installed`)
+                  setSelected(null)
+                }}
+              >
+                {selected && installed.includes(selected.name) ? 'Reinstall' : 'Install'}
+              </PrimaryBtn>
+            </>
+          )
+        }
+      >
+        {selected && (
+          <div className="space-y-3">
+            <p className="m-0 text-zinc-400">{selected.desc}</p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 m-0 text-xs">
+              <dt className="text-zinc-500">Channel</dt>
+              <dd className="m-0 text-zinc-200">{selected.channel ?? 'stable'}</dd>
+              <dt className="text-zinc-500">Install mode</dt>
+              <dd className="m-0 text-zinc-200">{selected.installMode ?? 'All namespaces'}</dd>
+              <dt className="text-zinc-500">Category</dt>
+              <dd className="m-0 text-zinc-200">{selected.category}</dd>
+            </dl>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
