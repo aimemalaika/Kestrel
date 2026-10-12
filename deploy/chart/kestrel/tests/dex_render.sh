@@ -77,4 +77,22 @@ echo "$noadmin" | grep -q "enablePasswordDB" && fail "password DB emitted with a
 # dex disabled + no secret.create => chart creates no session-key Secret
 tmpl | grep -q "session-key:" && fail "session key Secret rendered without dex/secret.create"
 
+# --- selfSigned + dex: backend trusts the generated CA (#208) ---
+SS=(--set dex.enabled=true --set ingress.host=k.example.com --set ingress.enabled=true \
+    --set ingress.className=nginx --set ingress.tls.mode=selfSigned --set dex.clientSecret=s --set dex.admin.password=pw)
+ssout="$(tmpl --include-crds "${SS[@]}")"
+echo "$ssout" | grep -q -- "--oidc-ca-file=/etc/kestrel/oidc-ca/ca.crt" || fail "oidc-ca-file flag not wired for selfSigned+dex"
+echo "$ssout" | grep -q "mountPath: /etc/kestrel/oidc-ca" || fail "oidc CA volume not mounted"
+echo "$ssout" | grep -A4 "name: oidc-ca" | grep -q "key: tls.crt" || fail "oidc CA not sourced from tls.crt"
+
+# non-selfSigned enabled render must NOT carry the ca-file flag
+echo "$out" | grep -q -- "--oidc-ca-file" && fail "oidc-ca-file wired without selfSigned mode"
+
+# selfSigned but ingress disabled => no TLS Secret exists, so the CA mount/flag
+# must NOT render (else the pod mounts a missing Secret and never starts).
+niout="$(tmpl --include-crds --set dex.enabled=true --set ingress.host=k.example.com \
+    --set ingress.enabled=false --set ingress.tls.mode=selfSigned --set dex.clientSecret=s --set dex.admin.password=pw)"
+echo "$niout" | grep -q -- "--oidc-ca-file" && fail "oidc-ca-file wired while ingress disabled (no TLS Secret)"
+echo "$niout" | grep -q "name: oidc-ca" && fail "oidc-ca volume rendered while ingress disabled (missing Secret)"
+
 echo "ALL DEX RENDER TESTS PASSED"

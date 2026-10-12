@@ -65,6 +65,12 @@ spec:
             {{- if .Values.dex.enabled }}
             - --oidc-issuer={{ include "kestrel.dexIssuer" . }}
             - --oidc-client-id={{ .Values.dex.clientId }}
+            {{- if and .Values.ingress.enabled (eq (include "kestrel.ingressTLSMode" .) "selfSigned") }}
+            # Trust the chart-generated self-signed issuer cert for backend OIDC
+            # calls (discovery/JWKS/token). The cert is mounted below. Gated on
+            # ingress.enabled to match tls-secret.yaml (which creates the Secret).
+            - --oidc-ca-file=/etc/kestrel/oidc-ca/ca.crt
+            {{- end }}
             {{- if .Values.dex.admin.enabled }}
             - --oidc-password-enable
             {{- end }}
@@ -181,6 +187,11 @@ spec:
               mountPath: {{ dir .Values.config.tls.certFile }}
               readOnly: true
             {{- end }}
+            {{- if and .Values.ingress.enabled .Values.dex.enabled (eq (include "kestrel.ingressTLSMode" .) "selfSigned") }}
+            - name: oidc-ca
+              mountPath: /etc/kestrel/oidc-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
@@ -188,6 +199,14 @@ spec:
         - name: tls
           secret:
             secretName: {{ required "config.tls.existingSecret is required when config.tls.enabled" .Values.config.tls.existingSecret }}
+        {{- end }}
+        {{- if and .Values.ingress.enabled .Values.dex.enabled (eq (include "kestrel.ingressTLSMode" .) "selfSigned") }}
+        - name: oidc-ca
+          secret:
+            secretName: {{ include "kestrel.ingressTLSSecretName" . }}
+            items:
+              - key: tls.crt
+                path: ca.crt
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

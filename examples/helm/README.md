@@ -108,6 +108,8 @@ HTTPS):
   cert-manager dependency; stable across upgrades). Good for a self-contained
   addon. Clients (browser, `kubelogin`) and the kube-apiserver
   (`--oidc-ca-file`) must trust the CA.
+  The chart auto-mounts the generated CA into Kestrel and sets `--oidc-ca-file`, but the
+  apiserver and clients still need it; see [`../oidc/apiserver-trust.md`](../oidc/apiserver-trust.md).
 - `disabled` — no TLS.
 
 `ingress.tls.enabled: true` still works and maps to `secret` mode.

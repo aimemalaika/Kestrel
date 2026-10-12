@@ -11,6 +11,15 @@ import (
 	"golang.org/x/oauth2"
 )
 
+// clientCtx injects the CA-trusting HTTP client (when configured) so oauth2
+// token-endpoint calls trust the issuer cert, matching discovery/JWKS.
+func (a *Authenticator) clientCtx(ctx context.Context) context.Context {
+	if a.httpClient == nil {
+		return ctx
+	}
+	return oidc.ClientContext(ctx, a.httpClient)
+}
+
 // Login starts the authorization-code flow: it mints a signed state (carrying a
 // nonce) and redirects to the OIDC provider. An optional ?connector= pre-selects
 // a Dex/Keycloak connector (the backend itself puts this in the advertised
@@ -57,7 +66,7 @@ func (a *Authenticator) Callback(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "BadRequest", "missing authorization code")
 		return
 	}
-	tok, err := a.oauth.Exchange(r.Context(), code)
+	tok, err := a.oauth.Exchange(a.clientCtx(r.Context()), code)
 	if err != nil {
 		writeAuthError(w, http.StatusBadGateway, "BadGateway", "token exchange failed: "+err.Error())
 		return
@@ -120,7 +129,7 @@ func (a *Authenticator) PasswordLogin(w http.ResponseWriter, r *http.Request) {
 		writeAuthError(w, http.StatusBadRequest, "BadRequest", "username and password are required")
 		return
 	}
-	tok, err := a.oauth.PasswordCredentialsToken(r.Context(), user, pass)
+	tok, err := a.oauth.PasswordCredentialsToken(a.clientCtx(r.Context()), user, pass)
 	if err != nil {
 		// Generic message: never echo the broker error (and never log the creds).
 		writeAuthError(w, http.StatusUnauthorized, "Unauthorized", "invalid credentials")
@@ -185,7 +194,7 @@ func (a *Authenticator) currentToken(ctx context.Context, sess *session) (string
 	if sess.token == nil {
 		return sess.IDToken, nil
 	}
-	nt, err := a.oauth.TokenSource(ctx, sess.token).Token()
+	nt, err := a.oauth.TokenSource(a.clientCtx(ctx), sess.token).Token()
 	if err != nil {
 		return "", err
 	}
