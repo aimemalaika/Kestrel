@@ -2,9 +2,8 @@ import { useResourceStream } from '../table/useResourceStream'
 import { ageString, getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
 import { useInRouterContext, useNavigate } from 'react-router-dom'
-import { StatCard, Icon, Card, CardHeader, SecondaryBtn, SeverityBadge } from '../ui'
+import { StatCard, Icon, Card, CardHeader, SecondaryBtn } from '../ui'
 import { useNodeMetrics } from '../modules/observe/useNodeMetrics'
-import { firingAlerts } from '../modules/alerts/alertsMock'
 
 const PODS = { group: 'core', version: 'v1', resource: 'pods' }
 const DEPLOYMENTS = { group: 'apps', version: 'v1', resource: 'deployments' }
@@ -139,7 +138,6 @@ export function Overview() {
     podsByNs.set(ns, (podsByNs.get(ns) ?? 0) + 1)
   }
 
-  const alerts = firingAlerts()
   const healthy = notReady === 0
   const tiles = [
     {
@@ -188,13 +186,6 @@ export function Overview() {
       sub: `${routesAdmitted} admitted`,
       color: 'text-cyan-400',
       icon: 'route',
-    },
-    {
-      label: 'Alerts',
-      value: String(alerts.length),
-      sub: `${alerts.filter((a) => a.severity === 'critical').length} critical, ${alerts.filter((a) => a.severity === 'warning').length} warning`,
-      color: 'text-red-400',
-      icon: 'alert',
     },
   ]
 
@@ -356,28 +347,6 @@ export function Overview() {
                   </div>
                 )
               })}
-            </div>
-          </Card>
-
-          {/* Active alerts */}
-          <Card>
-            <CardHeader title="Active Alerts" />
-            <div className="divide-y divide-zinc-800/50">
-              {alerts.map((a) => (
-                <div key={a.id} className="flex items-start gap-3 px-4 py-2.5">
-                  <span className="shrink-0 mt-0.5">
-                    <SeverityBadge sev={a.severity} />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-zinc-300 truncate">{a.name}</p>
-                    <p className="text-[10px] text-zinc-600 mt-0.5 truncate">
-                      {a.namespace} · {a.component}
-                    </p>
-                  </div>
-                  <span className="text-[10px] text-zinc-600 shrink-0">{a.age}</span>
-                </div>
-              ))}
-              <p className="px-4 py-2 text-[10px] text-zinc-600">Sample data</p>
             </div>
           </Card>
         </div>

@@ -110,11 +110,8 @@ export const ADMIN_NAV: NavSection[] = [
   {
     section: 'Observe',
     items: [
-      { label: 'Dashboards', icon: 'chart', target: route('/dashboards') },
-      { label: 'Metrics', icon: 'metrics', target: route('/metrics') },
-      { label: 'Alerts', icon: 'alert', target: route('/alerts') },
+      { label: 'Cluster Summary', icon: 'chart', target: route('/dashboards') },
       { label: 'Events', icon: 'events', target: route('/events') },
-      { label: 'Targets', icon: 'metrics', target: route('/targets') },
       { label: 'Service Map', icon: 'topology', target: route('/servicemap') },
     ],
   },
@@ -185,11 +182,7 @@ export const DEV_NAV: NavSection[] = [
   },
   {
     section: 'Observe',
-    items: [
-      { label: 'Metrics', icon: 'metrics', target: route('/metrics') },
-      { label: 'Alerts', icon: 'alert', target: route('/alerts') },
-      { label: 'Events', icon: 'events', target: route('/events') },
-    ],
+    items: [{ label: 'Events', icon: 'events', target: route('/events') }],
   },
   {
     section: 'Configuration',

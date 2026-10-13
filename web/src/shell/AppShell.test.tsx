@@ -79,16 +79,13 @@ describe('AppShell', () => {
       expect(screen.getByRole('button', { name: /^Operators/ })).toBeInTheDocument()
     })
 
-    it('header has cluster pill, notifications dropdown and help', async () => {
+    it('header has cluster pill and help', async () => {
       renderShell()
       await screen.findByTestId('sidebar')
       expect(
         await within(screen.getByTestId('cluster-pill')).findByText('kestrel-mock'),
       ).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Help' })).toBeInTheDocument()
-      fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
-      expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeInTheDocument()
-      expect(screen.queryByText('No notifications')).toBeNull()
     })
 
     it('collapses the sidebar to an icon rail', async () => {

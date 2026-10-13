@@ -1,83 +1,95 @@
-import { AreaChart, Card, CardHeader, MiniBar, StatCard, ViewHeader } from '../ui'
+import { useResourceStream } from '../table/useResourceStream'
+import type { K8sObject } from '../contract/types'
+import { useNodeMetrics } from '../modules/observe/useNodeMetrics'
+import { Card, Icon, MiniBar, Mono, Table, TD, TR, ViewHeader } from '../ui'
 
-// Deterministic sample series (module-level constants; no randomness at render time).
-const PANELS = [
-  {
-    label: 'Cluster CPU',
-    icon: 'cpu',
-    color: 'text-sky-400',
-    stroke: '#38bdf8',
-    bar: 63,
-    value: '63%',
-    sub: '10.1 / 16 cores',
-    series: [34, 38, 36, 45, 52, 49, 61, 57, 66, 59, 62, 63],
-  },
-  {
-    label: 'Cluster Memory',
-    icon: 'memory',
-    color: 'text-violet-400',
-    stroke: '#a78bfa',
-    bar: 72,
-    value: '72%',
-    sub: '46 / 64 GiB',
-    series: [58, 59, 61, 60, 63, 65, 64, 67, 69, 68, 71, 72],
-  },
-  {
-    label: 'Network I/O',
-    icon: 'network',
-    color: 'text-cyan-400',
-    stroke: '#22d3ee',
-    bar: 38,
-    value: '98 MB/s',
-    sub: '58 in / 40 out',
-    series: [20, 35, 28, 52, 41, 77, 63, 48, 85, 60, 44, 58],
-  },
-  {
-    label: 'Pod count',
-    icon: 'pods',
-    color: 'text-emerald-400',
-    stroke: '#34d399',
-    bar: 54,
-    value: '54',
-    sub: '54 / 100 capacity',
-    series: [41, 42, 44, 44, 47, 49, 48, 51, 52, 52, 53, 54],
-  },
-]
+const NODES = { group: 'core', version: 'v1', resource: 'nodes' }
+
+const CARDS = [
+  { label: 'CPU %', key: 'cpu', bar: 'bg-violet-500' },
+  { label: 'Memory %', key: 'mem', bar: 'bg-emerald-500' },
+  { label: 'Storage %', key: 'storage', bar: 'bg-sky-500' },
+] as const
+
+function Cell({ value }: { value?: number }) {
+  return value === undefined ? (
+    <span className="text-xs text-zinc-500">n/a</span>
+  ) : (
+    <MiniBar value={value} className="w-24" />
+  )
+}
 
 export function DashboardsView() {
+  const metrics = useNodeMetrics()
+  const { rows } = useResourceStream(NODES, undefined)
+  const nodes = [...(rows as K8sObject[])].sort((a, b) =>
+    a.metadata.name.localeCompare(b.metadata.name),
+  )
+
   return (
-    <div>
-      <ViewHeader title="Dashboard" />
-      <p className="text-xs text-zinc-500 mb-4" role="note">
-        Sample data — no metrics source connected. Values below are illustrative.
-      </p>
-      <div
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-5"
-        data-testid="dashboard-stats"
-      >
-        {PANELS.map((p) => (
-          <StatCard
-            key={p.label}
-            label={p.label}
-            value={p.value}
-            sub={p.sub}
-            color={p.color}
-            icon={p.icon}
-          />
-        ))}
+    <div className="space-y-4">
+      <ViewHeader title="Cluster Summary" />
+      {!metrics.enabled && (
+        <p role="note" className="text-xs text-zinc-500">
+          No metrics source connected (set --prometheus-url).
+        </p>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4" data-testid="cluster-cards">
+        {CARDS.map((m) => {
+          const v = metrics.cluster[m.key]
+          const rounded = v === undefined ? undefined : Math.round(v)
+          return (
+            <Card key={m.label} className="p-4">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">{m.label}</p>
+              <p className="text-xl font-bold text-white mb-2">
+                {rounded === undefined ? 'n/a' : `${rounded}%`}
+              </p>
+              <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${m.bar} rounded-full`}
+                  style={{ width: `${rounded ?? 0}%` }}
+                />
+              </div>
+            </Card>
+          )
+        })}
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {PANELS.map((p) => (
-          <Card key={p.label}>
-            <CardHeader title={`${p.label} (last 1h)`} />
-            <div className="p-5 space-y-3">
-              <AreaChart data={p.series} color={p.stroke} width={400} height={80} />
-              <MiniBar value={p.bar} className="w-full" />
-              <p className="text-[10px] text-zinc-600">Sample data.</p>
-            </div>
-          </Card>
-        ))}
-      </div>
+      {metrics.grafanaUrl && (
+        <Card className="p-4 flex items-center justify-between gap-4">
+          <p className="text-xs text-zinc-400">
+            Detailed dashboards, app metrics, logs &amp; traces live in Grafana.
+          </p>
+          <a
+            href={metrics.grafanaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-400 hover:underline"
+          >
+            <Icon name="external" className="w-4 h-4" /> Open in Grafana
+          </a>
+        </Card>
+      )}
+      <Table aria-label="Node usage" headers={['Name', 'CPU %', 'Memory %', 'Storage %']}>
+        {nodes.map((n) => {
+          const m = metrics.byNode.get(n.metadata.name)
+          return (
+            <TR key={n.metadata.uid ?? n.metadata.name}>
+              <TD>
+                <Mono>{n.metadata.name}</Mono>
+              </TD>
+              <TD>
+                <Cell value={m?.cpu} />
+              </TD>
+              <TD>
+                <Cell value={m?.mem} />
+              </TD>
+              <TD>
+                <Cell value={m?.storage} />
+              </TD>
+            </TR>
+          )
+        })}
+      </Table>
     </div>
   )
 }
