@@ -35,7 +35,12 @@ export function SubjectMatrix({ subject, client }: { subject: SubjectRef; client
   if (!matrix) return <p className="text-sm text-zinc-500">Loading…</p>
 
   const f = filter.trim().toLowerCase()
-  const rows = matrix.resources.filter((r) => `${r.group}/${r.resource}`.toLowerCase().includes(f))
+  const visible = matrix.scopes
+    .map((sc) => ({
+      namespace: sc.namespace,
+      rows: sc.resources.filter((r) => `${r.group}/${r.resource}`.toLowerCase().includes(f)),
+    }))
+    .filter((sc) => sc.rows.length > 0)
 
   return (
     <div className="space-y-3">
@@ -43,15 +48,16 @@ export function SubjectMatrix({ subject, client }: { subject: SubjectRef; client
         Subject: <span className="font-mono text-zinc-200">{matrix.subject}</span>
       </div>
       <p className="text-[11px] text-zinc-600">
-        {kind === 'ServiceAccount'
-          ? "Effective permissions in this ServiceAccount's namespace and cluster-wide (SubjectAccessReview-confirmed). RoleBindings in other namespaces are not shown."
-          : kind === 'User'
-            ? `Direct grants to this User, cluster-wide and in the namespaces of its RoleBindings (SubjectAccessReview-confirmed). Access via group membership is shown under the respective Group.`
-            : `Effective permissions for this Group, cluster-wide and in the namespaces of its RoleBindings (SubjectAccessReview-confirmed).`}{' '}
-        Shown across up to the first bindings per cell; subjects bound in many namespaces may be
-        under-reported.
+        Permissions are SubjectAccessReview-confirmed per namespace and grouped by namespace or
+        cluster-wide.{' '}
+        {kind === 'User' && 'Access via group membership is shown under the respective Group.'}
       </p>
-      {matrix.resources.length === 0 ? (
+      {matrix.truncated && (
+        <p className="text-xs text-amber-400">
+          Results were truncated — this subject&apos;s access may be larger.
+        </p>
+      )}
+      {matrix.scopes.length === 0 ? (
         <p className="text-sm text-zinc-500">
           No permissions found, or you&apos;re not permitted to view them
         </p>
@@ -65,7 +71,26 @@ export function SubjectMatrix({ subject, client }: { subject: SubjectRef; client
             aria-label="Filter resources"
             className="w-full rounded bg-zinc-900 border border-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600"
           />
-          <MatrixTable rows={rows} showBindings />
+          {visible.length === 0 ? (
+            <p className="text-sm text-zinc-500">
+              No permissions found, or you&apos;re not permitted to view them
+            </p>
+          ) : (
+            visible.map((sc) => (
+              <section key={sc.namespace} className="space-y-1.5">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+                  {sc.namespace === '' ? (
+                    'Cluster-wide'
+                  ) : (
+                    <>
+                      Namespace: <span className="font-mono normal-case">{sc.namespace}</span>
+                    </>
+                  )}
+                </h3>
+                <MatrixTable rows={sc.rows} showBindings />
+              </section>
+            ))
+          )}
         </>
       )}
     </div>
