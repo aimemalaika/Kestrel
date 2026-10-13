@@ -135,8 +135,9 @@ export function createHttpClient(): Client {
       es.onerror = () => onEvent({ type: 'error', message: 'stream error' })
       return () => es.close()
     },
-    logs(ref, onLine): Unsubscribe {
-      const es = new EventSource(path(ref, ref.namespace, ref.name, '/api/logs'))
+    logs(ref, onLine, opts): Unsubscribe {
+      const q = opts?.container ? `?container=${encodeURIComponent(opts.container)}` : ''
+      const es = new EventSource(path(ref, ref.namespace, ref.name, '/api/logs') + q)
       es.onmessage = (e: MessageEvent) => onLine(e.data as string)
       return () => es.close()
     },

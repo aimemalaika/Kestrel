@@ -2,85 +2,21 @@ import { useState } from 'react'
 import { useResourceStream } from '../table/useResourceStream'
 import { Age } from '../table/Age'
 import { getPath } from '../table/columns'
+import { durationStr, runStatus, stagesFromRun } from '../modules/tekton/model'
 import type { K8sObject } from '../contract/types'
 import { Card, FilterBar, Icon, Mono, PrimaryBtn, StageViz, StatusBadge, ViewHeader } from '../ui'
 
 const PIPELINES = { group: 'tekton.dev', version: 'v1', resource: 'pipelines' }
+const TASKRUNS = { group: 'tekton.dev', version: 'v1', resource: 'taskruns' }
 const PIPELINERUNS = { group: 'tekton.dev', version: 'v1', resource: 'pipelineruns' }
 
-interface Step {
-  name?: string
-  status?: string
-}
-interface TaskRun {
-  name?: string
-  pipelineTaskName?: string
-  succeeded?: boolean
-  steps?: Step[]
-}
-interface Stage {
-  name: string
-  status: string
-  duration?: string
-}
-
-function arr<T>(v: unknown): T[] {
-  return Array.isArray(v) ? (v as T[]) : []
-}
-
-export function runStatus(run: K8sObject): string {
-  const cond = arr<{ type: string; status: string; reason?: string }>(
-    getPath(run, 'status.conditions'),
-  ).find((c) => c.type === 'Succeeded')
-  if (!cond) return 'Pending'
-  if (cond.status === 'True') return 'Succeeded'
-  if (cond.status === 'False') return /cancel/i.test(cond.reason ?? '') ? 'Cancelled' : 'Failed'
-  return 'Running'
-}
-
-function taskStatus(t: TaskRun, runState: string): string {
-  if (t.succeeded === true) return 'Succeeded'
-  if (t.succeeded === false) return 'Failed'
-  const steps = arr<Step>(t.steps)
-  if (steps.some((s) => s.status === 'Error')) return 'Failed'
-  if (steps.length > 0 && steps.every((s) => s.status === 'Completed')) return 'Succeeded'
-  return runState === 'Running' || steps.length > 0 ? 'Running' : 'Pending'
-}
-
-function fmtDuration(ms: number): string {
-  const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  return m < 60 ? `${m}m ${s % 60}s` : `${Math.floor(m / 60)}h ${m % 60}m`
-}
-
 function duration(run: K8sObject): string {
-  const start = getPath(run, 'status.startTime')
-  if (typeof start !== 'string') return '—'
-  const endRaw = getPath(run, 'status.completionTime')
-  const end = typeof endRaw === 'string' ? Date.parse(endRaw) : Date.now()
-  return fmtDuration(end - Date.parse(start))
-}
-
-export function stagesFor(run: K8sObject, pipelines: K8sObject[]): Stage[] {
-  const state = runStatus(run)
-  const stages: Stage[] = arr<TaskRun>(getPath(run, 'status.taskRuns')).map((t, i) => ({
-    name: t.pipelineTaskName ?? t.name ?? `task-${i + 1}`,
-    status: taskStatus(t, state),
-  }))
-  // Append not-yet-started tasks from the referenced Pipeline, if known.
-  const ref = getPath(run, 'spec.pipelineRef.name')
-  const pipeline = pipelines.find((p) => p.metadata.name === ref)
-  const seen = new Set(stages.map((s) => s.name))
-  for (const t of arr<{ name: string }>(getPath(pipeline ?? ({} as K8sObject), 'spec.tasks'))) {
-    if (!seen.has(t.name)) {
-      stages.push({
-        name: t.name,
-        status: state === 'Failed' || state === 'Cancelled' ? 'Skipped' : 'Pending',
-      })
-    }
-  }
-  return stages
+  return (
+    durationStr(
+      getPath(run, 'status.startTime') as string | undefined,
+      getPath(run, 'status.completionTime') as string | undefined,
+    ) ?? '—'
+  )
 }
 
 const STATUSES = ['All', 'Succeeded', 'Running', 'Failed', 'Cancelled']
@@ -90,6 +26,7 @@ export function PipelinesView() {
   const [status, setStatus] = useState('All')
   const runsStream = useResourceStream(PIPELINERUNS, undefined)
   const pipesStream = useResourceStream(PIPELINES, undefined)
+  const taskRunsStream = useResourceStream(TASKRUNS, undefined)
 
   const runs = [...runsStream.rows]
     .map((r) => ({ run: r, status: runStatus(r) }))
@@ -158,7 +95,7 @@ export function PipelinesView() {
                     <Icon name="refresh" className="w-3.5 h-3.5" />
                   </div>
                 </div>
-                <StageViz stages={stagesFor(run, pipesStream.rows)} />
+                <StageViz stages={stagesFromRun(run, taskRunsStream.rows, pipesStream.rows)} />
               </Card>
             </div>
           )

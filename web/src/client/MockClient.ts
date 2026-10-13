@@ -356,44 +356,126 @@ const CATALOG: CatalogEntry[] = [
   },
 ]
 
+interface MockStep {
+  name: string
+  exit?: number // terminated with this exit code
+  running?: boolean
+}
 interface MockTask {
   name: string
-  succeeded: boolean
-  steps: { name: string; status: 'Completed' | 'Error' }[]
+  state: 'ok' | 'fail' | 'running'
+  steps: MockStep[]
 }
 
-function pipelineRun(
+const ok = (name: string): MockStep => ({ name, exit: 0 })
+
+function taskRunObj(
+  prName: string,
+  ns: string,
+  t: MockTask,
+  startTime: string,
+  completionTime: string,
+): K8sObject {
+  const name = `${prName}-${t.name}`
+  const running = t.state === 'running'
+  return {
+    apiVersion: 'tekton.dev/v1',
+    kind: 'TaskRun',
+    metadata: {
+      name,
+      namespace: ns,
+      uid: `tr/${name}`,
+      creationTimestamp: startTime,
+      labels: { 'tekton.dev/pipelineRun': prName, 'tekton.dev/pipelineTask': t.name },
+    },
+    spec: {
+      taskRef: { name: t.name },
+      params: [{ name: 'task', value: t.name }],
+      workspaces: [{ name: 'source', persistentVolumeClaim: { claimName: `${prName}-ws` } }],
+    },
+    status: {
+      podName: `${name}-pod`,
+      startTime,
+      ...(running ? {} : { completionTime }),
+      conditions: [
+        {
+          type: 'Succeeded',
+          status: running ? 'Unknown' : t.state === 'ok' ? 'True' : 'False',
+          reason: running ? 'Running' : t.state === 'ok' ? 'Succeeded' : 'Failed',
+        },
+      ],
+      results: t.state === 'ok' ? [{ name: 'digest', value: `sha256:${t.name}` }] : [],
+      steps: t.steps.map((s) => ({
+        name: s.name,
+        container: `step-${s.name}`,
+        ...(s.running
+          ? { running: { startedAt: startTime } }
+          : s.exit !== undefined
+            ? {
+                terminated: {
+                  reason: s.exit === 0 ? 'Completed' : 'Error',
+                  exitCode: s.exit,
+                },
+              }
+            : {}),
+      })),
+    },
+  }
+}
+
+// A PipelineRun plus its real-shape TaskRun objects (linked via childReferences).
+function pipelineRunSeeds(
   name: string,
   ok: boolean,
   reason: string,
   startTime: string,
   completionTime: string,
-  taskRuns: MockTask[],
+  tasks: MockTask[],
   scan?: Record<string, number>,
   o: { ns?: string; trigger?: 'Push' | 'Manual' | 'Schedule'; running?: boolean } = {},
-): K8sObject {
+): [string, K8sObject][] {
   const running = o.running === true
-  return {
+  const ns = o.ns ?? 'default'
+  const run: K8sObject = {
     apiVersion: 'tekton.dev/v1',
     kind: 'PipelineRun',
     metadata: {
       name,
-      namespace: o.ns ?? 'default',
+      namespace: ns,
       uid: `pr/${name}`,
       creationTimestamp: startTime,
       ...(o.trigger ? { annotations: { 'tekton.dev/trigger': o.trigger } } : {}),
     },
-    spec: { pipelineRef: { name: 'build-and-push' } },
+    spec: {
+      pipelineRef: { name: 'build-and-push' },
+      params: [
+        { name: 'git-url', value: 'https://git.example.com/shop/web.git' },
+        { name: 'revision', value: 'main' },
+      ],
+      workspaces: [{ name: 'source', persistentVolumeClaim: { claimName: `${name}-ws` } }],
+    },
     status: {
       conditions: [
         { type: 'Succeeded', status: running ? 'Unknown' : ok ? 'True' : 'False', reason },
       ],
       startTime,
       ...(running ? {} : { completionTime }),
-      taskRuns,
+      childReferences: tasks.map((t) => ({
+        apiVersion: 'tekton.dev/v1',
+        kind: 'TaskRun',
+        name: `${name}-${t.name}`,
+        pipelineTaskName: t.name,
+      })),
       results: scan ? [{ name: 'image-SCAN_OUTPUT', value: JSON.stringify(scan) }] : [],
     },
   }
+  return [
+    [`pr/${name}`, run],
+    ...tasks.map((t): [string, K8sObject] => [
+      `tr/${name}-${t.name}`,
+      taskRunObj(name, ns, t, startTime, completionTime),
+    ]),
+  ]
 }
 
 interface PodOpts {
@@ -1256,18 +1338,45 @@ function moreSeeds(): K8sObject[] {
       spec: { steps: [{ name: 'build' }, { name: 'push' }] },
     }),
     gen(tkn, 'TaskRun', 'git-clone-run-1', 'shop', {
-      spec: { taskRef: { name: 'git-clone' } },
+      spec: {
+        taskRef: { name: 'git-clone' },
+        params: [{ name: 'url', value: 'https://git.example.com/shop/web.git' }],
+        workspaces: [{ name: 'output', emptyDir: {} }],
+      },
       status: {
+        podName: 'git-clone-run-1-pod',
         startTime: ts(1),
         completionTime: ts(2),
         conditions: [{ type: 'Succeeded', status: 'True', reason: 'Succeeded' }],
+        results: [{ name: 'commit', value: 'a1b2c3d' }],
+        steps: [
+          {
+            name: 'clone',
+            container: 'step-clone',
+            terminated: { reason: 'Completed', exitCode: 0 },
+          },
+        ],
       },
     }),
     gen(tkn, 'TaskRun', 'build-image-run-1', 'shop', {
-      spec: { taskRef: { name: 'build-image' } },
+      spec: {
+        taskRef: { name: 'build-image' },
+        params: [{ name: 'image', value: 'registry.example.com/shop/web:latest' }],
+        workspaces: [{ name: 'source', emptyDir: {} }],
+      },
       status: {
+        podName: 'build-image-run-1-pod',
         startTime: ts(3),
         conditions: [{ type: 'Succeeded', status: 'Unknown', reason: 'Running' }],
+        results: [],
+        steps: [
+          {
+            name: 'build',
+            container: 'step-build',
+            terminated: { reason: 'Completed', exitCode: 0 },
+          },
+          { name: 'push', container: 'step-push', running: { startedAt: ts(3) } },
+        ],
       },
     }),
     gen(tkn, 'Pipeline', 'build-and-deploy', 'shop', {
@@ -1276,6 +1385,16 @@ function moreSeeds(): K8sObject[] {
     gen(tkn, 'Pipeline', 'lint-and-test', 'default', {
       spec: { tasks: [{ name: 'lint' }, { name: 'test' }] },
     }),
+    // The Pipeline the seeded PipelineRuns reference (spec.pipelineRef.name),
+    // seeded in each namespace that has runs so the run detail can resolve the
+    // Pipeline spec and show not-yet-started tasks as Skipped/Pending.
+    ...['default', 'production', 'staging'].map((pns) =>
+      gen(tkn, 'Pipeline', 'build-and-push', pns, {
+        spec: {
+          tasks: [{ name: 'clone' }, { name: 'build' }, { name: 'scan' }, { name: 'deploy' }],
+        },
+      }),
+    ),
     gen(rbac, 'ClusterRole', 'cluster-reader', undefined, {
       rules: [{ apiGroups: ['*'], resources: ['*'], verbs: ['get', 'list', 'watch'] }],
     }),
@@ -1387,117 +1506,96 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
     ['ns/monitoring', ns('monitoring', 75, 'Monitoring Stack')],
     ['ns/ingress', ns('ingress', 100, 'Ingress Controllers')],
     ...genSeeds(),
-    [
-      'pr/build-101',
-      pipelineRun(
-        'build-101',
-        true,
-        'Succeeded',
-        '2026-10-08T08:00:00Z',
-        '2026-10-08T08:05:00Z',
-        [
-          {
-            name: 'clone',
-            succeeded: true,
-            steps: [{ name: 'git-clone', status: 'Completed' }],
-          },
-          {
-            name: 'build',
-            succeeded: true,
-            steps: [
-              { name: 'compile', status: 'Completed' },
-              { name: 'push', status: 'Completed' },
-            ],
-          },
-          { name: 'scan', succeeded: true, steps: [{ name: 'trivy', status: 'Completed' }] },
-        ],
-        { critical: 2, high: 5, medium: 3, low: 10 },
-      ),
-    ],
-    [
-      'pr/build-102',
-      pipelineRun('build-102', false, 'Failed', '2026-10-08T09:00:00Z', '2026-10-08T09:02:00Z', [
-        { name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] },
+    ...pipelineRunSeeds(
+      'build-101',
+      true,
+      'Succeeded',
+      '2026-10-08T08:00:00Z',
+      '2026-10-08T08:05:00Z',
+      [
+        { name: 'clone', state: 'ok', steps: [ok('git-clone')] },
+        { name: 'build', state: 'ok', steps: [ok('compile'), ok('push')] },
+        { name: 'scan', state: 'ok', steps: [ok('trivy')] },
+      ],
+      { critical: 2, high: 5, medium: 3, low: 10 },
+    ),
+    ...pipelineRunSeeds(
+      'build-102',
+      false,
+      'Failed',
+      '2026-10-08T09:00:00Z',
+      '2026-10-08T09:02:00Z',
+      [
+        { name: 'clone', state: 'ok', steps: [ok('git-clone')] },
         {
           name: 'build',
-          succeeded: false,
-          steps: [
-            { name: 'compile', status: 'Error' },
-            { name: 'push', status: 'Error' },
-          ],
+          state: 'fail',
+          steps: [{ name: 'compile', exit: 1 }, { name: 'push' }],
         },
-      ]),
-    ],
-    [
-      'pr/build-103',
-      pipelineRun(
-        'build-103',
-        true,
-        'Succeeded',
-        '2026-10-08T10:00:00Z',
-        '2026-10-08T10:04:00Z',
-        [
-          { name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] },
-          { name: 'scan', succeeded: true, steps: [{ name: 'trivy', status: 'Completed' }] },
-        ],
-        { critical: 0, high: 0, medium: 1, low: 4 },
-      ),
-    ],
-    [
-      'pr/deploy-prod-201',
-      pipelineRun(
-        'deploy-prod-201',
-        true,
-        'Succeeded',
-        '2026-10-07T14:00:00Z',
-        '2026-10-07T14:09:00Z',
-        [
-          { name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] },
-          { name: 'deploy', succeeded: true, steps: [{ name: 'rollout', status: 'Completed' }] },
-        ],
-        undefined,
-        { ns: 'production', trigger: 'Push' },
-      ),
-    ],
-    [
-      'pr/deploy-prod-202',
-      pipelineRun(
-        'deploy-prod-202',
-        true,
-        'Running',
-        '2026-10-08T10:30:00Z',
-        '',
-        [{ name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] }],
-        undefined,
-        { ns: 'production', trigger: 'Manual', running: true },
-      ),
-    ],
-    [
-      'pr/smoke-stg-77',
-      pipelineRun(
-        'smoke-stg-77',
-        false,
-        'Cancelled',
-        '2026-10-08T07:00:00Z',
-        '2026-10-08T07:01:00Z',
-        [{ name: 'clone', succeeded: true, steps: [{ name: 'git-clone', status: 'Completed' }] }],
-        undefined,
-        { ns: 'staging', trigger: 'Manual' },
-      ),
-    ],
-    [
-      'pr/build-stg-78',
-      pipelineRun(
-        'build-stg-78',
-        true,
-        'Succeeded',
-        '2026-10-08T06:00:00Z',
-        '2026-10-08T06:06:00Z',
-        [{ name: 'build', succeeded: true, steps: [{ name: 'compile', status: 'Completed' }] }],
-        { critical: 0, high: 1, medium: 2, low: 6 },
-        { ns: 'staging', trigger: 'Push' },
-      ),
-    ],
+      ],
+    ),
+    ...pipelineRunSeeds(
+      'build-103',
+      true,
+      'Succeeded',
+      '2026-10-08T10:00:00Z',
+      '2026-10-08T10:04:00Z',
+      [
+        { name: 'clone', state: 'ok', steps: [ok('git-clone')] },
+        { name: 'scan', state: 'ok', steps: [ok('trivy')] },
+      ],
+      { critical: 0, high: 0, medium: 1, low: 4 },
+    ),
+    ...pipelineRunSeeds(
+      'deploy-prod-201',
+      true,
+      'Succeeded',
+      '2026-10-07T14:00:00Z',
+      '2026-10-07T14:09:00Z',
+      [
+        { name: 'clone', state: 'ok', steps: [ok('git-clone')] },
+        { name: 'deploy', state: 'ok', steps: [ok('rollout')] },
+      ],
+      undefined,
+      { ns: 'production', trigger: 'Push' },
+    ),
+    ...pipelineRunSeeds(
+      'deploy-prod-202',
+      true,
+      'Running',
+      '2026-10-08T10:30:00Z',
+      '',
+      [
+        { name: 'clone', state: 'ok', steps: [ok('git-clone')] },
+        {
+          name: 'deploy',
+          state: 'running',
+          steps: [{ name: 'rollout', running: true }],
+        },
+      ],
+      undefined,
+      { ns: 'production', trigger: 'Manual', running: true },
+    ),
+    ...pipelineRunSeeds(
+      'smoke-stg-77',
+      false,
+      'Cancelled',
+      '2026-10-08T07:00:00Z',
+      '2026-10-08T07:01:00Z',
+      [{ name: 'clone', state: 'ok', steps: [ok('git-clone')] }],
+      undefined,
+      { ns: 'staging', trigger: 'Manual' },
+    ),
+    ...pipelineRunSeeds(
+      'build-stg-78',
+      true,
+      'Succeeded',
+      '2026-10-08T06:00:00Z',
+      '2026-10-08T06:06:00Z',
+      [{ name: 'build', state: 'ok', steps: [ok('compile')] }],
+      { critical: 0, high: 1, medium: 2, low: 6 },
+      { ns: 'staging', trigger: 'Push' },
+    ),
     [
       'app/guestbook',
       argoApp('guestbook', 'Synced', 'Healthy', 'default', [
@@ -1706,8 +1804,15 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
       }
       return { allowed: !(req.verb === 'delete' && req.namespace === 'kube-system') }
     },
-    logs(_ref: ResourceRef, onLine: (line: string) => void): Unsubscribe {
-      const id = setInterval(() => onLine(`log line ${++counter}`), tickMs)
+    logs(
+      _ref: ResourceRef,
+      onLine: (line: string) => void,
+      opts?: { container?: string },
+    ): Unsubscribe {
+      const id = setInterval(
+        () => onLine(`log line ${++counter}${opts?.container ? ` [${opts.container}]` : ''}`),
+        tickMs,
+      )
       return () => clearInterval(id)
     },
     exec(): ExecSession {

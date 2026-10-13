@@ -66,23 +66,43 @@ const STAGE_COLORS: Record<string, string> = {
 
 export function StageViz({
   stages,
+  onSelect,
+  selected,
 }: {
   stages: { name: string; status: string; duration?: string }[]
+  onSelect?: (name: string) => void
+  selected?: string
 }) {
   return (
     <ol className="flex items-center gap-0 list-none m-0 p-0">
-      {stages.map((s, i) => (
-        <li key={i} className="flex items-center" title={s.status}>
-          <div
-            className={`px-2 py-1 rounded border text-[10px] font-medium ${STAGE_COLORS[s.status] ?? STAGE_COLORS.Pending}`}
-          >
+      {stages.map((s, i) => {
+        const isSel = selected === s.name
+        const cls = `px-2 py-1 rounded border text-[10px] font-medium ${STAGE_COLORS[s.status] ?? STAGE_COLORS.Pending}${isSel ? ' ring-2 ring-zinc-200' : ''}`
+        const body = (
+          <>
             {s.name}
             {s.duration && <span className="ml-1 opacity-60">{s.duration}</span>}
             <span className="sr-only"> ({s.status})</span>
-          </div>
-          {i < stages.length - 1 && <div className="w-4 h-px bg-zinc-700 mx-0.5" />}
-        </li>
-      ))}
+          </>
+        )
+        return (
+          <li key={i} className="flex items-center" title={s.status}>
+            {onSelect ? (
+              <button
+                type="button"
+                aria-pressed={isSel}
+                onClick={() => onSelect(s.name)}
+                className={`${cls} cursor-pointer`}
+              >
+                {body}
+              </button>
+            ) : (
+              <div className={cls}>{body}</div>
+            )}
+            {i < stages.length - 1 && <div className="w-4 h-px bg-zinc-700 mx-0.5" />}
+          </li>
+        )
+      })}
     </ol>
   )
 }

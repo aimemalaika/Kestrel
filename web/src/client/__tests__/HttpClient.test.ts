@@ -163,6 +163,14 @@ describe('HttpClient', () => {
     expect(FakeES.last.close).toHaveBeenCalled()
   })
 
+  it('logs appends ?container= when given', () => {
+    const un = createHttpClient().logs(ref, vi.fn(), { container: 'step-build' })
+    expect(FakeES.last.url).toBe(
+      '/api/logs/core/v1/namespaces/default/pods/p1?container=step-build',
+    )
+    un()
+  })
+
   it('exec wires WebSocket', () => {
     const s = createHttpClient().exec(ref)
     expect(FakeWS.last.url).toMatch(
