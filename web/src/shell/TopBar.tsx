@@ -5,7 +5,6 @@ import { Icon, Modal } from '../ui'
 import { useAuth } from '../auth/AuthProvider'
 import { useSelection } from '../state/selection'
 import type { Perspective } from '../nav/categoryMap'
-import { firingAlerts } from '../modules/alerts/alertsMock'
 import { useClusterInfo } from '../cluster/useClusterInfo'
 import { createClient } from '../client/createClient'
 import { HelpMenu } from './HelpMenu'
@@ -261,80 +260,6 @@ function PerspectiveToggle({
   )
 }
 
-function NotificationBell() {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-  const firing = firingAlerts()
-  const count = firing.length
-  return (
-    <div
-      ref={ref}
-      className="relative"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape' && open) {
-          setOpen(false)
-          triggerRef.current?.focus()
-        }
-      }}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label="Notifications"
-        aria-expanded={open}
-        aria-controls="notification-panel"
-        onClick={() => setOpen((o) => !o)}
-        className={`relative p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors border border-transparent ${FOCUS}`}
-      >
-        <Icon name="bell" className="w-4 h-4" />
-        {count > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-brand text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-            {count}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div
-          id="notification-panel"
-          role="dialog"
-          aria-label="Notifications"
-          className="absolute right-0 top-full mt-2 w-80 bg-header border border-zinc-700 rounded-xl shadow-2xl z-50 overflow-hidden"
-        >
-          <div className="px-4 py-3 border-b border-zinc-800">
-            <span className="text-sm font-semibold text-zinc-200">Notifications</span>
-          </div>
-          {count === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-zinc-500">No notifications</p>
-          ) : (
-            <div className="divide-y divide-zinc-800/60 max-h-72 overflow-y-auto">
-              {firing.map((n) => (
-                <div key={n.id} className="px-4 py-2.5">
-                  <p className="text-xs font-medium text-zinc-200">
-                    {n.name} <span className="text-[10px] text-zinc-500">({n.severity})</span>
-                  </p>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">{n.message}</p>
-                </div>
-              ))}
-            </div>
-          )}
-          <p className="px-4 py-2 border-t border-zinc-800 text-[10px] text-zinc-600">
-            Sample data
-          </p>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function TopBar({
   perspective,
   onPerspectiveChange,
@@ -417,8 +342,6 @@ export function TopBar({
       >
         <Icon name="terminal" className="w-4 h-4" />
       </button>
-
-      <NotificationBell />
 
       <HelpMenu />
 
