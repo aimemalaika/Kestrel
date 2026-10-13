@@ -13,6 +13,7 @@ import {
   workspaces,
   type TknCondition,
 } from './model'
+import { SigningBadge } from './SigningBadge'
 import { TaskRunSteps } from './TaskRunSteps'
 
 const TASKRUNS = { group: 'tekton.dev', version: 'v1', resource: 'taskruns' }
@@ -91,6 +92,10 @@ export function TektonRunDetail({ object }: { object: K8sObject }) {
           <dd className="m-0 text-zinc-200">{completionTime ?? '—'}</dd>
         </dl>
         {failure && <p className="text-xs text-red-400 m-0">{failure}</p>}
+      </Section>
+
+      <Section title="Chains signature">
+        <SigningBadge object={object} />
       </Section>
 
       <Section title="Tasks">

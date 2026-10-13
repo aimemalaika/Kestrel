@@ -413,3 +413,37 @@ describe('Tekton Triggers columns', () => {
     }
   })
 })
+
+describe('Supply Chain columns', () => {
+  const specs = (k: string) => columnSpecs(k, { namespaceSelected: true })
+  const rr = (labels: Record<string, string> | undefined, conds: unknown[]): K8sObject => ({
+    apiVersion: 'resolution.tekton.dev/v1beta1',
+    kind: 'ResolutionRequest',
+    metadata: { name: 'r', labels },
+    status: { conditions: conds },
+  })
+
+  it('ResolutionRequest shows Resolver from the label and a Succeeded-derived status', () => {
+    const cols = specs('ResolutionRequest')
+    const resolver = cols.find((c) => c.header === 'Resolver')!
+    expect(resolver.value(rr({ 'resolution.tekton.dev/type': 'git' }, []))).toBe('git')
+    expect(resolver.value(rr(undefined, []))).toBe('—')
+    const st = cols.find((c) => c.id === 'status')!
+    expect(st.value(rr({}, [{ type: 'Succeeded', status: 'True' }]))).toBe('Succeeded')
+    expect(st.value(rr({}, [{ type: 'Succeeded', status: 'False' }]))).toBe('Failed')
+    expect(st.value(rr({}, [{ type: 'Succeeded', status: 'Unknown' }]))).toBe('Running')
+  })
+
+  it('VerificationPolicy shows Mode and Authorities and no Status column', () => {
+    const cols = specs('VerificationPolicy')
+    const o: K8sObject = {
+      apiVersion: 'tekton.dev/v1alpha1',
+      kind: 'VerificationPolicy',
+      metadata: { name: 'p' },
+      spec: { mode: 'enforce', authorities: [{ name: 'a' }, { name: 'b' }] },
+    }
+    expect(cols.find((c) => c.header === 'Mode')!.value(o)).toBe('enforce')
+    expect(cols.find((c) => c.header === 'Authorities')!.value(o)).toBe('2')
+    expect(cols.some((c) => c.id === 'status')).toBe(false)
+  })
+})

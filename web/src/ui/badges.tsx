@@ -37,6 +37,7 @@ const STATUS_TONE: Record<string, Tone> = {
   Failed: 'risk',
   Cancelled: 'neutral',
   Succeeded: 'ok',
+  Signed: 'ok',
   // Node conditions / scheduling
   Ready: 'ok',
   NotReady: 'risk',

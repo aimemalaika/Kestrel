@@ -161,3 +161,16 @@ export function results(obj: K8sObject): TknNamedValue[] {
 export function workspaces(obj: K8sObject): { name: string }[] {
   return arr<{ name: string }>(getPath(obj, 'spec.workspaces')).map((w) => ({ name: w.name }))
 }
+
+export interface ChainsInfo {
+  signed: boolean
+  transparencyUrl?: string
+}
+
+export function chainsInfo(obj: K8sObject): ChainsInfo {
+  const a = (obj.metadata.annotations ?? {}) as Record<string, string>
+  return {
+    signed: a['chains.tekton.dev/signed'] === 'true',
+    transparencyUrl: a['chains.tekton.dev/transparency'] || undefined,
+  }
+}
