@@ -1,5 +1,5 @@
 import { del, getJSON, q } from '../moduleFetch'
-import type { ImageInfo, RegistryClient } from './RegistryClient'
+import type { ImageInfo, RegistryClient, RepoSummaryWire, TagHistory } from './RegistryClient'
 
 interface RegistryConfig {
   deletesEnabled: boolean
@@ -14,8 +14,18 @@ export function createHttpRegistry(): RegistryClient {
       const { repos } = await getJSON<{ repos: string[] }>('/api/registry/repos')
       return repos
     },
+    async getRepoSummaries() {
+      const { repos } = await getJSON<{ repos: RepoSummaryWire[] }>('/api/registry/summary')
+      return repos
+    },
     async listTags(repo) {
       const { tags } = await getJSON<{ tags: string[] }>(`/api/registry/tags?repo=${q(repo)}`)
+      return tags
+    },
+    async getHistory(repo) {
+      const { tags } = await getJSON<{ tags: TagHistory[] }>(
+        `/api/registry/history?repo=${q(repo)}`,
+      )
       return tags
     },
     async getImage(repo, tag) {

@@ -27,12 +27,32 @@ describe('httpRegistry', () => {
     expect(init.headers).toEqual({ Accept: 'application/json' })
   })
 
+  it('getRepoSummaries hits /summary and returns the repos', async () => {
+    const repos = [{ repo: 'team/api', tags: ['latest'], digest: 'sha256:abc', size: 5 }]
+    fetchMock.mockResolvedValueOnce(ok({ deletesEnabled: false }))
+    fetchMock.mockResolvedValueOnce(ok({ repos }))
+    const r = createHttpRegistry()
+    expect(await r.getRepoSummaries()).toEqual(repos)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/registry/summary')
+  })
+
   it('listTags encodes the repo query param', async () => {
     fetchMock.mockResolvedValueOnce(ok({ deletesEnabled: false }))
     fetchMock.mockResolvedValueOnce(ok({ tags: ['latest', 'v1'] }))
     const r = createHttpRegistry()
     expect(await r.listTags('team/api')).toEqual(['latest', 'v1'])
     expect(fetchMock.mock.calls[1][0]).toBe('/api/registry/tags?repo=team%2Fapi')
+  })
+
+  it('getHistory hits /history and returns the tags', async () => {
+    const tags = [
+      { tag: 'v2', digest: 'sha256:abc', created: '2026-10-01T00:00:00Z', size: 5, layers: 2 },
+    ]
+    fetchMock.mockResolvedValueOnce(ok({ deletesEnabled: false }))
+    fetchMock.mockResolvedValueOnce(ok({ tags }))
+    const r = createHttpRegistry()
+    expect(await r.getHistory('team/api')).toEqual(tags)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/registry/history?repo=team%2Fapi')
   })
 
   it('getImage returns {digest,size,layers} and encodes params', async () => {

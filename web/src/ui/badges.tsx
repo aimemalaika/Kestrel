@@ -60,6 +60,7 @@ const STATUS_TONE: Record<string, Tone> = {
   approved: 'ok',
   rejected: 'risk',
   deployed: 'ok',
+  Deployed: 'ok',
   failed: 'risk',
   'pending-upgrade': 'warn',
   Firing: 'risk',
