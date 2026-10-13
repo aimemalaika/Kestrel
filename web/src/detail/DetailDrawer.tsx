@@ -13,6 +13,8 @@ import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
 import { EventListenerDetail } from '../modules/tekton/EventListenerDetail'
 import { TaskRunDetail } from '../modules/tekton/TaskRunDetail'
 import { AccessMatrix } from '../modules/rbac/AccessMatrix'
+import { BindingAccess } from '../modules/rbac/BindingAccess'
+import { RoleAccess } from '../modules/rbac/RoleAccess'
 import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
 import { Icon } from '../ui'
@@ -52,6 +54,8 @@ export function DetailDrawer() {
   const isTaskRun = object?.kind === 'TaskRun'
   const isEventListener = object?.kind === 'EventListener'
   const isServiceAccount = object?.kind === 'ServiceAccount'
+  const isRole = object?.kind === 'Role' || object?.kind === 'ClusterRole'
+  const isBinding = object?.kind === 'RoleBinding' || object?.kind === 'ClusterRoleBinding'
   const isApplication = object?.kind === 'Application'
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'relations', 'logs', 'terminal']
@@ -61,7 +65,7 @@ export function DetailDrawer() {
         ? ['detail', 'yaml', 'events', 'relations', 'app']
         : isEventListener
           ? ['detail', 'yaml', 'events', 'relations', 'listener']
-          : isServiceAccount
+          : isServiceAccount || isRole || isBinding
             ? ['detail', 'yaml', 'events', 'relations', 'access']
             : ['detail', 'yaml', 'events', 'relations']
   // If the selected tab isn't available for the current object (e.g. after
@@ -156,6 +160,8 @@ export function DetailDrawer() {
               {tab === 'run' && isTaskRun && <TaskRunDetail object={object} />}
               {tab === 'listener' && isEventListener && <EventListenerDetail object={object} />}
               {tab === 'access' && isServiceAccount && <AccessMatrix object={object} />}
+              {tab === 'access' && isRole && <RoleAccess object={object} />}
+              {tab === 'access' && isBinding && <BindingAccess object={object} />}
               {tab === 'app' && isApplication && <ArgoRichView object={object} />}
               {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
               {tab === 'terminal' && isPod && podRef ? (

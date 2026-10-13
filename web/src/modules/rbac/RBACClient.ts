@@ -18,6 +18,8 @@ export const VERBS: Verb[] = [
 export interface Cell {
   allowed: boolean
   binding?: string
+  /** Set only when every granting rule restricts this verb to named resources. */
+  resourceNames?: string[]
 }
 
 export interface ResourceAccess {
