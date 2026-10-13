@@ -1,4 +1,11 @@
-import type { AccessMatrix, Cell, RBACClient, ResourceAccess, Verb } from './RBACClient'
+import type {
+  AccessMatrix,
+  Cell,
+  NamespaceAccess,
+  RBACClient,
+  ResourceAccess,
+  Verb,
+} from './RBACClient'
 
 const ALL: Verb[] = [
   'get',
@@ -21,25 +28,43 @@ function row(group: string, resource: string, allowed: Verb[], binding: string):
 const RO: Verb[] = ['get', 'list', 'watch']
 const DEPLOYERS = 'RO:deployers/deployer'
 
-const MATRICES: Record<string, ResourceAccess[]> = {
+const scope = (namespace: string, resources: ResourceAccess[]): NamespaceAccess => ({
+  namespace,
+  resources,
+})
+
+const MATRICES: Record<string, NamespaceAccess[]> = {
   'production/api-gateway': [
-    row('apps', 'deployments', [...RO, 'update', 'patch'], DEPLOYERS),
-    row('', 'pods', RO, DEPLOYERS),
-    row('', 'configmaps', RO, DEPLOYERS),
+    scope('production', [
+      row('apps', 'deployments', [...RO, 'update', 'patch'], DEPLOYERS),
+      row('', 'pods', RO, DEPLOYERS),
+      row('', 'configmaps', RO, DEPLOYERS),
+    ]),
   ],
   'User/alice': [
-    row('', 'pods', RO, 'RO:alice-pods/pod-reader'),
-    row('', 'configmaps', ['get', 'list'], 'RO:alice-pods/pod-reader'),
+    scope('', [
+      row('', 'pods', RO, 'RO:alice-pods/pod-reader'),
+      row('', 'configmaps', ['get', 'list'], 'RO:alice-pods/pod-reader'),
+    ]),
+  ],
+  'User/carol': [
+    scope('', [row('', 'pods', ['get'], 'CR:view/view')]),
+    scope('production', [row('apps', 'deployments', [...RO, 'update'], 'RO:prod-dev/edit')]),
+    scope('staging', [row('', 'configmaps', RO, 'RO:stg-dev/edit')]),
   ],
   'Group/platform-admins': [
-    row('apps', 'deployments', ALL, 'CR:platform-admins/admin'),
-    row('', 'pods', ALL, 'CR:platform-admins/admin'),
-    row('', 'nodes', RO, 'CR:platform-admins/admin'),
+    scope('', [
+      row('apps', 'deployments', ALL, 'CR:platform-admins/admin'),
+      row('', 'pods', ALL, 'CR:platform-admins/admin'),
+      row('', 'nodes', RO, 'CR:platform-admins/admin'),
+    ]),
   ],
-  'default/default': [row('', 'pods', RO, 'RO:read-pods/pod-reader')],
+  'default/default': [scope('default', [row('', 'pods', RO, 'RO:read-pods/pod-reader')])],
   'monitoring/prometheus': [
-    row('', 'pods', RO, 'RO:metrics-read/metrics-reader'),
-    row('', 'nodes', RO, 'RO:metrics-read/metrics-reader'),
+    scope('monitoring', [
+      row('', 'pods', RO, 'RO:metrics-read/metrics-reader'),
+      row('', 'nodes', RO, 'RO:metrics-read/metrics-reader'),
+    ]),
   ],
 }
 
@@ -49,11 +74,11 @@ export function createMockRbac(): RBACClient {
       if (kind === 'ServiceAccount') {
         const m: AccessMatrix = {
           subject: `system:serviceaccount:${namespace ?? ''}:${name}`,
-          resources: MATRICES[`${namespace ?? ''}/${name}`] ?? [],
+          scopes: MATRICES[`${namespace ?? ''}/${name}`] ?? [],
         }
         return m
       }
-      const m: AccessMatrix = { subject: name, resources: MATRICES[`${kind}/${name}`] ?? [] }
+      const m: AccessMatrix = { subject: name, scopes: MATRICES[`${kind}/${name}`] ?? [] }
       return m
     },
   }
