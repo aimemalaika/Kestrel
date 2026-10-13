@@ -82,6 +82,7 @@ export const ADMIN_NAV: NavSection[] = [
       { label: 'TaskRuns', icon: 'run', target: res('taskruns') },
       { label: 'StepActions', icon: 'task', target: res('stepactions') },
       { label: 'CustomRuns', icon: 'run', target: res('customruns') },
+      { label: 'Run History', icon: 'run', target: route('/results') },
       { label: 'Registry', icon: 'image', target: route('/registry') },
     ],
   },

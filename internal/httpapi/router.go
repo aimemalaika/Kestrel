@@ -19,6 +19,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/modules"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
+	"github.com/aimemalaika/Kestrel/internal/results"
 	"github.com/aimemalaika/Kestrel/internal/servicemap"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 )
@@ -31,6 +32,7 @@ type Deps struct {
 	Exec        k8s.ExecStreamer
 	PortForward k8s.PortForwarder
 	Registry    http.Handler // /api/registry/* (OCI v2 proxy); 503 when unconfigured
+	Results     http.Handler // /api/results/* (Tekton Results proxy); 503 when unconfigured
 	Helm        http.Handler // /api/helm/* (releases + chart repos)
 	ServiceMap  http.Handler // /api/servicemap (store + validate; ConfigMap-backed)
 	Kubeconfig  http.Handler // /api/kubeconfig[/command] (own-identity download/login-cmd); 503 in single-operator/mock
@@ -56,6 +58,7 @@ func DefaultDeps() Deps {
 		Exec:        k8s.StubExec{},
 		PortForward: k8s.StubPortForward{},
 		Registry:    registry.NewHandler(registry.Config{}), // unconfigured ⇒ 503
+		Results:     results.NewHandler(results.Config{}),   // unconfigured ⇒ 503
 		// Helm over a no-client accessor: with no forwarded token (DefaultDeps /
 		// --mock), UserClientset returns the nil SA client and listReleases yields
 		// an empty list rather than panicking. No repos configured ⇒ repos empty.
@@ -73,6 +76,9 @@ func DefaultDeps() Deps {
 func New(d Deps) http.Handler {
 	if d.Registry == nil {
 		d.Registry = registry.NewHandler(registry.Config{}) // unconfigured ⇒ 503
+	}
+	if d.Results == nil {
+		d.Results = results.NewHandler(results.Config{}) // unconfigured ⇒ 503
 	}
 	if d.Helm == nil {
 		d.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{})
@@ -151,6 +157,9 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 		// Registry has its own handler (OCI v2 proxy) and allows DELETE for
 		// deleteByDigest, so it owns method handling rather than going through only().
 		a.d.Registry.ServeHTTP(w, r)
+	case "results":
+		// Results owns its own routing and method handling (GET only), like registry.
+		a.d.Results.ServeHTTP(w, r)
 	case "helm":
 		// Helm has its own multi-route handler (releases + chart repos) and owns
 		// method handling, like registry.

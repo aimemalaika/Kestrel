@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { TaskRunSteps } from './TaskRunSteps'
 import type { K8sObject } from '../../contract/types'
@@ -11,10 +11,18 @@ vi.mock('../../streaming/LogViewer', () => ({
   },
 }))
 
-const mk = (podName?: string): K8sObject =>
+vi.mock('../results/ResultsClient', () => ({
+  createResultsClient: () => ({ getLog: async () => 'archived line 1' }),
+}))
+
+const mk = (podName?: string, record?: string): K8sObject =>
   ({
     kind: 'TaskRun',
-    metadata: { name: 'tr', namespace: 'default' },
+    metadata: {
+      name: 'tr',
+      namespace: 'default',
+      annotations: record ? { 'results.tekton.dev/record': record } : undefined,
+    },
     status: {
       podName,
       steps: [
@@ -44,5 +52,18 @@ describe('TaskRunSteps', () => {
     render(<TaskRunSteps taskRun={mk()} />)
     expect(screen.queryByTestId('logs')).toBeNull()
     expect(screen.getByText(/logs unavailable/)).toBeTruthy()
+  })
+
+  it('shows the archived log when the pod is gone but a Results record exists', async () => {
+    render(<TaskRunSteps taskRun={mk(undefined, 'ns/results/x/records/y')} />)
+    await waitFor(() => expect(screen.getByText('archived line 1')).toBeTruthy())
+    expect(screen.queryByTestId('logs')).toBeNull()
+    expect(screen.queryByText(/logs unavailable/)).toBeNull()
+  })
+
+  it('keeps the live viewer when the pod exists even with a record', () => {
+    render(<TaskRunSteps taskRun={mk('tr-pod', 'r')} />)
+    expect(screen.getByTestId('logs')).toBeTruthy()
+    expect(screen.queryByTestId('archived-log')).toBeNull()
   })
 })

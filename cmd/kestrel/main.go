@@ -24,6 +24,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/obs"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
+	"github.com/aimemalaika/Kestrel/internal/results"
 	"github.com/aimemalaika/Kestrel/internal/servicemap"
 	"github.com/aimemalaika/Kestrel/internal/stream"
 	"github.com/aimemalaika/Kestrel/web"
@@ -64,6 +65,7 @@ func main() {
 	// Registry module (OCI Distribution v2 proxy). Empty --registry-url disables
 	// it: /api/registry/* returns 503 "registry not configured".
 	registryURL := flag.String("registry-url", "", "OCI registry base URL incl. scheme (e.g. https://registry.example.com); empty disables the registry module")
+	resultsURL := flag.String("results-url", "", "Tekton Results API base URL; empty disables the Results/run-history module. Falls back to $KESTREL_RESULTS_URL")
 	registryUser := flag.String("registry-username", "", "registry basic-auth username (optional)")
 	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional; falls back to $KESTREL_REGISTRY_PASSWORD when empty)")
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
@@ -96,6 +98,7 @@ func main() {
 	sessionKeyVal := flagOrEnv(*sessionKey, "KESTREL_SESSION_KEY")
 	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
 	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
+	resultsURLVal := flagOrEnv(*resultsURL, "KESTREL_RESULTS_URL")
 	// OIDC + login-method config is env-sourceable too (config-free; flag wins when
 	// set). The issuer being non-empty is what switches on OIDC mode.
 	oidcIssuerVal := flagOrEnv(*oidcIssuer, "KESTREL_OIDC_ISSUER")
@@ -130,6 +133,12 @@ func main() {
 		slog.Warn("registry module disabled: --registry-url not set; /api/registry returns 503")
 	} else {
 		slog.Info("registry module enabled", slog.String("url", *registryURL), slog.Bool("deletes", *registryAllowDelete))
+	}
+	deps.Results = results.NewHandler(results.Config{URL: resultsURLVal})
+	if resultsURLVal == "" {
+		slog.Warn("results module disabled: --results-url not set; /api/results returns 503")
+	} else {
+		slog.Info("results module enabled", slog.String("url", resultsURLVal))
 	}
 	parsedRepos := helmRepos.repos()
 	if len(parsedRepos) > 0 {
