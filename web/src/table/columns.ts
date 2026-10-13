@@ -176,6 +176,7 @@ const NO_STATUS_KINDS = new Set([
   'ClusterTriggerBinding',
   'Interceptor',
   'ClusterInterceptor',
+  'VerificationPolicy',
 ])
 
 /** Kinds whose Status column sits right after Name/Namespace. */
@@ -210,6 +211,22 @@ const BINDING_HINTS: ColumnHint[] = [
 ]
 
 export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
+  ResolutionRequest: [
+    {
+      header: 'Resolver',
+      path: 'metadata.labels',
+      derive: (o) => dash(o.metadata.labels?.['resolution.tekton.dev/type']),
+    },
+  ],
+  VerificationPolicy: [
+    { header: 'Mode', path: 'spec.mode' },
+    {
+      header: 'Authorities',
+      path: 'spec.authorities',
+      numeric: true,
+      derive: count('spec.authorities'),
+    },
+  ],
   EventListener: [{ header: 'Address', path: 'status.address.url', cell: 'mono' }],
   Pod: [
     { header: 'Ready', path: 'ready', numeric: true, derive: podReady },
@@ -375,7 +392,7 @@ function str(v: unknown): string {
 
 /** Tekton run kinds whose status lives in status.conditions[] (type Succeeded),
  *  not status.phase. */
-const TEKTON_RUN_KINDS = new Set(['PipelineRun', 'TaskRun', 'CustomRun'])
+const TEKTON_RUN_KINDS = new Set(['PipelineRun', 'TaskRun', 'CustomRun', 'ResolutionRequest'])
 
 /** Derive a tonable status string from a Tekton run's Succeeded condition. */
 function tektonRunStatus(o: K8sObject): string | undefined {

@@ -64,4 +64,24 @@ describe('TaskRunDetail', () => {
     renderIt(mk({ podName: undefined }))
     expect(screen.queryByRole('link')).toBeNull()
   })
+
+  it('shows Signed badge and transparency link for a signed run', () => {
+    const o = mk()
+    o.metadata.annotations = {
+      'chains.tekton.dev/signed': 'true',
+      'chains.tekton.dev/transparency': 'https://rekor.example/entry/1',
+    }
+    renderIt(o)
+    expect(screen.getByText('Chains signature')).toBeTruthy()
+    expect(screen.getByText('Signed')).toBeTruthy()
+    const link = screen.getByText('View transparency log') as HTMLAnchorElement
+    expect(link.getAttribute('href')).toBe('https://rekor.example/entry/1')
+    expect(link.getAttribute('target')).toBe('_blank')
+  })
+
+  it('shows Unsigned and no transparency link for an unsigned run', () => {
+    renderIt(mk())
+    expect(screen.getByText('Unsigned')).toBeTruthy()
+    expect(screen.queryByText('View transparency log')).toBeNull()
+  })
 })

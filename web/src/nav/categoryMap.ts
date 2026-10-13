@@ -98,6 +98,13 @@ export const ADMIN_NAV: NavSection[] = [
     ],
   },
   {
+    section: 'Supply Chain',
+    items: [
+      { label: 'VerificationPolicies', icon: 'shield', target: res('verificationpolicies') },
+      { label: 'ResolutionRequests', icon: 'task', target: res('resolutionrequests') },
+    ],
+  },
+  {
     section: 'Observe',
     items: [
       { label: 'Dashboards', icon: 'chart', target: route('/dashboards') },

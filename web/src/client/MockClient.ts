@@ -299,6 +299,22 @@ const CATALOG: CatalogEntry[] = [
     verbs: ['get', 'list', 'watch'],
   },
   {
+    group: 'tekton.dev',
+    version: 'v1alpha1',
+    resource: 'verificationpolicies',
+    kind: 'VerificationPolicy',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'resolution.tekton.dev',
+    version: 'v1beta1',
+    resource: 'resolutionrequests',
+    kind: 'ResolutionRequest',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
     group: 'rbac.authorization.k8s.io',
     version: 'v1',
     resource: 'clusterroles',
@@ -425,12 +441,21 @@ interface MockTask {
 
 const ok = (name: string): MockStep => ({ name, exit: 0 })
 
+// Tekton Chains signing annotations stamped on signed, succeeded runs.
+function chainsAnnotations(): Record<string, string> {
+  return {
+    'chains.tekton.dev/signed': 'true',
+    'chains.tekton.dev/transparency': 'https://rekor.example.com/api/v1/log/entries?logIndex=1234',
+  }
+}
+
 function taskRunObj(
   prName: string,
   ns: string,
   t: MockTask,
   startTime: string,
   completionTime: string,
+  signed = false,
 ): K8sObject {
   const name = `${prName}-${t.name}`
   const running = t.state === 'running'
@@ -443,6 +468,7 @@ function taskRunObj(
       uid: `tr/${name}`,
       creationTimestamp: startTime,
       labels: { 'tekton.dev/pipelineRun': prName, 'tekton.dev/pipelineTask': t.name },
+      ...(signed && t.state === 'ok' ? { annotations: chainsAnnotations() } : {}),
     },
     spec: {
       taskRef: { name: t.name },
@@ -488,7 +514,12 @@ function pipelineRunSeeds(
   completionTime: string,
   tasks: MockTask[],
   scan?: Record<string, number>,
-  o: { ns?: string; trigger?: 'Push' | 'Manual' | 'Schedule'; running?: boolean } = {},
+  o: {
+    ns?: string
+    trigger?: 'Push' | 'Manual' | 'Schedule'
+    running?: boolean
+    signed?: boolean
+  } = {},
 ): [string, K8sObject][] {
   const running = o.running === true
   const ns = o.ns ?? 'default'
@@ -500,7 +531,14 @@ function pipelineRunSeeds(
       namespace: ns,
       uid: `pr/${name}`,
       creationTimestamp: startTime,
-      ...(o.trigger ? { annotations: { 'tekton.dev/trigger': o.trigger } } : {}),
+      ...(o.trigger || (o.signed && ok)
+        ? {
+            annotations: {
+              ...(o.trigger ? { 'tekton.dev/trigger': o.trigger } : {}),
+              ...(o.signed && ok ? chainsAnnotations() : {}),
+            },
+          }
+        : {}),
     },
     spec: {
       pipelineRef: { name: 'build-and-push' },
@@ -529,7 +567,7 @@ function pipelineRunSeeds(
     [`pr/${name}`, run],
     ...tasks.map((t): [string, K8sObject] => [
       `tr/${name}-${t.name}`,
-      taskRunObj(name, ns, t, startTime, completionTime),
+      taskRunObj(name, ns, t, startTime, completionTime, o.signed === true && ok),
     ]),
   ]
 }
@@ -1321,6 +1359,79 @@ function clusterSeeds(): K8sObject[] {
   ]
 }
 
+function supplyChainSeeds(): K8sObject[] {
+  const vp = 'tekton.dev/v1alpha1'
+  const rr = 'resolution.tekton.dev/v1beta1'
+  const resolver = (type: string) => ({ 'resolution.tekton.dev/type': type })
+  return [
+    aged(
+      20,
+      vp,
+      'VerificationPolicy',
+      'verify-shop-images',
+      'shop',
+      {
+        spec: {
+          resources: [{ pattern: 'registry.example.com/shop/*' }],
+          authorities: [
+            { name: 'release-key', key: { data: '-----BEGIN PUBLIC KEY-----\nMFkwEwYH...\n-----END PUBLIC KEY-----' } },
+            { name: 'ci-key', key: { secretRef: { name: 'cosign-pub', namespace: 'shop' } } },
+          ],
+          mode: 'enforce',
+        },
+      }, // prettier-ignore
+    ),
+    aged(10, vp, 'VerificationPolicy', 'warn-default-tasks', 'default', {
+      spec: {
+        resources: [{ pattern: 'https://github.com/example/catalog.git' }],
+        authorities: [{ name: 'catalog-key', key: { secretRef: { name: 'catalog-pub' } } }],
+        mode: 'warn',
+      },
+    }),
+    aged(
+      2,
+      rr,
+      'ResolutionRequest',
+      'git-resolve-build',
+      'default',
+      {
+        spec: {
+          params: [
+            { name: 'url', value: 'https://git.example.com/shop/web.git' },
+            { name: 'revision', value: 'main' },
+            { name: 'pathInRepo', value: 'pipelines/build.yaml' },
+          ],
+        },
+        status: {
+          conditions: [{ type: 'Succeeded', status: 'True', reason: 'ResolutionSucceeded' }],
+          data: 'apiVersion: tekton.dev/v1\nkind: Pipeline\nmetadata:\n  name: build-and-push\n',
+        },
+      },
+      resolver('git'),
+    ),
+    aged(
+      0,
+      rr,
+      'ResolutionRequest',
+      'hub-resolve-git-clone',
+      'shop',
+      {
+        spec: {
+          params: [
+            { name: 'kind', value: 'task' },
+            { name: 'name', value: 'git-clone' },
+            { name: 'version', value: '0.9' },
+          ],
+        },
+        status: {
+          conditions: [{ type: 'Succeeded', status: 'Unknown', reason: 'ResolutionInProgress' }],
+        },
+      },
+      resolver('hub'),
+    ),
+  ]
+}
+
 function triggersSeeds(): K8sObject[] {
   const trg = 'triggers.tekton.dev/v1beta1'
   const trgA = 'triggers.tekton.dev/v1alpha1'
@@ -1635,6 +1746,7 @@ function moreSeeds(): K8sObject[] {
     }),
     ...machineBuildSeeds(),
     ...triggersSeeds(),
+    ...supplyChainSeeds(),
     gen('image.openshift.io/v1', 'ImageStream', 'shop-web', 'shop', {
       status: {
         dockerImageRepository: 'registry.example.com/shop/shop-web',
@@ -1693,6 +1805,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         { name: 'scan', state: 'ok', steps: [ok('trivy')] },
       ],
       { critical: 2, high: 5, medium: 3, low: 10 },
+      { signed: true },
     ),
     ...pipelineRunSeeds(
       'build-102',
@@ -1732,7 +1845,7 @@ export function createMockClient(opts: { tickMs?: number } = {}): Client {
         { name: 'deploy', state: 'ok', steps: [ok('rollout')] },
       ],
       undefined,
-      { ns: 'production', trigger: 'Push' },
+      { ns: 'production', trigger: 'Push', signed: true },
     ),
     ...pipelineRunSeeds(
       'deploy-prod-202',

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { K8sObject } from '../../contract/types'
 import {
+  chainsInfo,
   durationStr,
   params,
   results,
@@ -122,5 +123,24 @@ describe('durationStr', () => {
       '3m 0s',
     )
     expect(durationStr(undefined)).toBeUndefined()
+  })
+})
+
+describe('chainsInfo', () => {
+  it('reads signed + transparency annotations', () => {
+    const o = obj({})
+    o.metadata.annotations = {
+      'chains.tekton.dev/signed': 'true',
+      'chains.tekton.dev/transparency': 'https://rekor.example/e/1',
+    }
+    expect(chainsInfo(o)).toEqual({ signed: true, transparencyUrl: 'https://rekor.example/e/1' })
+  })
+  it('is unsigned when the signed annotation is not true', () => {
+    const o = obj({})
+    o.metadata.annotations = { 'chains.tekton.dev/signed': 'false' }
+    expect(chainsInfo(o)).toEqual({ signed: false, transparencyUrl: undefined })
+  })
+  it('handles absent annotations', () => {
+    expect(chainsInfo(obj({}))).toEqual({ signed: false, transparencyUrl: undefined })
   })
 })

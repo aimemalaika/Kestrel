@@ -3,6 +3,7 @@ import type { K8sObject } from '../../contract/types'
 import { getPath } from '../../table/columns'
 import { StatusBadge } from '../../ui'
 import { durationStr, params, results, runStatus, type TknCondition } from './model'
+import { SigningBadge } from './SigningBadge'
 import { TaskRunSteps } from './TaskRunSteps'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -60,6 +61,10 @@ export function TaskRunDetail({ object }: { object: K8sObject }) {
           <dd className="m-0 text-zinc-200">{completionTime ?? '—'}</dd>
         </dl>
         {failure && <p className="text-xs text-red-400 m-0">{failure}</p>}
+      </Section>
+
+      <Section title="Chains signature">
+        <SigningBadge object={object} />
       </Section>
 
       <Section title="Steps">
