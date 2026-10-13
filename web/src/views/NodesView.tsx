@@ -3,6 +3,7 @@ import { useResourceStream } from '../table/useResourceStream'
 import { Age } from '../table/Age'
 import { getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
+import { useNodeMetrics, type NodeMetrics } from '../modules/observe/useNodeMetrics'
 import { Card, MiniBar, RoleBadge, StatusBadge, ViewHeader, Table, TR, TD, Mono } from '../ui'
 
 const NODES = { group: 'core', version: 'v1', resource: 'nodes' }
@@ -55,13 +56,6 @@ function str(n: K8sObject, path: string): string {
   return v == null || v === '' ? '—' : String(v)
 }
 
-// Metrics: status.usage.{cpu,memory} as integer-percent strings. Absent => undefined.
-function pct(n: K8sObject, k: 'cpu' | 'memory'): number | undefined {
-  const raw = getPath(n, `status.usage.${k}`)
-  const v = Number(raw)
-  return raw == null || raw === '' || Number.isNaN(v) ? undefined : v
-}
-
 function podCount(n: K8sObject): string {
   const u = getPath(n, 'status.usage.pods')
   return u != null ? String(u) : str(n, 'status.allocatable.pods')
@@ -79,9 +73,10 @@ interface NodeInfo {
   zone: string
   cpu?: number
   memory?: number
+  storage?: number
 }
 
-function info(n: K8sObject): NodeInfo {
+function info(n: K8sObject, m?: NodeMetrics): NodeInfo {
   const conds = conditions(n)
   const ready = conds.find((c) => c.type === 'Ready')
   return {
@@ -94,8 +89,9 @@ function info(n: K8sObject): NodeInfo {
     taints: taints(n),
     instanceType: label(n, 'node.kubernetes.io/instance-type') ?? '—',
     zone: label(n, 'topology.kubernetes.io/zone') ?? '—',
-    cpu: pct(n, 'cpu'),
-    memory: pct(n, 'memory'),
+    cpu: m?.cpu,
+    memory: m?.mem,
+    storage: m?.storage,
   }
 }
 
@@ -134,7 +130,10 @@ function ReadyStatus({ i }: { i: NodeInfo }) {
 export function NodesView() {
   const [view, setView] = useState<'cards' | 'table'>('cards')
   const { rows, status } = useResourceStream(NODES, undefined)
-  const nodes = [...rows].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name)).map(info)
+  const { byNode } = useNodeMetrics()
+  const nodes = [...rows]
+    .sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))
+    .map((n) => info(n, byNode.get(n.metadata.name)))
   return (
     <div>
       <ViewHeader
@@ -192,6 +191,7 @@ export function NodesView() {
                 <div className="space-y-2 mt-3">
                   <Usage name="CPU" value={i.cpu} />
                   <Usage name="Memory" value={i.memory} />
+                  <Usage name="Storage" value={i.storage} />
                 </div>
                 <div className="mt-3 space-y-1 text-[10px] text-zinc-500">
                   <p>
@@ -251,6 +251,7 @@ export function NodesView() {
             'Allocatable',
             'CPU',
             'Memory',
+            'Storage',
             'Pods',
             'Zone',
             'Version',
@@ -302,6 +303,9 @@ export function NodesView() {
               </TD>
               <TD>
                 <Cell value={i.memory} />
+              </TD>
+              <TD>
+                <Cell value={i.storage} />
               </TD>
               <TD>
                 <span className="text-xs tabular-nums text-zinc-300">{podCount(i.node)}</span>

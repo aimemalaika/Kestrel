@@ -168,7 +168,16 @@ returns 503 rather than falling back to Kestrel's own credentials. The URLs
 contain no secrets.
 
 Once the backend is configured, the Observe views show data from these
-endpoints.
+endpoints. Kestrel's Observe is intentionally a **node CPU / memory / storage
+summary** — everything else (app metrics, detailed dashboards, logs, traces)
+lives in Grafana, linked from the Overview.
+
+> **Node metrics need a `node` label.** The per-node CPU/mem/storage queries
+> aggregate `by (node)`, so node-exporter series must carry a `node` label equal
+> to the Kubernetes node name. The kube-prometheus-stack recording rules /
+> relabeling provide this; on a bare node-exporter setup (series keyed only on
+> `instance`) the per-node cells show "n/a" until you add that label. The cluster
+> is still reachable via the Grafana link regardless.
 
 See `deploy/chart/kestrel/values.yaml` and its `README.md` for the full set of
 keys and defaults. Only keys that exist there are used in these examples.
