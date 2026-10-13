@@ -109,17 +109,6 @@ const ICON_PATHS: Record<string, ReactElement> = {
       <line x1="8" y1="2" x2="8" y2="5.5" stroke="currentColor" strokeWidth="1.5" />
     </>
   ),
-  build: (
-    <>
-      <path
-        d="M11 2 L14 5 L6 13 L2 14 L3 10 Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <line x1="9" y1="4" x2="12" y2="7" stroke="currentColor" strokeWidth="1.5" />
-    </>
-  ),
   image: (
     <>
       <rect

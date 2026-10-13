@@ -10,7 +10,7 @@ const FOCUS =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/60 focus-visible:ring-inset'
 
 // Sections open by default (mirrors the mock); others start collapsed.
-const DEFAULT_OPEN = new Set(['Home', 'Operators', 'Workloads', 'Builds', 'Observe', 'Developer'])
+const DEFAULT_OPEN = new Set(['Home', 'Operators', 'Workloads', 'CI/CD', 'Observe', 'Developer'])
 
 export function NavTree({
   perspective = 'admin',

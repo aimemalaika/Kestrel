@@ -22,7 +22,7 @@ describe('ui primitives', () => {
     expect(container.querySelector('svg')!.children.length).toBeGreaterThan(0)
     rerender(<Icon name="nope" />)
     expect(container.querySelector('svg')!.children.length).toBe(0)
-    expect(ICON_NAMES.length).toBe(59)
+    expect(ICON_NAMES.length).toBe(58)
   })
 
   it('StatusBadge maps known statuses and falls back for unknown', () => {
