@@ -141,5 +141,34 @@ deletion enabled. The Registry view then lists each repository's tags over time
 StatefulSet is currently running — the ImageStream replacement. Correlation is
 best-effort and matches on `repo:tag`.
 
+## Observability / monitoring
+
+Point the backend at the cluster's Prometheus to make the Observe views show
+live data:
+
+```
+--prometheus-url=http://prometheus-kube-prometheus-prometheus.observability.svc:9090
+```
+
+Optional companions, each surfaced to the UI through `/api/observe/config`:
+
+- `--alertmanager-url` — Alertmanager base URL
+- `--loki-url` — Loki base URL
+- `--grafana-url` — Grafana base URL, used as a link from the UI
+
+Every flag also reads an environment variable (`KESTREL_PROMETHEUS_URL`,
+`KESTREL_ALERTMANAGER_URL`, `KESTREL_LOKI_URL`, `KESTREL_GRAFANA_URL`), so the
+URLs can come from the pod environment instead of the command line. Leave a URL
+unset to disable that integration; with no `--prometheus-url`, the Prometheus
+data routes return 503.
+
+The proxy forwards the signed-in user's own token to Prometheus, so queries run
+with that user's permissions. It fails closed: a data request with no user token
+returns 503 rather than falling back to Kestrel's own credentials. The URLs
+contain no secrets.
+
+Once the backend is configured, the Observe views show data from these
+endpoints.
+
 See `deploy/chart/kestrel/values.yaml` and its `README.md` for the full set of
 keys and defaults. Only keys that exist there are used in these examples.

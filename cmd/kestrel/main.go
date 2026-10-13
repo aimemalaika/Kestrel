@@ -22,6 +22,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	kubeconfigsvc "github.com/aimemalaika/Kestrel/internal/kubeconfig"
 	"github.com/aimemalaika/Kestrel/internal/obs"
+	"github.com/aimemalaika/Kestrel/internal/observe"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/results"
@@ -66,6 +67,10 @@ func main() {
 	// it: /api/registry/* returns 503 "registry not configured".
 	registryURL := flag.String("registry-url", "", "OCI registry base URL incl. scheme (e.g. https://registry.example.com); empty disables the registry module. Falls back to $KESTREL_REGISTRY_URL")
 	resultsURL := flag.String("results-url", "", "Tekton Results API base URL; empty disables the Results/run-history module. Falls back to $KESTREL_RESULTS_URL")
+	prometheusURL := flag.String("prometheus-url", "", "Prometheus base URL for the Observe module; empty disables it. Falls back to $KESTREL_PROMETHEUS_URL")
+	alertmanagerURL := flag.String("alertmanager-url", "", "Alertmanager base URL (surfaced via /api/observe/config). Falls back to $KESTREL_ALERTMANAGER_URL")
+	lokiURL := flag.String("loki-url", "", "Loki base URL (surfaced via /api/observe/config). Falls back to $KESTREL_LOKI_URL")
+	grafanaURL := flag.String("grafana-url", "", "Grafana base URL, used as a UI link. Falls back to $KESTREL_GRAFANA_URL")
 	registryUser := flag.String("registry-username", "", "registry basic-auth username (optional)")
 	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional; falls back to $KESTREL_REGISTRY_PASSWORD when empty)")
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
@@ -99,6 +104,10 @@ func main() {
 	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
 	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
 	resultsURLVal := flagOrEnv(*resultsURL, "KESTREL_RESULTS_URL")
+	prometheusURLVal := flagOrEnv(*prometheusURL, "KESTREL_PROMETHEUS_URL")
+	alertmanagerURLVal := flagOrEnv(*alertmanagerURL, "KESTREL_ALERTMANAGER_URL")
+	lokiURLVal := flagOrEnv(*lokiURL, "KESTREL_LOKI_URL")
+	grafanaURLVal := flagOrEnv(*grafanaURL, "KESTREL_GRAFANA_URL")
 	registryURLVal := flagOrEnv(*registryURL, "KESTREL_REGISTRY_URL")
 	// OIDC + login-method config is env-sourceable too (config-free; flag wins when
 	// set). The issuer being non-empty is what switches on OIDC mode.
@@ -140,6 +149,19 @@ func main() {
 		slog.Warn("results module disabled: --results-url not set; /api/results returns 503")
 	} else {
 		slog.Info("results module enabled", slog.String("url", resultsURLVal))
+	}
+	deps.Observe = observe.NewHandler(observe.Config{
+		PrometheusURL:   prometheusURLVal,
+		AlertmanagerURL: alertmanagerURLVal,
+		LokiURL:         lokiURLVal,
+		GrafanaURL:      grafanaURLVal,
+	})
+	if prometheusURLVal == "" {
+		slog.Warn("observe module disabled: --prometheus-url not set; /api/observe data routes return 503")
+	} else {
+		slog.Info("observe module enabled", slog.String("prometheus", prometheusURLVal),
+			slog.Bool("alertmanager", alertmanagerURLVal != ""), slog.Bool("loki", lokiURLVal != ""),
+			slog.Bool("grafana", grafanaURLVal != ""))
 	}
 	parsedRepos := helmRepos.repos()
 	if len(parsedRepos) > 0 {
