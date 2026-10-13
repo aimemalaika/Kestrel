@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { columnSpecs, getPath, ageString, scanSummary } from './columns'
+import { columnSpecs, getPath, ageString, scanSummary, durationString } from './columns'
 import type { K8sObject } from '../contract/types'
 
 const pod: K8sObject = {
@@ -293,5 +293,89 @@ describe('per-kind rich columns', () => {
     }
     expect(val('PersistentVolume', 'Claim', pv)).toBe('ns/c1')
     expect(val('PersistentVolume', 'Access Mode', pv)).toBe('RWO')
+  })
+})
+
+describe('Tekton core columns', () => {
+  const run = (kind: string, status: Record<string, unknown> = {}): K8sObject => ({
+    apiVersion: 'tekton.dev/v1',
+    kind,
+    metadata: { name: 'r' },
+    status,
+  })
+  const statusOf = (kind: string, conds: unknown[]) =>
+    columnSpecs(kind, { namespaceSelected: true })
+      .find((c) => c.id === 'status')!
+      .value(run(kind, { conditions: conds }))
+
+  it('derives run status from the Succeeded condition', () => {
+    expect(statusOf('PipelineRun', [{ type: 'Succeeded', status: 'True' }])).toBe('Succeeded')
+    expect(statusOf('PipelineRun', [{ type: 'Succeeded', status: 'False' }])).toBe('Failed')
+    expect(
+      statusOf('PipelineRun', [
+        { type: 'Succeeded', status: 'False', reason: 'PipelineRunCancelled' },
+      ]),
+    ).toBe('Cancelled')
+    expect(statusOf('TaskRun', [{ type: 'Succeeded', status: 'Unknown', reason: 'Running' }])).toBe(
+      'Running',
+    )
+    expect(statusOf('CustomRun', [])).toBe('—')
+  })
+
+  it('has the expected column order for runs', () => {
+    const h = (k: string) => columnSpecs(k, { namespaceSelected: false }).map((c) => c.header)
+    expect(h('PipelineRun')).toEqual([
+      'Name',
+      'Namespace',
+      'Status',
+      'Pipeline',
+      'Started',
+      'Duration',
+      'Vulnerabilities',
+      'Age',
+    ])
+    expect(h('TaskRun')).toEqual([
+      'Name',
+      'Namespace',
+      'Status',
+      'Task',
+      'Started',
+      'Duration',
+      'Pod',
+      'Age',
+    ])
+  })
+
+  it('Pipeline/Task/StepAction have no Status column; counts derive', () => {
+    const h = (k: string) => columnSpecs(k, { namespaceSelected: true }).map((c) => c.header)
+    expect(h('Pipeline')).toEqual(['Name', 'Tasks', 'Age'])
+    expect(h('Task')).toEqual(['Name', 'Steps', 'Age'])
+    expect(h('StepAction')).toEqual(['Name', 'Image', 'Age'])
+    const p: K8sObject = {
+      apiVersion: 'tekton.dev/v1',
+      kind: 'Pipeline',
+      metadata: { name: 'p' },
+      spec: { tasks: [{}, {}, {}] },
+    }
+    expect(
+      columnSpecs('Pipeline', { namespaceSelected: true })
+        .find((c) => c.header === 'Tasks')!
+        .value(p),
+    ).toBe('3')
+  })
+
+  it('durationString is stable with explicit timestamps', () => {
+    const o = run('TaskRun', {
+      startTime: '2020-01-01T00:00:00Z',
+      completionTime: '2020-01-01T01:02:03Z',
+    })
+    expect(durationString(o)).toBe('1h2m3s')
+    expect(
+      durationString(
+        run('TaskRun', { startTime: '2020-01-01T00:00:00Z' }),
+        Date.parse('2020-01-01T00:01:05Z'),
+      ),
+    ).toBe('1m5s')
+    expect(durationString(run('TaskRun'))).toBeUndefined()
   })
 })
