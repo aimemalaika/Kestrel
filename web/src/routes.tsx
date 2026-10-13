@@ -4,6 +4,7 @@ import { ResourceView } from './views/ResourceView'
 import { EmptyState } from './views/EmptyState'
 import { DetailDrawer } from './detail/DetailDrawer'
 import { RegistryBrowser } from './modules/registry/RegistryBrowser'
+import { RunHistory } from './modules/results/RunHistory'
 import { HelmBrowser } from './modules/helm/HelmBrowser'
 import { ArgoApplicationsView } from './modules/argo/ArgoApplicationsView'
 import { Overview } from './views/Overview'
@@ -33,6 +34,7 @@ export function AppRoutes() {
         <Route path="ns/:namespace/:group/:version/:resource" element={<ResourceView />}>
           <Route path=":name" element={<DetailDrawer />} />
         </Route>
+        <Route path="results" element={<RunHistory />} />
         <Route path="registry" element={<RegistryBrowser />} />
         <Route path="overview" element={<Overview />} />
         <Route path="nodes" element={<NodesView />} />

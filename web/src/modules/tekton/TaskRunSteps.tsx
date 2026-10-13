@@ -4,6 +4,7 @@ import { getPath } from '../../table/columns'
 import { LogViewer } from '../../streaming/LogViewer'
 import { StatusBadge } from '../../ui'
 import { steps as stepsOf } from './model'
+import { ArchivedLog } from './ArchivedLog'
 
 export function TaskRunSteps({ taskRun }: { taskRun: K8sObject }) {
   const list = stepsOf(taskRun)
@@ -12,6 +13,8 @@ export function TaskRunSteps({ taskRun }: { taskRun: K8sObject }) {
   const selectedName = picked ?? defaultStep
   const selected = list.find((s) => s.name === selectedName)
   const podName = getPath(taskRun, 'status.podName') as string | undefined
+
+  const record = taskRun.metadata.annotations?.['results.tekton.dev/record']
 
   if (list.length === 0) return <p className="text-xs text-zinc-500">No steps.</p>
 
@@ -50,6 +53,8 @@ export function TaskRunSteps({ taskRun }: { taskRun: K8sObject }) {
               container={selected.container}
             />
           </div>
+        ) : record ? (
+          <ArchivedLog record={record} />
         ) : (
           <p className="mt-2 text-xs text-zinc-500">logs unavailable (pod gone — see Results)</p>
         ))}
