@@ -23,6 +23,7 @@ import (
 	kubeconfigsvc "github.com/aimemalaika/Kestrel/internal/kubeconfig"
 	"github.com/aimemalaika/Kestrel/internal/obs"
 	"github.com/aimemalaika/Kestrel/internal/observe"
+	"github.com/aimemalaika/Kestrel/internal/rbac"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/results"
@@ -184,6 +185,8 @@ func main() {
 		deps.Accessor = acc
 		// Helm releases are read AS THE USER (token forwarding) via this accessor.
 		deps.Helm = helm.NewHandler(acc, helm.Config{Repos: parsedRepos})
+		// RBAC access matrix: graph + SubjectAccessReviews AS THE USER.
+		deps.RBAC = rbac.NewHandler(acc)
 		// Service map is read/written AS THE USER (token forwarding) via this accessor.
 		deps.ServiceMap = servicemap.NewHandler(acc, smCfg)
 		deps.Resources = resource.NewServiceWith(k8s.NewReal(acc), protected, auditor)
@@ -226,6 +229,7 @@ func main() {
 		// --mock: no cluster, so releases come back empty (no typed client), but
 		// configured chart repos still resolve over HTTP.
 		deps.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{Repos: parsedRepos})
+		deps.RBAC = rbac.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil))
 		// --mock: no typed client, so the service map uses its in-memory fallback
 		// (PUT validates + stores in memory, GET returns it) — no cluster required.
 		deps.ServiceMap = servicemap.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), smCfg)
