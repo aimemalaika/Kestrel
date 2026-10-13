@@ -83,6 +83,8 @@ export const ADMIN_NAV: NavSection[] = [
       { label: 'StepActions', icon: 'task', target: res('stepactions') },
       { label: 'CustomRuns', icon: 'run', target: res('customruns') },
       { label: 'Run History', icon: 'run', target: route('/results') },
+      { label: 'Tekton Config', icon: 'settings', target: route('/tekton-config') },
+      { label: 'Manual Approvals', icon: 'check', target: res('manualapprovalgates') },
       { label: 'Registry', icon: 'image', target: route('/registry') },
     ],
   },
