@@ -30,9 +30,8 @@ import (
 )
 
 const (
-	maxResources = 50 // cap on candidate resource rows
+	maxResources = 50 // cap on (scope, resource) rows across the whole matrix
 	sarWorkers   = 8  // SAR concurrency limit
-	maxScopes    = 20 // cap on SAR scopes (namespaces) per matrix cell
 )
 
 // verbs are the matrix columns, in display order.
@@ -76,10 +75,17 @@ type ResourceAccess struct {
 	Verbs    map[string]Cell `json:"verbs"`
 }
 
+// NamespaceAccess is one scope of the matrix. Namespace "" is cluster-wide.
+type NamespaceAccess struct {
+	Namespace string           `json:"namespace"`
+	Resources []ResourceAccess `json:"resources"`
+}
+
 // Matrix is the response body.
 type Matrix struct {
-	Subject   string           `json:"subject"`
-	Resources []ResourceAccess `json:"resources"`
+	Subject   string            `json:"subject"`
+	Truncated bool              `json:"truncated,omitempty"`
+	Scopes    []NamespaceAccess `json:"scopes"`
 }
 
 // Handler serves /api/rbac/*.
@@ -149,22 +155,22 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request) {
 	sub := subjectSpec{kind: kind, name: name, ns: ns}
 	subject := sub.display()
 	if kube == nil {
-		writeJSON(w, http.StatusOK, Matrix{Subject: subject, Resources: []ResourceAccess{}})
+		writeJSON(w, http.StatusOK, Matrix{Subject: subject, Scopes: []NamespaceAccess{}})
 		return
 	}
 	ctx := r.Context()
 
-	cs, aerr := candidates(ctx, kube, sub)
+	cs, truncated, aerr := candidates(ctx, kube, sub)
 	if aerr != nil {
 		writeErr(w, aerr)
 		return
 	}
-	rows, aerr := confirm(ctx, kube, sub, cs)
+	scopes, aerr := confirm(ctx, kube, sub, cs)
 	if aerr != nil {
 		writeErr(w, aerr)
 		return
 	}
-	writeJSON(w, http.StatusOK, Matrix{Subject: subject, Resources: rows})
+	writeJSON(w, http.StatusOK, Matrix{Subject: subject, Truncated: truncated, Scopes: scopes})
 }
 
 // subjectSpec identifies the subject whose access is computed.
@@ -203,21 +209,29 @@ func (s subjectSpec) sarSpec(ra *authzv1.ResourceAttributes) authzv1.SubjectAcce
 // label (first binding wins per scope). Scope "" means cluster-wide.
 type cands map[gr]map[string]map[string]string
 
-// candidates walks the subject's bindings, capped to maxResources rows.
-//
-// Scoping: a ServiceAccount keeps the own-namespace model (RoleBindings in its
-// namespace + ClusterRoleBindings, all SAR-checked in that namespace). For
-// User/Group, RoleBindings are scanned across ALL namespaces and each grant is
-// SAR-checked in THAT binding's namespace (ClusterRoleBindings cluster-wide);
-// the matrix stays flat: a cell is allowed if any scope allows it, labelled with
-// that scope's binding. Scopes per cell are capped (maxScopes) to bound SAR cost.
-func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec) (cands, *apiError) {
+// candidates walks the subject's bindings. Every kind is scanned across all
+// namespaces; each grant is SAR-checked in its binding's namespace, and
+// ClusterRoleBindings are cluster-wide (scope ""). The total number of
+// (scope, resource) pairs is capped at maxResources; the bool reports truncation.
+func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec) (cands, bool, *apiError) {
 	out := cands{}
 	add := func(scope, label string, rules []rbacv1.PolicyRule) {
 		for _, rule := range rules {
 			for _, g := range rule.APIGroups {
 				for _, res := range rule.Resources {
 					for _, target := range expand(g, res) {
+						// Cluster-scoped resources are inherently cluster-wide: file them
+						// under "" whichever binding surfaced them.
+						origScope, scope, lbl := scope, scope, label
+						if clusterScoped[gr{target.group, strings.SplitN(target.resource, "/", 2)[0]}] {
+							scope = ""
+							if origScope != "" {
+								// The real cluster-wide grant is a ClusterRoleBinding, not
+								// this namespaced binding: keep the candidate (SAR decides)
+								// but record no misleading label.
+								lbl = ""
+							}
+						}
 						m := out[target]
 						if m == nil {
 							m = map[string]map[string]string{}
@@ -230,8 +244,10 @@ func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec)
 									sc = map[string]string{}
 									m[ev] = sc
 								}
-								if _, ok := sc[scope]; !ok && len(sc) < maxScopes {
-									sc[scope] = label
+								// First label wins, except an empty (rewritten) label yields
+								// to a real one.
+								if cur, ok := sc[scope]; !ok || (cur == "" && lbl != "") {
+									sc[scope] = lbl
 								}
 							}
 						}
@@ -241,14 +257,10 @@ func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec)
 		}
 	}
 
-	rbNS, rbScope, crbScope := sub.ns, func(string) string { return sub.ns }, sub.ns
-	if sub.kind != "ServiceAccount" {
-		// All namespaces; each binding is checked in its own namespace.
-		rbNS, rbScope, crbScope = metav1.NamespaceAll, func(n string) string { return n }, ""
-	}
+	rbNS, rbScope, crbScope := metav1.NamespaceAll, func(n string) string { return n }, ""
 	rbs, err := kube.RbacV1().RoleBindings(rbNS).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, mapK8sErr(err)
+		return nil, false, mapK8sErr(err)
 	}
 	for i := range rbs.Items {
 		rb := &rbs.Items[i]
@@ -263,7 +275,7 @@ func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec)
 				continue
 			}
 			if err != nil {
-				return nil, mapK8sErr(err)
+				return nil, false, mapK8sErr(err)
 			}
 			rules = role.Rules
 		case "ClusterRole":
@@ -272,7 +284,7 @@ func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec)
 				continue
 			}
 			if err != nil {
-				return nil, mapK8sErr(err)
+				return nil, false, mapK8sErr(err)
 			}
 			rules = role.Rules
 		default:
@@ -283,7 +295,7 @@ func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec)
 
 	crbs, err := kube.RbacV1().ClusterRoleBindings().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, mapK8sErr(err)
+		return nil, false, mapK8sErr(err)
 	}
 	for i := range crbs.Items {
 		crb := &crbs.Items[i]
@@ -295,20 +307,49 @@ func candidates(ctx context.Context, kube kubernetes.Interface, sub subjectSpec)
 			continue
 		}
 		if err != nil {
-			return nil, mapK8sErr(err)
+			return nil, false, mapK8sErr(err)
 		}
 		add(crbScope, "CR:"+crb.Name+"/"+crb.RoleRef.Name, role.Rules)
 	}
 
-	if len(out) > maxResources {
-		keys := sortedKeys(out)[:maxResources]
-		capped := make(cands, maxResources)
-		for _, k := range keys {
-			capped[k] = out[k]
-		}
-		out = capped
+	// Cap the total number of (scope, resource) pairs, in sorted order.
+	type pair struct {
+		scope string
+		g     gr
 	}
-	return out, nil
+	seen := map[pair]bool{}
+	for g, byVerb := range out {
+		for _, byScope := range byVerb {
+			for sc := range byScope {
+				seen[pair{sc, g}] = true
+			}
+		}
+	}
+	pairs := make([]pair, 0, len(seen))
+	for p := range seen {
+		pairs = append(pairs, p)
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		if pairs[i].scope != pairs[j].scope {
+			return pairs[i].scope < pairs[j].scope
+		}
+		return grLess(pairs[i].g, pairs[j].g)
+	})
+	if len(pairs) <= maxResources {
+		return out, false, nil
+	}
+	for _, p := range pairs[maxResources:] {
+		for v, byScope := range out[p.g] {
+			delete(byScope, p.scope)
+			if len(byScope) == 0 {
+				delete(out[p.g], v)
+			}
+		}
+		if len(out[p.g]) == 0 {
+			delete(out, p.g)
+		}
+	}
+	return out, true, nil
 }
 
 // expand maps a rule's (apiGroup, resource) to concrete matrix rows.
@@ -341,25 +382,39 @@ func expandVerb(v string) []string {
 	return []string{v}
 }
 
-func sortedKeys(m cands) []gr {
-	keys := make([]gr, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+func grLess(a, b gr) bool {
+	if a.group != b.group {
+		return a.group < b.group
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		if keys[i].group != keys[j].group {
-			return keys[i].group < keys[j].group
-		}
-		return keys[i].resource < keys[j].resource
-	})
-	return keys
+	return a.resource < b.resource
 }
 
-// confirm SAR-checks all 8 verbs per candidate resource, concurrency-limited.
-// Any SAR error fails the whole request (fail-closed).
-func confirm(ctx context.Context, kube kubernetes.Interface, sub subjectSpec, cs cands) ([]ResourceAccess, *apiError) {
-	keys := sortedKeys(cs)
-	rows := make([]ResourceAccess, len(keys))
+// confirm SAR-checks all 8 verbs per (scope, resource), each in that scope's
+// namespace, concurrency-limited. Any SAR error fails the whole request
+// (fail-closed). Scopes are sorted cluster-wide first, then by namespace.
+func confirm(ctx context.Context, kube kubernetes.Interface, sub subjectSpec, cs cands) ([]NamespaceAccess, *apiError) {
+	// Invert gr->verb->scope->label into scope->gr->verb->label.
+	byScope := map[string]map[gr]map[string]string{}
+	for g, byVerb := range cs {
+		for v, scopes := range byVerb {
+			for sc, label := range scopes {
+				if byScope[sc] == nil {
+					byScope[sc] = map[gr]map[string]string{}
+				}
+				if byScope[sc][g] == nil {
+					byScope[sc][g] = map[string]string{}
+				}
+				byScope[sc][g][v] = label
+			}
+		}
+	}
+	names := make([]string, 0, len(byScope))
+	for sc := range byScope {
+		names = append(names, sc)
+	}
+	sort.Strings(names) // "" sorts first
+
+	out := make([]NamespaceAccess, len(names))
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -369,30 +424,29 @@ func confirm(ctx context.Context, kube kubernetes.Interface, sub subjectSpec, cs
 		mu       sync.Mutex
 		firstErr *apiError
 	)
-	for i, k := range keys {
-		rows[i] = ResourceAccess{Group: k.group, Resource: k.resource, Verbs: make(map[string]Cell, len(verbs))}
-		for _, v := range verbs {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(i int, k gr, v string) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				if ctx.Err() != nil {
-					return
-				}
-				res, rsub := k.resource, ""
-				if p := strings.SplitN(k.resource, "/", 2); len(p) == 2 {
-					res, rsub = p[0], p[1]
-				}
-				// Try each scope in order; the first allowing scope wins.
-				scopes := make([]string, 0, len(cs[k][v]))
-				for sc := range cs[k][v] {
-					scopes = append(scopes, sc)
-				}
-				sort.Strings(scopes)
-				cell := Cell{}
-				var err error
-				for _, sc := range scopes {
+	for si, sc := range names {
+		grs := make([]gr, 0, len(byScope[sc]))
+		for g := range byScope[sc] {
+			grs = append(grs, g)
+		}
+		sort.Slice(grs, func(i, j int) bool { return grLess(grs[i], grs[j]) })
+		rows := make([]ResourceAccess, len(grs))
+		out[si] = NamespaceAccess{Namespace: sc, Resources: rows}
+		for ri, k := range grs {
+			rows[ri] = ResourceAccess{Group: k.group, Resource: k.resource, Verbs: make(map[string]Cell, len(verbs))}
+			for _, v := range verbs {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func(row *ResourceAccess, sc string, k gr, v string) {
+					defer wg.Done()
+					defer func() { <-sem }()
+					if ctx.Err() != nil {
+						return
+					}
+					res, rsub := k.resource, ""
+					if p := strings.SplitN(k.resource, "/", 2); len(p) == 2 {
+						res, rsub = p[0], p[1]
+					}
 					sarNS := sc
 					// Cluster-scoped resources take no namespace in the SAR.
 					if clusterScoped[gr{k.group, res}] {
@@ -401,37 +455,30 @@ func confirm(ctx context.Context, kube kubernetes.Interface, sub subjectSpec, cs
 					sar := &authzv1.SubjectAccessReview{Spec: sub.sarSpec(&authzv1.ResourceAttributes{
 						Verb: v, Group: k.group, Resource: res, Subresource: rsub, Namespace: sarNS,
 					})}
-					var out *authzv1.SubjectAccessReview
-					out, err = kube.AuthorizationV1().SubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+					resp, err := kube.AuthorizationV1().SubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
+					mu.Lock()
+					defer mu.Unlock()
 					if err != nil {
-						break
+						if firstErr == nil {
+							firstErr = mapK8sErr(err)
+							cancel()
+						}
+						return
 					}
-					if out.Status.Allowed {
-						cell = Cell{Allowed: true, Binding: cs[k][v][sc]}
-						break
+					cell := Cell{}
+					if resp.Status.Allowed {
+						cell = Cell{Allowed: true, Binding: byScope[sc][k][v]}
 					}
-				}
-				mu.Lock()
-				defer mu.Unlock()
-				if err != nil {
-					if firstErr == nil {
-						firstErr = mapK8sErr(err)
-						cancel()
-					}
-					return
-				}
-				rows[i].Verbs[v] = cell
-			}(i, k, v)
+					row.Verbs[v] = cell
+				}(&rows[ri], sc, k, v)
+			}
 		}
 	}
 	wg.Wait()
 	if firstErr != nil {
 		return nil, firstErr
 	}
-	if rows == nil {
-		rows = []ResourceAccess{}
-	}
-	return rows, nil
+	return out, nil
 }
 
 // validSubjectName is validName without the ':' restriction (User/Group names
