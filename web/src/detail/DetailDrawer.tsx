@@ -10,6 +10,7 @@ import { PortForwardButton } from '../sessions/PortForwardButton'
 import { DeleteButton } from '../write/DeleteButton'
 import { useCanI } from '../write/useCanI'
 import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
+import { TaskRunDetail } from '../modules/tekton/TaskRunDetail'
 import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
 import { Icon } from '../ui'
@@ -36,10 +37,11 @@ export function DetailDrawer() {
   const canUpdate = useCanI(objRef ? { verb: 'update', ...objRef } : undefined)
   const canDelete = useCanI(objRef ? { verb: 'delete', ...objRef } : undefined)
   const isPipelineRun = object?.kind === 'PipelineRun'
+  const isTaskRun = object?.kind === 'TaskRun'
   const isApplication = object?.kind === 'Application'
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'relations', 'logs', 'terminal']
-    : isPipelineRun
+    : isPipelineRun || isTaskRun
       ? ['detail', 'yaml', 'events', 'relations', 'run']
       : isApplication
         ? ['detail', 'yaml', 'events', 'relations', 'app']
@@ -133,6 +135,7 @@ export function DetailDrawer() {
               {tab === 'events' && <EventsView object={object} />}
               {tab === 'relations' && <RelationsView object={object} />}
               {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
+              {tab === 'run' && isTaskRun && <TaskRunDetail object={object} />}
               {tab === 'app' && isApplication && <ArgoRichView object={object} />}
               {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
               {tab === 'terminal' && isPod && podRef ? (

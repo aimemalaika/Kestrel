@@ -1,31 +1,92 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
 import { TektonRunDetail } from './TektonRunDetail'
 import type { K8sObject } from '../../contract/types'
 
 const run: K8sObject = {
   apiVersion: 'tekton.dev/v1',
   kind: 'PipelineRun',
-  metadata: { name: 'build-1' },
+  metadata: { name: 'build-1', namespace: 'default' },
+  spec: {
+    pipelineRef: { name: 'bp' },
+    params: [{ name: 'url', value: 'git://x' }],
+    workspaces: [{ name: 'source' }],
+  },
   status: {
-    conditions: [{ type: 'Succeeded', status: 'False', reason: 'Failed' }],
+    conditions: [{ type: 'Succeeded', status: 'False', reason: 'Failed', message: 'boom' }],
     startTime: '2026-10-08T10:00:00Z',
     completionTime: '2026-10-08T10:05:00Z',
-    taskRuns: [
-      { name: 'fetch', succeeded: true, steps: [{ name: 'clone', status: 'Completed' }] },
-      { name: 'test', succeeded: false, steps: [{ name: 'unit', status: 'Error' }] },
+    results: [{ name: 'IMAGE', value: 'reg/app' }],
+    childReferences: [
+      { kind: 'TaskRun', name: 'build-1-fetch', pipelineTaskName: 'fetch' },
+      { kind: 'TaskRun', name: 'build-1-test', pipelineTaskName: 'test' },
     ],
   },
-} as K8sObject
+} as unknown as K8sObject
+
+const tr = (name: string, ok: boolean, step: string, exitCode: number): K8sObject =>
+  ({
+    apiVersion: 'tekton.dev/v1',
+    kind: 'TaskRun',
+    metadata: { name, namespace: 'default' },
+    status: {
+      conditions: [{ type: 'Succeeded', status: ok ? 'True' : 'False', reason: 'x' }],
+      podName: `${name}-pod`,
+      steps: [{ name: step, container: `step-${step}`, terminated: { exitCode } }],
+    },
+  }) as unknown as K8sObject
+
+const TASKRUNS = [tr('build-1-fetch', true, 'clone', 0), tr('build-1-test', false, 'unit', 1)]
+
+vi.mock('../../streaming/LogViewer', () => ({
+  LogViewer: (p: { container?: string }) => <div data-testid="logs">{p.container}</div>,
+}))
+
+const PIPELINE = {
+  kind: 'Pipeline',
+  metadata: { name: 'bp', namespace: 'default' },
+  spec: { tasks: [{ name: 'fetch' }, { name: 'test' }, { name: 'deploy' }] },
+} as unknown as K8sObject
+
+vi.mock('../../table/useResourceStream', () => ({
+  useResourceStream: (gvr: { resource: string }) => ({
+    rows: gvr.resource === 'taskruns' ? TASKRUNS : [PIPELINE],
+    status: 'ready',
+  }),
+}))
 
 describe('TektonRunDetail', () => {
-  it('renders condition, tasks and steps', () => {
+  it('renders timeline with duration and failure reason', () => {
     render(<TektonRunDetail object={run} />)
-    expect(screen.getAllByText('Failed').length).toBe(2)
-    expect(screen.getAllByText('fetch')).toHaveLength(2) // StageViz + task row
-    expect(screen.getAllByText('test')).toHaveLength(2)
-    expect(screen.getByText('clone: Completed')).toBeTruthy()
-    expect(screen.getByText('unit: Error')).toBeTruthy()
+    expect(screen.getByText('Failed: boom')).toBeTruthy()
+    expect(screen.getByText('5m 0s')).toBeTruthy()
     expect(screen.getByText('2026-10-08T10:00:00Z')).toBeTruthy()
+    expect(screen.getByText('2026-10-08T10:05:00Z')).toBeTruthy()
+  })
+
+  it('renders stage pills, including pending pipeline tasks', () => {
+    render(<TektonRunDetail object={run} />)
+    expect(screen.getByRole('button', { name: /fetch/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /test/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /deploy/ })).toBeTruthy()
+  })
+
+  it('selecting a stage reveals its steps and logs', () => {
+    render(<TektonRunDetail object={run} />)
+    fireEvent.click(screen.getByRole('button', { name: /test/ }))
+    expect(screen.getByText('unit')).toBeTruthy()
+    expect(screen.getByTestId('logs').textContent).toBe('step-unit')
+    fireEvent.click(screen.getByRole('button', { name: /fetch/ }))
+    expect(screen.getByText('clone')).toBeTruthy()
+  })
+
+  it('renders params, results, workspaces and pipeline spec', () => {
+    render(<TektonRunDetail object={run} />)
+    expect(screen.getByText('url')).toBeTruthy()
+    expect(screen.getByText('git://x')).toBeTruthy()
+    expect(screen.getByText('IMAGE')).toBeTruthy()
+    expect(screen.getByText('reg/app')).toBeTruthy()
+    expect(screen.getByText('source')).toBeTruthy()
+    expect(screen.getByText('Pipeline spec')).toBeTruthy()
   })
 })

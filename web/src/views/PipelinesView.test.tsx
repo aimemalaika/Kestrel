@@ -6,25 +6,40 @@ function run(
   name: string,
   status: 'True' | 'False' | 'Unknown',
   reason: string,
-  tasks: unknown[],
+  tasks: string[],
 ): K8sObject {
   return {
     apiVersion: 'tekton.dev/v1',
     kind: 'PipelineRun',
     metadata: { name, namespace: 'default', uid: name, creationTimestamp: '2026-01-01T00:00:00Z' },
     spec: { pipelineRef: { name: 'bp' } },
-    status: { conditions: [{ type: 'Succeeded', status, reason }], taskRuns: tasks },
+    status: {
+      conditions: [{ type: 'Succeeded', status, reason }],
+      childReferences: tasks.map((t) => ({
+        kind: 'TaskRun',
+        name: `${name}-${t}`,
+        pipelineTaskName: t,
+      })),
+    },
+  } as unknown as K8sObject
+}
+function taskRun(name: string, ok: boolean): K8sObject {
+  return {
+    apiVersion: 'tekton.dev/v1',
+    kind: 'TaskRun',
+    metadata: { name, namespace: 'default', uid: name },
+    status: { conditions: [{ type: 'Succeeded', status: ok ? 'True' : 'False', reason: 'x' }] },
   } as unknown as K8sObject
 }
 const RUNS = [
-  run('run-ok', 'True', 'Succeeded', [
-    { name: 'a', pipelineTaskName: 'clone', succeeded: true },
-    { name: 'b', pipelineTaskName: 'build', succeeded: true },
-  ]),
-  run('run-bad', 'False', 'Failed', [
-    { name: 'a', pipelineTaskName: 'clone', succeeded: true },
-    { name: 'b', pipelineTaskName: 'build', steps: [{ name: 's', status: 'Error' }] },
-  ]),
+  run('run-ok', 'True', 'Succeeded', ['clone', 'build']),
+  run('run-bad', 'False', 'Failed', ['clone', 'build']),
+]
+const TASKRUNS = [
+  taskRun('run-ok-clone', true),
+  taskRun('run-ok-build', true),
+  taskRun('run-bad-clone', true),
+  taskRun('run-bad-build', false),
 ]
 const PIPES = [
   {
@@ -37,7 +52,7 @@ const PIPES = [
 
 vi.mock('../table/useResourceStream', () => ({
   useResourceStream: (gvr: { resource: string }) => ({
-    rows: gvr.resource === 'pipelines' ? PIPES : RUNS,
+    rows: gvr.resource === 'pipelines' ? PIPES : gvr.resource === 'taskruns' ? TASKRUNS : RUNS,
     status: 'ready',
   }),
 }))

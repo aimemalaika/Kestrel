@@ -150,7 +150,10 @@ describe('MockClient pipelineruns', () => {
     const c = createMockClient()
     expect((await c.catalog()).some((e) => e.resource === 'pipelineruns')).toBe(true)
     type Result = { name: string }
-    type PipelineRunStatus = { results: Result[]; taskRuns: { steps: unknown[] }[] }
+    type PipelineRunStatus = {
+      results: Result[]
+      childReferences: { kind: string; name: string }[]
+    }
     const objs: { kind?: string; status: PipelineRunStatus }[] = []
     const stop = c.watch(
       { group: 'tekton.dev', version: 'v1', resource: 'pipelineruns' },
@@ -166,7 +169,7 @@ describe('MockClient pipelineruns', () => {
     const names = (o: (typeof objs)[number]) => o.status.results.map((r) => r.name)
     expect(objs.some((o) => names(o).some((n) => n.endsWith('SCAN_OUTPUT')))).toBe(true)
     expect(objs.some((o) => o.status.results.length === 0)).toBe(true)
-    expect(objs[0].status.taskRuns[0].steps.length).toBeGreaterThan(0)
+    expect(objs[0].status.childReferences[0].kind).toBe('TaskRun')
   })
 })
 

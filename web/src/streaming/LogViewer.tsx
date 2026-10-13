@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createClient } from '../client/createClient'
 import type { ResourceRef } from '../client/Client'
 
-export function LogViewer({ pod }: { pod: ResourceRef }) {
+export function LogViewer({ pod, container }: { pod: ResourceRef; container?: string }) {
   const [lines, setLines] = useState<string[]>([])
   const [filter, setFilter] = useState('')
   const [follow, setFollow] = useState(true)
@@ -10,10 +10,16 @@ export function LogViewer({ pod }: { pod: ResourceRef }) {
 
   useEffect(() => {
     setLines([])
-    const stop = createClient().logs(pod, (line) => setLines((prev) => [...prev.slice(-999), line]))
+    const stop = createClient().logs(
+      pod,
+      (line) => setLines((prev) => [...prev.slice(-999), line]),
+      {
+        container,
+      },
+    )
     return stop
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are pod's primitive fields; avoids resubscribing on a new pod object identity
-  }, [pod.namespace, pod.name, pod.resource])
+  }, [pod.namespace, pod.name, pod.resource, container])
 
   const shown = filter ? lines.filter((l) => l.includes(filter)) : lines
 

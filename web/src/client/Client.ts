@@ -33,7 +33,7 @@ export interface Client {
   delete(ref: ResourceRef, opts?: { dryRun?: boolean }): Promise<void>
   watch(gvr: GVR, opts: WatchOptions, onEvent: (e: WatchEnvelope) => void): Unsubscribe
   canI(req: CanIRequest): Promise<CanIResponse>
-  logs(ref: ResourceRef, onLine: (line: string) => void): Unsubscribe
+  logs(ref: ResourceRef, onLine: (line: string) => void, opts?: { container?: string }): Unsubscribe
   exec(ref: ResourceRef): ExecSession
   portForward(ref: ResourceRef, localPort: number, remotePort: number): PortForwardSession
 }
