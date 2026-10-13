@@ -33,8 +33,15 @@ export interface AccessMatrix {
   resources: ResourceAccess[]
 }
 
+export interface SubjectRef {
+  kind: 'ServiceAccount' | 'User' | 'Group'
+  name: string
+  /** Required for ServiceAccount only. */
+  namespace?: string
+}
+
 export interface RBACClient {
-  access(namespace: string, name: string): Promise<AccessMatrix>
+  access(subject: SubjectRef): Promise<AccessMatrix>
 }
 
 let shared: RBACClient | undefined

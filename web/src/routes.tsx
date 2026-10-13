@@ -16,6 +16,8 @@ import { OperatorsView } from './views/OperatorsView'
 import { OperatorHubView } from './views/OperatorHubView'
 import { PipelinesView } from './views/PipelinesView'
 import { TektonConfigView } from './views/TektonConfigView'
+import { UsersView } from './views/UsersView'
+import { GroupsView } from './views/GroupsView'
 import { ClusterView } from './views/ClusterView'
 import { TopologyView } from './views/TopologyView'
 import { DashboardsView } from './views/DashboardsView'
@@ -48,6 +50,8 @@ export function AppRoutes() {
         <Route path="tekton-config" element={<TektonConfigView />} />
         <Route path="cluster" element={<ClusterView />} />
         <Route path="cluster/settings" element={<ClusterView />} />
+        <Route path="users" element={<UsersView />} />
+        <Route path="groups" element={<GroupsView />} />
         <Route path="topology" element={<TopologyView />} />
         <Route path="dashboards" element={<DashboardsView />} />
         <Route path="api-explorer" element={<ApiExplorerView />} />
