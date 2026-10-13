@@ -12,6 +12,9 @@ type AuthInfo struct {
 	Mode    string       `json:"mode"` // "single-operator" | "oidc"
 	User    *AuthUser    `json:"user,omitempty"`
 	Options []AuthOption `json:"options"`
+	// AdminGroups is the configured --admin-groups list. The backend does not
+	// compute admin-ness; the SPA intersects it with the user's own groups.
+	AdminGroups []string `json:"adminGroups,omitempty"`
 }
 
 type AuthUser struct {

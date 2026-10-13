@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
@@ -9,11 +9,20 @@ import { CommandPalette } from '../search/CommandPalette'
 import { ErrorBoundary } from './ErrorBoundary'
 import { WebTerminalDrawer } from './WebTerminalDrawer'
 import { loadDefaultPerspective } from './perspectivePref'
+import { allowedPerspective, canAdmin as computeCanAdmin } from './perspective'
+import { getIdentity, subscribe } from '../auth/identity'
 import type { Perspective } from '../nav/categoryMap'
 
 export function AppShell() {
-  const { status } = useAuth()
-  const [perspective, setPerspective] = useState<Perspective>(() => loadDefaultPerspective())
+  const { status, mode, adminGroups } = useAuth()
+  const identity = useSyncExternalStore(subscribe, getIdentity, getIdentity)
+  const canAdmin = computeCanAdmin(mode, identity?.groups, adminGroups)
+  // The user's chosen perspective; the group rule is the ceiling. Deriving the
+  // effective perspective (rather than storing it) auto-corrects for any
+  // identity/authInfo load order: a non-admin is always `developer`, and an
+  // admin is restored to their choice once canAdmin resolves true.
+  const [chosen, setChosen] = useState<Perspective>(() => loadDefaultPerspective())
+  const perspective = allowedPerspective(chosen, canAdmin)
   const [terminalOpen, setTerminalOpen] = useState(false)
   if (status === 'loading')
     return (
@@ -26,7 +35,8 @@ export function AppShell() {
     <div className="flex flex-col h-screen bg-page text-zinc-200 overflow-hidden">
       <TopBar
         perspective={perspective}
-        onPerspectiveChange={setPerspective}
+        canAdmin={canAdmin}
+        onPerspectiveChange={setChosen}
         terminalOpen={terminalOpen}
         onToggleTerminal={() => setTerminalOpen((o) => !o)}
       />

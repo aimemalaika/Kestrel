@@ -42,6 +42,7 @@ function renderTopBar() {
     <MemoryRouter initialEntries={['/overview']}>
       <TopBar
         perspective="admin"
+        canAdmin
         onPerspectiveChange={() => {}}
         terminalOpen={false}
         onToggleTerminal={() => {}}

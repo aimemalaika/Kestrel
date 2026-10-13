@@ -12,4 +12,7 @@ export type AuthInfo = {
   mode: 'single-operator' | 'oidc'
   user?: { name: string; groups?: string[] } | null
   options: AuthOption[]
+  // Groups allowed the Administrator perspective (the backend's --admin-groups).
+  // Empty/absent means no gating. UI gating only; RBAC is the real boundary.
+  adminGroups?: string[]
 }
