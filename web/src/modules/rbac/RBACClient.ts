@@ -28,9 +28,16 @@ export interface ResourceAccess {
   verbs: Record<Verb, Cell>
 }
 
+export interface NamespaceAccess {
+  /** '' means cluster-wide; otherwise the RoleBinding namespace. */
+  namespace: string
+  resources: ResourceAccess[]
+}
+
 export interface AccessMatrix {
   subject: string
-  resources: ResourceAccess[]
+  truncated?: boolean
+  scopes: NamespaceAccess[]
 }
 
 export interface SubjectRef {
