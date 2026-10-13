@@ -126,8 +126,8 @@ export const ADMIN_NAV: NavSection[] = [
   {
     section: 'User Management',
     items: [
-      { label: 'Users', icon: 'user', target: res('users') },
-      { label: 'Groups', icon: 'group', target: res('groups') },
+      { label: 'Users', icon: 'user', target: route('/users') },
+      { label: 'Groups', icon: 'group', target: route('/groups') },
       { label: 'Service Accounts', icon: 'sa', target: res('serviceaccounts') },
       { label: 'Roles', icon: 'role', target: res('roles') },
       { label: 'Role Bindings', icon: 'binding', target: res('rolebindings') },
