@@ -58,6 +58,13 @@ describe('nav model', () => {
     expect(find(ADMIN_NAV, 'Builds', 'ImageStreams')).toEqual({ resource: 'imagestreams' })
     expect(find(DEV_NAV, 'Developer', 'Topology')).toEqual({ route: '/topology' })
   })
+
+  it('lists StepActions and CustomRuns under Pipelines via res()', () => {
+    const pipelines = ADMIN_NAV.find((s) => s.section === 'Pipelines')!
+    const target = (label: string) => pipelines.items.find((i) => i.label === label)!.target
+    expect(target('StepActions')).toEqual({ resource: 'stepactions' })
+    expect(target('CustomRuns')).toEqual({ resource: 'customruns' })
+  })
 })
 
 describe('customResourceSection', () => {

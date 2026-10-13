@@ -167,6 +167,9 @@ const NO_STATUS_KINDS = new Set([
   'StatefulSet',
   'DaemonSet',
   'Ingress',
+  'Pipeline',
+  'Task',
+  'StepAction',
 ])
 
 /** Kinds whose Status column sits right after Name/Namespace. */
@@ -314,6 +317,27 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
       derive: (o) => (isDefaultStorageClass(o) ? 'true' : 'false'),
     },
   ],
+  PipelineRun: [
+    { header: 'Status', path: 'status', cell: 'status' },
+    { header: 'Pipeline', path: 'spec.pipelineRef.name', cell: 'mono' },
+    { header: 'Started', path: 'status.startTime', derive: startedString },
+    { header: 'Duration', path: 'status.duration', derive: (o) => durationString(o) },
+  ],
+  TaskRun: [
+    { header: 'Status', path: 'status', cell: 'status' },
+    { header: 'Task', path: 'spec.taskRef.name', cell: 'mono' },
+    { header: 'Started', path: 'status.startTime', derive: startedString },
+    { header: 'Duration', path: 'status.duration', derive: (o) => durationString(o) },
+    { header: 'Pod', path: 'status.podName', cell: 'mono' },
+  ],
+  Pipeline: [{ header: 'Tasks', path: 'spec.tasks', numeric: true, derive: count('spec.tasks') }],
+  Task: [{ header: 'Steps', path: 'spec.steps', numeric: true, derive: count('spec.steps') }],
+  StepAction: [{ header: 'Image', path: 'spec.image', cell: 'mono' }],
+  CustomRun: [
+    { header: 'Status', path: 'status', cell: 'status' },
+    { header: 'Started', path: 'status.startTime', derive: startedString },
+    { header: 'Duration', path: 'status.duration', derive: (o) => durationString(o) },
+  ],
 }
 
 export function getPath(obj: unknown, path: string): unknown {
@@ -340,6 +364,43 @@ export function ageString(creationTimestamp?: string, now: number = Date.now()):
 
 function str(v: unknown): string {
   return v === undefined || v === null ? '—' : String(v)
+}
+
+/** Tekton run kinds whose status lives in status.conditions[] (type Succeeded),
+ *  not status.phase. */
+const TEKTON_RUN_KINDS = new Set(['PipelineRun', 'TaskRun', 'CustomRun'])
+
+/** Derive a tonable status string from a Tekton run's Succeeded condition. */
+function tektonRunStatus(o: K8sObject): string | undefined {
+  const c = arr(getPath(o, 'status.conditions')).find((x) => x.type === 'Succeeded')
+  if (!c) return undefined
+  const reason = typeof c.reason === 'string' ? c.reason : ''
+  if (c.status === 'True') return 'Succeeded'
+  if (c.status === 'False') return /cancel/i.test(reason) ? 'Cancelled' : 'Failed'
+  return /cancel/i.test(reason) ? 'Cancelled' : 'Running' // Unknown
+}
+
+/** Relative "started N ago" for a run's status.startTime (reuses ageString). */
+function startedString(o: K8sObject): string | undefined {
+  const t = getPath(o, 'status.startTime')
+  return typeof t === 'string' ? ageString(t) : undefined
+}
+
+/** Compact run duration startTime→completionTime (or →now while running). */
+export function durationString(o: K8sObject, now: number = Date.now()): string | undefined {
+  const start = getPath(o, 'status.startTime')
+  if (typeof start !== 'string') return undefined
+  const startMs = Date.parse(start)
+  if (Number.isNaN(startMs)) return undefined
+  const comp = getPath(o, 'status.completionTime')
+  const endMs = typeof comp === 'string' ? Date.parse(comp) : now
+  if (Number.isNaN(endMs)) return undefined
+  let s = Math.max(0, Math.floor((endMs - startMs) / 1000))
+  const h = Math.floor(s / 3600)
+  s -= h * 3600
+  const m = Math.floor(s / 60)
+  s -= m * 60
+  return h ? `${h}h${m}m${s}s` : m ? `${m}m${s}s` : `${s}s`
 }
 
 export interface ScanCounts {
@@ -381,7 +442,11 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
     header: 'Status',
     kind: 'status',
     value: (o) =>
-      str(getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+      str(
+        TEKTON_RUN_KINDS.has(kind)
+          ? tektonRunStatus(o)
+          : (getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+      ),
   }
   const pushHint = (h: ColumnHint) =>
     cols.push({

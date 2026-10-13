@@ -90,6 +90,8 @@ export const ADMIN_NAV: NavSection[] = [
       { label: 'PipelineRuns', icon: 'run', target: res('pipelineruns') },
       { label: 'Tasks', icon: 'task', target: res('tasks') },
       { label: 'TaskRuns', icon: 'run', target: res('taskruns') },
+      { label: 'StepActions', icon: 'task', target: res('stepactions') },
+      { label: 'CustomRuns', icon: 'run', target: res('customruns') },
     ],
   },
   {
