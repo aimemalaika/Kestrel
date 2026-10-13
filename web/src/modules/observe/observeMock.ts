@@ -88,6 +88,12 @@ const targets: PromTargets = {
 
 const NOW = 1760349600
 
+// Names match the seeded k8s nodes in MockClient; values differ per metric.
+const NODE_NAMES = ['master-01', 'master-02', 'master-03', 'worker-01', 'worker-02', 'worker-03']
+const NODE_CPU = [22.4, 18.7, 25.1, 63.8, 71.2, 48.5]
+const NODE_MEM = [41.3, 38.9, 44.6, 72.4, 80.1, 66.7]
+const NODE_STORAGE = [33.2, 31.8, 35.5, 54.9, 58.3, 47.1]
+
 export function createMockObserve(): ObserveClient {
   return {
     async config() {
@@ -99,6 +105,22 @@ export function createMockObserve(): ObserveClient {
       }
     },
     async query(expr): Promise<PromResult> {
+      const perNode = expr.includes('node_cpu')
+        ? NODE_CPU
+        : expr.includes('MemAvailable')
+          ? NODE_MEM
+          : expr.includes('filesystem')
+            ? NODE_STORAGE
+            : undefined
+      if (perNode) {
+        return {
+          resultType: 'vector',
+          result: NODE_NAMES.map((node, i) => ({
+            metric: { node },
+            value: [NOW, String(perNode[i])],
+          })),
+        }
+      }
       return {
         resultType: 'vector',
         result: [

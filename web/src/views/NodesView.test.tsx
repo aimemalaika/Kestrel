@@ -12,6 +12,21 @@ vi.mock('../table/useResourceStream', async (orig) => {
   }
 })
 
+const names = ['master-01', 'master-02', 'master-03', 'worker-01', 'worker-02', 'worker-03']
+vi.mock('../modules/observe/useNodeMetrics', () => ({
+  useNodeMetrics: () => ({
+    enabled: true,
+    loading: false,
+    cluster: {},
+    byNode: new Map(
+      names.map((n, i) => [
+        n,
+        { cpu: i === 0 ? 91 : 40 + i, mem: i === 1 ? 67 : 30 + i, storage: 20 + i },
+      ]),
+    ),
+  }),
+}))
+
 afterEach(() => {
   override.rows = null
 })
@@ -28,9 +43,9 @@ describe('NodesView', () => {
     expect(screen.getByText('DiskPressure')).toBeInTheDocument()
     expect(screen.getByText('dedicated=gpu:NoSchedule')).toBeInTheDocument()
     expect(screen.getAllByText(/cpu 16 · mem 64Gi · pods 110/).length).toBeGreaterThan(0)
-    // 6 nodes x (CPU + Memory)
+    // 6 nodes x (CPU + Memory + Storage)
     const bars = screen.getAllByRole('progressbar')
-    expect(bars).toHaveLength(12)
+    expect(bars).toHaveLength(18)
     const values = bars.map((b) => b.getAttribute('aria-valuenow'))
     expect(values).toContain('91')
     expect(values).toContain('67')
@@ -49,7 +64,7 @@ describe('NodesView', () => {
     expect(screen.getByText('DiskPressure')).toBeInTheDocument()
     expect(screen.getByText('dedicated=gpu:NoSchedule')).toBeInTheDocument()
     expect(screen.getAllByText(/cpu 8 · mem 32Gi · pods 110/).length).toBeGreaterThan(0)
-    expect(screen.getAllByRole('progressbar')).toHaveLength(12)
+    expect(screen.getAllByRole('progressbar')).toHaveLength(18)
     fireEvent.click(screen.getByRole('button', { name: 'Cards' }))
     expect(screen.queryByRole('table')).toBeNull()
   })
@@ -65,10 +80,10 @@ describe('NodesView', () => {
     ]
     render(<NodesView />)
     expect(await screen.findByText('bare-1')).toBeInTheDocument()
-    expect(screen.getAllByText('n/a')).toHaveLength(2)
+    expect(screen.getAllByText('n/a')).toHaveLength(3)
     expect(screen.queryAllByRole('progressbar')).toHaveLength(0)
     fireEvent.click(screen.getByRole('button', { name: 'Table' }))
-    expect(screen.getAllByText('n/a')).toHaveLength(2)
+    expect(screen.getAllByText('n/a')).toHaveLength(3)
     expect(screen.queryAllByRole('progressbar')).toHaveLength(0)
   })
 })

@@ -2,7 +2,8 @@ import { useResourceStream } from '../table/useResourceStream'
 import { ageString, getPath } from '../table/columns'
 import type { K8sObject } from '../contract/types'
 import { useInRouterContext, useNavigate } from 'react-router-dom'
-import { StatCard, AreaChart, Card, CardHeader, SecondaryBtn, SeverityBadge } from '../ui'
+import { StatCard, Icon, Card, CardHeader, SecondaryBtn, SeverityBadge } from '../ui'
+import { useNodeMetrics } from '../modules/observe/useNodeMetrics'
 import { firingAlerts } from '../modules/alerts/alertsMock'
 
 const PODS = { group: 'core', version: 'v1', resource: 'pods' }
@@ -15,21 +16,6 @@ const ROUTES = { group: 'route.openshift.io', version: 'v1', resource: 'routes' 
 const QUOTAS = { group: 'core', version: 'v1', resource: 'resourcequotas' }
 
 const SAMPLE = 'Sample data — no metrics source connected'
-// Deterministic sample series (module-level constants; no randomness at render time).
-const SAMPLE_SERIES: Record<string, number[]> = {
-  'CPU Usage': [32, 38, 35, 44, 52, 48, 61, 57, 66, 59, 54, 63],
-  'Memory Usage': [58, 59, 61, 60, 63, 65, 64, 67, 69, 68, 70, 72],
-  'Network In': [20, 35, 28, 52, 41, 77, 63, 48, 85, 60, 44, 58],
-  'Network Out': [15, 22, 31, 26, 38, 33, 47, 55, 42, 36, 49, 40],
-  'Disk I/O': [10, 14, 9, 25, 18, 12, 40, 22, 16, 30, 19, 24],
-}
-const SAMPLE_VALUES: Record<string, string> = {
-  'CPU Usage': '63%',
-  'Memory Usage': '72%',
-  'Network In': '58 MB/s',
-  'Network Out': '40 MB/s',
-  'Disk I/O': '24 MB/s',
-}
 const NS_USAGE: Record<string, { cpu: number; mem: number }> = {
   default: { cpu: 18, mem: 32 },
   'kube-system': { cpu: 41, mem: 55 },
@@ -86,15 +72,14 @@ function ts(e: K8sObject): number {
   return Number.isNaN(t) ? 0 : t
 }
 
-const CHARTS = [
-  { label: 'CPU Usage', color: '#a78bfa' },
-  { label: 'Memory Usage', color: '#34d399' },
-  { label: 'Network In', color: '#38bdf8' },
-  { label: 'Network Out', color: '#fb923c' },
-  { label: 'Disk I/O', color: '#f472b6' },
-]
+const CLUSTER_CARDS = [
+  { label: 'CPU %', key: 'cpu', bar: 'bg-violet-500' },
+  { label: 'Memory %', key: 'mem', bar: 'bg-emerald-500' },
+  { label: 'Storage %', key: 'storage', bar: 'bg-sky-500' },
+] as const
 
 export function Overview() {
+  const metrics = useNodeMetrics()
   const podsS = useResourceStream(PODS, undefined)
   const deploymentsS = useResourceStream(DEPLOYMENTS, undefined)
   const nodesS = useResourceStream(NODES, undefined)
@@ -241,20 +226,46 @@ export function Overview() {
         ))}
       </div>
 
-      {/* Charts row */}
-      <p role="note" className="text-xs text-zinc-500">
-        {SAMPLE}
-      </p>
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {CHARTS.map((m) => (
-          <Card key={m.label} className="p-4">
-            <div title={SAMPLE}>
+      {/* Cluster resource cards */}
+      {!metrics.enabled && (
+        <p role="note" className="text-xs text-zinc-500">
+          {SAMPLE}
+        </p>
+      )}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {CLUSTER_CARDS.map((m) => {
+          const v = metrics.cluster[m.key]
+          const rounded = v === undefined ? undefined : Math.round(v)
+          return (
+            <Card key={m.label} className="p-4">
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">{m.label}</p>
-              <p className="text-xl font-bold text-white mb-2">{SAMPLE_VALUES[m.label]}</p>
-              <AreaChart data={SAMPLE_SERIES[m.label]} color={m.color} height={52} />
-            </div>
+              <p className="text-xl font-bold text-white mb-2">
+                {rounded === undefined ? 'n/a' : `${rounded}%`}
+              </p>
+              <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className={`h-full ${m.bar} rounded-full`}
+                  style={{ width: `${rounded ?? 0}%` }}
+                />
+              </div>
+            </Card>
+          )
+        })}
+        {metrics.grafanaUrl && (
+          <Card className="p-4 flex flex-col justify-between gap-2">
+            <p className="text-xs text-zinc-400">
+              Detailed dashboards, app metrics, logs &amp; traces live in Grafana.
+            </p>
+            <a
+              href={metrics.grafanaUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-400 hover:underline"
+            >
+              <Icon name="external" className="w-4 h-4" /> Open in Grafana
+            </a>
           </Card>
-        ))}
+        )}
       </div>
 
       {/* Bottom 3-col layout */}
