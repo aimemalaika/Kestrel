@@ -9,6 +9,7 @@ import { useClusterInfo } from '../cluster/useClusterInfo'
 import { createClient } from '../client/createClient'
 import { HelpMenu } from './HelpMenu'
 import { loadDefaultPerspective, saveDefaultPerspective } from './perspectivePref'
+import { allowedPerspective } from './perspective'
 
 // Opens the existing CommandPalette by firing the Cmd/Ctrl-K it listens for.
 export function openCommandPalette() {
@@ -38,8 +39,10 @@ function useCrumbs(): string[] {
 function UserMenu({
   perspective,
   onPerspectiveChange,
+  canAdmin,
 }: {
   perspective: Perspective
+  canAdmin: boolean
   onPerspectiveChange: (p: Perspective) => void
 }) {
   const { identity, signOut, mode } = useAuth()
@@ -191,15 +194,15 @@ function UserMenu({
             <span className="text-xs text-zinc-400">Default perspective</span>
             <select
               aria-label="Default perspective"
-              defaultValue={loadDefaultPerspective()}
+              defaultValue={allowedPerspective(loadDefaultPerspective(), canAdmin)}
               onChange={(e) => {
-                const p = e.target.value as Perspective
+                const p = allowedPerspective(e.target.value as Perspective, canAdmin)
                 saveDefaultPerspective(p)
                 onPerspectiveChange(p)
               }}
               className="px-3 py-2 text-sm bg-[#0d1117] border border-zinc-700 rounded-md text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand/60"
             >
-              <option value="admin">Administrator</option>
+              {canAdmin && <option value="admin">Administrator</option>}
               <option value="developer">Developer</option>
             </select>
             <span className="text-[10px] text-zinc-600">
@@ -263,10 +266,12 @@ function PerspectiveToggle({
 export function TopBar({
   perspective,
   onPerspectiveChange,
+  canAdmin,
   terminalOpen,
   onToggleTerminal,
 }: {
   perspective: Perspective
+  canAdmin: boolean
   onPerspectiveChange: (p: Perspective) => void
   terminalOpen: boolean
   onToggleTerminal: () => void
@@ -284,7 +289,7 @@ export function TopBar({
         <span className="text-sm font-bold text-white hidden sm:block">Kestrel</span>
       </div>
 
-      <PerspectiveToggle perspective={perspective} onChange={onPerspectiveChange} />
+      {canAdmin && <PerspectiveToggle perspective={perspective} onChange={onPerspectiveChange} />}
 
       <NamespacePicker />
 
@@ -345,7 +350,11 @@ export function TopBar({
 
       <HelpMenu />
 
-      <UserMenu perspective={perspective} onPerspectiveChange={onPerspectiveChange} />
+      <UserMenu
+        perspective={perspective}
+        onPerspectiveChange={onPerspectiveChange}
+        canAdmin={canAdmin}
+      />
     </header>
   )
 }
