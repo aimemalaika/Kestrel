@@ -74,17 +74,7 @@ export const ADMIN_NAV: NavSection[] = [
     ],
   },
   {
-    section: 'Builds',
-    items: [
-      { label: 'Builds', icon: 'build', target: route('/builds') },
-      { label: 'BuildConfigs', icon: 'build', target: res('buildconfigs') },
-      { label: 'ImageStreams', icon: 'image', target: res('imagestreams') },
-      // Not in the mock; kept so the existing Registry page stays reachable.
-      { label: 'Registry', icon: 'image', target: route('/registry') },
-    ],
-  },
-  {
-    section: 'Pipelines',
+    section: 'CI/CD',
     items: [
       { label: 'Pipelines', icon: 'pipeline', target: route('/pipelines') },
       { label: 'PipelineRuns', icon: 'run', target: res('pipelineruns') },
@@ -92,6 +82,7 @@ export const ADMIN_NAV: NavSection[] = [
       { label: 'TaskRuns', icon: 'run', target: res('taskruns') },
       { label: 'StepActions', icon: 'task', target: res('stepactions') },
       { label: 'CustomRuns', icon: 'run', target: res('customruns') },
+      { label: 'Registry', icon: 'image', target: route('/registry') },
     ],
   },
   {
@@ -150,12 +141,9 @@ export const DEV_NAV: NavSection[] = [
     ],
   },
   {
-    section: 'Builds',
+    section: 'CI/CD',
     items: [
-      { label: 'Builds', icon: 'build', target: route('/builds') },
-      { label: 'BuildConfigs', icon: 'build', target: res('buildconfigs') },
       { label: 'Pipelines', icon: 'pipeline', target: route('/pipelines') },
-      // Not in the mock; kept so the existing Registry page stays reachable.
       { label: 'Registry', icon: 'image', target: route('/registry') },
     ],
   },

@@ -13,7 +13,6 @@ import { ProjectsView } from './views/ProjectsView'
 import { QuotasView } from './views/QuotasView'
 import { OperatorsView } from './views/OperatorsView'
 import { OperatorHubView } from './views/OperatorHubView'
-import { BuildsView } from './views/BuildsView'
 import { PipelinesView } from './views/PipelinesView'
 import { AlertsView } from './views/AlertsView'
 import { ClusterView } from './views/ClusterView'
@@ -45,7 +44,6 @@ export function AppRoutes() {
         <Route path="argo" element={<ArgoApplicationsView />} />
         <Route path="operators" element={<OperatorsView />} />
         <Route path="operatorhub" element={<OperatorHubView />} />
-        <Route path="builds" element={<BuildsView />} />
         <Route path="pipelines" element={<PipelinesView />} />
         <Route path="alerts" element={<AlertsView />} />
         <Route path="cluster" element={<ClusterView />} />

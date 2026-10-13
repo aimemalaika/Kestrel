@@ -9,8 +9,7 @@ describe('nav model', () => {
       'Workloads',
       'Networking',
       'Storage',
-      'Builds',
-      'Pipelines',
+      'CI/CD',
       'Observe',
       'Compute',
       'User Management',
@@ -21,7 +20,7 @@ describe('nav model', () => {
   it('developer sections mirror the mock order', () => {
     expect(DEV_NAV.map((s) => s.section)).toEqual([
       'Developer',
-      'Builds',
+      'CI/CD',
       'Workloads',
       'Networking',
       'Observe',
@@ -55,12 +54,12 @@ describe('nav model', () => {
     expect(find(ADMIN_NAV, 'Administration', 'Cluster Settings')).toEqual({
       route: '/cluster/settings',
     })
-    expect(find(ADMIN_NAV, 'Builds', 'ImageStreams')).toEqual({ resource: 'imagestreams' })
+    expect(find(ADMIN_NAV, 'CI/CD', 'Registry')).toEqual({ route: '/registry' })
     expect(find(DEV_NAV, 'Developer', 'Topology')).toEqual({ route: '/topology' })
   })
 
-  it('lists StepActions and CustomRuns under Pipelines via res()', () => {
-    const pipelines = ADMIN_NAV.find((s) => s.section === 'Pipelines')!
+  it('lists StepActions and CustomRuns under CI/CD via res()', () => {
+    const pipelines = ADMIN_NAV.find((s) => s.section === 'CI/CD')!
     const target = (label: string) => pipelines.items.find((i) => i.label === label)!.target
     expect(target('StepActions')).toEqual({ resource: 'stepactions' })
     expect(target('CustomRuns')).toEqual({ resource: 'customruns' })
@@ -82,7 +81,6 @@ describe('customResourceSection', () => {
       entry('', 'pods', 'Pod'), // core → built-in, excluded
       entry('apps', 'deployments', 'Deployment'), // built-in, excluded
       entry('rbac.authorization.k8s.io', 'roles', 'Role'), // *.k8s.io built-in, excluded
-      entry('image.openshift.io', 'imagestreams', 'ImageStream'), // in static nav → deduped
       entry('tekton.dev', 'pipelineruns', 'PipelineRun'), // in static nav → deduped
       entry('argoproj.io', 'applications', 'Application'),
       entry('example.com', 'widgets/status', 'Widget'), // subresource → excluded
