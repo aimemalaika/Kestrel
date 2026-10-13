@@ -10,6 +10,7 @@ describe('nav model', () => {
       'Networking',
       'Storage',
       'CI/CD',
+      'Triggers',
       'Observe',
       'Compute',
       'User Management',
@@ -63,6 +64,21 @@ describe('nav model', () => {
     const target = (label: string) => pipelines.items.find((i) => i.label === label)!.target
     expect(target('StepActions')).toEqual({ resource: 'stepactions' })
     expect(target('CustomRuns')).toEqual({ resource: 'customruns' })
+  })
+
+  it('has a Triggers section with the 7 res() items after CI/CD', () => {
+    const names = ADMIN_NAV.map((s) => s.section)
+    expect(names.indexOf('Triggers')).toBe(names.indexOf('CI/CD') + 1)
+    const sec = ADMIN_NAV.find((s) => s.section === 'Triggers')!
+    expect(sec.items.map((i) => i.target)).toEqual([
+      { resource: 'eventlisteners' },
+      { resource: 'triggers' },
+      { resource: 'triggerbindings' },
+      { resource: 'triggertemplates' },
+      { resource: 'clustertriggerbindings' },
+      { resource: 'interceptors' },
+      { resource: 'clusterinterceptors' },
+    ])
   })
 })
 
