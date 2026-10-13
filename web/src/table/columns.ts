@@ -228,6 +228,11 @@ export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
     },
   ],
   EventListener: [{ header: 'Address', path: 'status.address.url', cell: 'mono' }],
+  ManualApprovalGate: [
+    { header: 'State', path: 'status.state', cell: 'status' },
+    { header: 'Required', path: 'spec.approvalsRequired', numeric: true },
+    { header: 'Approvers', path: 'spec.approvers', numeric: true, derive: count('spec.approvers') },
+  ],
   Pod: [
     { header: 'Ready', path: 'ready', numeric: true, derive: podReady },
     { header: 'Restarts', path: 'restarts', numeric: true, cell: 'restarts', derive: podRestarts },
@@ -480,7 +485,9 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
           ? tektonRunStatus(o)
           : kind === 'EventListener'
             ? readyStatus(o)
-            : (getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+            : kind === 'ManualApprovalGate'
+              ? getPath(o, 'status.state')
+              : (getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
       ),
   }
   const pushHint = (h: ColumnHint) =>

@@ -67,6 +67,13 @@ describe('nav model', () => {
     expect(target('CustomRuns')).toEqual({ resource: 'customruns' })
   })
 
+  it('lists Tekton Config (route) and Manual Approvals (res) under CI/CD', () => {
+    const sec = ADMIN_NAV.find((x) => x.section === 'CI/CD')!
+    const target = (label: string) => sec.items.find((i) => i.label === label)!.target
+    expect(target('Tekton Config')).toEqual({ route: '/tekton-config' })
+    expect(target('Manual Approvals')).toEqual({ resource: 'manualapprovalgates' })
+  })
+
   it('has a Supply Chain section with 2 res() items after Triggers', () => {
     const names = ADMIN_NAV.map((s) => s.section)
     expect(names.indexOf('Supply Chain')).toBe(names.indexOf('Triggers') + 1)

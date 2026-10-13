@@ -447,3 +447,20 @@ describe('Supply Chain columns', () => {
     expect(cols.some((c) => c.id === 'status')).toBe(false)
   })
 })
+
+describe('ManualApprovalGate columns', () => {
+  const g: K8sObject = {
+    apiVersion: 'openshift-pipelines.org/v1alpha1',
+    kind: 'ManualApprovalGate',
+    metadata: { name: 'g' },
+    spec: { approvalsRequired: 2, approvers: ['a', 'b', 'c'] },
+    status: { state: 'pending' },
+  }
+  it('shows State from status.state, Required and Approvers count', () => {
+    const cols = columnSpecs('ManualApprovalGate', { namespaceSelected: true })
+    expect(cols.map((c) => c.header)).toEqual(['Name', 'Status', 'Required', 'Approvers', 'Age'])
+    expect(cols.find((c) => c.id === 'status')!.value(g)).toBe('pending')
+    expect(cols.find((c) => c.header === 'Required')!.value(g)).toBe('2')
+    expect(cols.find((c) => c.header === 'Approvers')!.value(g)).toBe('3')
+  })
+})

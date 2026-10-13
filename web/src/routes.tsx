@@ -15,6 +15,7 @@ import { QuotasView } from './views/QuotasView'
 import { OperatorsView } from './views/OperatorsView'
 import { OperatorHubView } from './views/OperatorHubView'
 import { PipelinesView } from './views/PipelinesView'
+import { TektonConfigView } from './views/TektonConfigView'
 import { AlertsView } from './views/AlertsView'
 import { ClusterView } from './views/ClusterView'
 import { TopologyView } from './views/TopologyView'
@@ -47,6 +48,7 @@ export function AppRoutes() {
         <Route path="operators" element={<OperatorsView />} />
         <Route path="operatorhub" element={<OperatorHubView />} />
         <Route path="pipelines" element={<PipelinesView />} />
+        <Route path="tekton-config" element={<TektonConfigView />} />
         <Route path="alerts" element={<AlertsView />} />
         <Route path="cluster" element={<ClusterView />} />
         <Route path="cluster/settings" element={<ClusterView />} />

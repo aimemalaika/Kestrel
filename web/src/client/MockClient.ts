@@ -315,6 +315,78 @@ const CATALOG: CatalogEntry[] = [
     verbs: ['get', 'list', 'watch'],
   },
   {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektonconfigs',
+    kind: 'TektonConfig',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektonpipelines',
+    kind: 'TektonPipeline',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektontriggers',
+    kind: 'TektonTrigger',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektonchains',
+    kind: 'TektonChain',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektonresults',
+    kind: 'TektonResult',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektondashboards',
+    kind: 'TektonDashboard',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'operator.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'tektoninstallersets',
+    kind: 'TektonInstallerSet',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'openshift-pipelines.org',
+    version: 'v1alpha1',
+    resource: 'manualapprovalgates',
+    kind: 'ManualApprovalGate',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'dashboard.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'extensions',
+    kind: 'Extension',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
     group: 'rbac.authorization.k8s.io',
     version: 'v1',
     resource: 'clusterroles',
@@ -1359,6 +1431,58 @@ function clusterSeeds(): K8sObject[] {
   ]
 }
 
+function tektonComponentSeeds(): K8sObject[] {
+  const cond = (type: string, status = 'True', message?: string) => ({
+    type,
+    status,
+    ...(message ? { message } : {}),
+  })
+  const op = 'operator.tekton.dev/v1alpha1'
+  const comp = (kind: string, name: string, version: string, ready = true, message?: string) =>
+    aged(60, op, kind, name, undefined, {
+      spec: { targetNamespace: 'tekton-pipelines' },
+      status: {
+        version,
+        conditions: [
+          cond('Ready', ready ? 'True' : 'False', ready ? undefined : message),
+          cond('InstallSucceeded', 'True'),
+        ],
+      },
+    })
+  const gate = (
+    name: string,
+    ns: string,
+    state: 'pending' | 'approved',
+    approvedBy: string[],
+    age: number,
+  ) =>
+    aged(age, 'openshift-pipelines.org/v1alpha1', 'ManualApprovalGate', name, ns, {
+      spec: { approvalsRequired: 2, approvers: [{ name: 'alice' }, { name: 'bob' }] },
+      status: { state, ...(approvedBy.length ? { approvedBy } : {}) },
+    })
+  return [
+    comp('TektonConfig', 'config', 'v0.74.0'),
+    comp('TektonPipeline', 'pipeline', 'v0.62.1'),
+    comp('TektonTrigger', 'trigger', 'v0.28.0'),
+    comp('TektonChain', 'chain', 'v0.21.0'),
+    comp('TektonResult', 'result', 'v0.12.0', false, 'reconciling installer sets'),
+    comp('TektonDashboard', 'dashboard', 'v0.49.0'),
+    aged(60, op, 'TektonInstallerSet', 'pipeline-main-static-7k2x9', undefined, {
+      status: { conditions: [cond('Ready'), cond('InstallSucceeded')] },
+    }),
+    gate('release-approval', 'shop', 'pending', [], 2),
+    gate('deploy-to-prod', 'default', 'approved', ['alice', 'bob'], 5),
+    aged(40, 'dashboard.tekton.dev/v1alpha1', 'Extension', 'logs-viewer', 'tekton-pipelines', {
+      spec: {
+        apiVersion: 'v1',
+        name: 'logs-viewer',
+        displayname: 'Logs Viewer',
+        namespace: 'tekton-pipelines',
+      },
+    }),
+  ]
+}
+
 function supplyChainSeeds(): K8sObject[] {
   const vp = 'tekton.dev/v1alpha1'
   const rr = 'resolution.tekton.dev/v1beta1'
@@ -1760,6 +1884,7 @@ function moreSeeds(): K8sObject[] {
       },
     }),
     ...clusterSeeds(),
+    ...tektonComponentSeeds(),
   ]
 }
 
