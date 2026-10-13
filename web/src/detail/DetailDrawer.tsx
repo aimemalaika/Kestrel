@@ -12,6 +12,7 @@ import { useCanI } from '../write/useCanI'
 import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
 import { EventListenerDetail } from '../modules/tekton/EventListenerDetail'
 import { TaskRunDetail } from '../modules/tekton/TaskRunDetail'
+import { AccessMatrix } from '../modules/rbac/AccessMatrix'
 import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
 import { Icon } from '../ui'
@@ -21,7 +22,16 @@ const YamlEditor = lazy(() => import('../write/YamlEditor'))
 const Terminal = lazy(() => import('../streaming/Terminal'))
 
 type Tab =
-  'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run' | 'listener' | 'app' | 'relations'
+  | 'detail'
+  | 'yaml'
+  | 'events'
+  | 'logs'
+  | 'terminal'
+  | 'run'
+  | 'listener'
+  | 'app'
+  | 'relations'
+  | 'access'
 
 export function DetailDrawer() {
   const { namespace, group, version, resource, name } = useParams()
@@ -41,6 +51,7 @@ export function DetailDrawer() {
   const isPipelineRun = object?.kind === 'PipelineRun'
   const isTaskRun = object?.kind === 'TaskRun'
   const isEventListener = object?.kind === 'EventListener'
+  const isServiceAccount = object?.kind === 'ServiceAccount'
   const isApplication = object?.kind === 'Application'
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'relations', 'logs', 'terminal']
@@ -50,7 +61,9 @@ export function DetailDrawer() {
         ? ['detail', 'yaml', 'events', 'relations', 'app']
         : isEventListener
           ? ['detail', 'yaml', 'events', 'relations', 'listener']
-          : ['detail', 'yaml', 'events', 'relations']
+          : isServiceAccount
+            ? ['detail', 'yaml', 'events', 'relations', 'access']
+            : ['detail', 'yaml', 'events', 'relations']
   // If the selected tab isn't available for the current object (e.g. after
   // navigating from a Pod/PipelineRun to another kind), fall back to detail so
   // the body never renders blank.
@@ -142,6 +155,7 @@ export function DetailDrawer() {
               {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
               {tab === 'run' && isTaskRun && <TaskRunDetail object={object} />}
               {tab === 'listener' && isEventListener && <EventListenerDetail object={object} />}
+              {tab === 'access' && isServiceAccount && <AccessMatrix object={object} />}
               {tab === 'app' && isApplication && <ArgoRichView object={object} />}
               {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
               {tab === 'terminal' && isPod && podRef ? (

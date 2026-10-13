@@ -18,6 +18,7 @@ import (
 	"github.com/aimemalaika/Kestrel/internal/k8s"
 	"github.com/aimemalaika/Kestrel/internal/modules"
 	"github.com/aimemalaika/Kestrel/internal/observe"
+	"github.com/aimemalaika/Kestrel/internal/rbac"
 	"github.com/aimemalaika/Kestrel/internal/registry"
 	"github.com/aimemalaika/Kestrel/internal/resource"
 	"github.com/aimemalaika/Kestrel/internal/results"
@@ -36,6 +37,7 @@ type Deps struct {
 	Results     http.Handler // /api/results/* (Tekton Results proxy); 503 when unconfigured
 	Observe     http.Handler // /api/observe/* (Prometheus proxy); 503 when unconfigured
 	Helm        http.Handler // /api/helm/* (releases + chart repos)
+	RBAC        http.Handler // /api/rbac/* (ServiceAccount access matrix; per-user SAR)
 	ServiceMap  http.Handler // /api/servicemap (store + validate; ConfigMap-backed)
 	Kubeconfig  http.Handler // /api/kubeconfig[/command] (own-identity download/login-cmd); 503 in single-operator/mock
 	// ClusterName is the display name for the connected cluster, from
@@ -66,6 +68,7 @@ func DefaultDeps() Deps {
 		// --mock), UserClientset returns the nil SA client and listReleases yields
 		// an empty list rather than panicking. No repos configured ⇒ repos empty.
 		Helm: helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{}),
+		RBAC: rbac.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil)),
 		// ServiceMap over a no-client accessor: with no forwarded token UserClientset
 		// returns a nil clientset, so the handler uses its in-memory fallback store
 		// rather than needing a cluster.
@@ -88,6 +91,9 @@ func New(d Deps) http.Handler {
 	}
 	if d.Helm == nil {
 		d.Helm = helm.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), helm.Config{})
+	}
+	if d.RBAC == nil {
+		d.RBAC = rbac.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil))
 	}
 	if d.ServiceMap == nil {
 		d.ServiceMap = servicemap.NewHandler(k8s.NewAccessorFromAll(nil, nil, nil), servicemap.Config{})
@@ -173,6 +179,9 @@ func (a *api) route(w http.ResponseWriter, r *http.Request) {
 		// Helm has its own multi-route handler (releases + chart repos) and owns
 		// method handling, like registry.
 		a.d.Helm.ServeHTTP(w, r)
+	case "rbac":
+		// RBAC owns its own routing and method handling (GET only).
+		a.d.RBAC.ServeHTTP(w, r)
 	case "argo":
 		a.only(w, r, http.MethodGet, modules.Handler(segs[0]).ServeHTTP)
 	case "servicemap":
