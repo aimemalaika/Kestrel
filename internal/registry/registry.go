@@ -19,7 +19,9 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/publicsuffix"
@@ -158,6 +160,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.only(w, r, http.MethodGet, h.tags)
 	case "config":
 		h.only(w, r, http.MethodGet, h.config)
+	case "history":
+		h.only(w, r, http.MethodGet, h.history)
+	case "summary":
+		h.only(w, r, http.MethodGet, h.summary)
 	case "image":
 		switch r.Method {
 		case http.MethodGet:
@@ -233,6 +239,134 @@ func (h *Handler) image(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, img)
 }
 
+func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	if repo == "" {
+		writeErr(w, errf(http.StatusBadRequest, "BadRequest", "missing required query param: repo"))
+		return
+	}
+	if !validRepo(repo) {
+		writeErr(w, errf(http.StatusBadRequest, "BadRequest", "invalid repo name: %q", repo))
+		return
+	}
+	tags, err := h.c.listTags(r.Context(), repo)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if len(tags) > maxHistoryTags {
+		tags = tags[:maxHistoryTags]
+	}
+	rows := make([]*TagHistory, len(tags))
+	sem := make(chan struct{}, historyConcurrency)
+	var wg sync.WaitGroup
+	for i, tag := range tags {
+		if !validRef(tag) {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, tag string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			img, gerr := h.c.getImage(r.Context(), repo, tag)
+			if gerr != nil {
+				return // skip tags that can't be resolved
+			}
+			rows[i] = &TagHistory{Tag: tag, Digest: img.Digest, Created: img.Created, Size: img.Size, Layers: img.Layers}
+		}(i, tag)
+	}
+	wg.Wait()
+	out := make([]TagHistory, 0, len(rows))
+	for _, row := range rows {
+		if row != nil {
+			out = append(out, *row)
+		}
+	}
+	sortHistory(out)
+	writeJSON(w, http.StatusOK, map[string]any{"tags": out})
+}
+
+// summary returns one row per catalog repo (tags + latest image digest/created/
+// size) in a single bounded-concurrency server-side pass, replacing the browser's
+// N+1 per-repo fan-out. Per-repo failures yield empty fields, never a failed response.
+func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {
+	repos, err := h.c.listRepos(r.Context())
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if len(repos) > maxSummaryRepos {
+		repos = repos[:maxSummaryRepos]
+	}
+	rows := make([]RepoSummary, len(repos))
+	sem := make(chan struct{}, historyConcurrency)
+	var wg sync.WaitGroup
+	for i, repo := range repos {
+		rows[i] = RepoSummary{Repo: repo, Tags: []string{}}
+		if !validRepo(repo) {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, repo string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			tags, terr := h.c.listTags(r.Context(), repo)
+			if terr != nil || len(tags) == 0 {
+				return
+			}
+			rows[i].Tags = tags
+			pick := tags[0]
+			for _, t := range tags {
+				if t == "latest" {
+					pick = t
+					break
+				}
+			}
+			if !validRef(pick) {
+				return
+			}
+			img, gerr := h.c.getImage(r.Context(), repo, pick)
+			if gerr != nil {
+				return
+			}
+			rows[i].Digest, rows[i].Created, rows[i].Size = img.Digest, img.Created, img.Size
+		}(i, repo)
+	}
+	wg.Wait()
+	writeJSON(w, http.StatusOK, map[string]any{"repos": rows})
+}
+
+// sortHistory orders newest-first by created; rows without a parseable created
+// sort last, and ties fall back to tag name descending for stability.
+func sortHistory(rows []TagHistory) {
+	ts := make([]time.Time, len(rows))
+	idx := make([]int, len(rows))
+	for i, r := range rows {
+		idx[i] = i
+		if t, err := time.Parse(time.RFC3339Nano, r.Created); err == nil {
+			ts[i] = t
+		}
+	}
+	sort.SliceStable(idx, func(a, b int) bool {
+		ia, ib := idx[a], idx[b]
+		za, zb := ts[ia].IsZero(), ts[ib].IsZero()
+		if za != zb {
+			return zb // non-zero first
+		}
+		if !za && !ts[ia].Equal(ts[ib]) {
+			return ts[ia].After(ts[ib])
+		}
+		return rows[ia].Tag > rows[ib].Tag
+	})
+	sorted := make([]TagHistory, len(rows))
+	for i, j := range idx {
+		sorted[i] = rows[j]
+	}
+	copy(rows, sorted)
+}
+
 func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 	if !h.allowDelete {
 		w.Header().Set("Allow", "GET")
@@ -272,6 +406,36 @@ type Image struct {
 	Digest string `json:"digest"`
 	Size   int64  `json:"size"`
 	Layers int    `json:"layers"`
+	// Created is the image build time (RFC3339) from the OCI config blob.
+	// Best-effort: empty when the blob is unavailable or has no created field.
+	Created string `json:"created,omitempty"`
+}
+
+// TagHistory is one row of a repository's build history.
+type TagHistory struct {
+	Tag     string `json:"tag"`
+	Digest  string `json:"digest"`
+	Created string `json:"created,omitempty"`
+	Size    int64  `json:"size"`
+	Layers  int    `json:"layers"`
+}
+
+// maxHistoryTags bounds the number of tags resolved per history request.
+const maxHistoryTags = 100
+
+// historyConcurrency bounds parallel upstream lookups for one history request.
+const historyConcurrency = 8
+
+// maxSummaryRepos caps the repos processed by one summary request.
+const maxSummaryRepos = 500
+
+// RepoSummary is one landing-page row: tags plus the latest (else first) tag's image.
+type RepoSummary struct {
+	Repo    string   `json:"repo"`
+	Tags    []string `json:"tags"`
+	Digest  string   `json:"digest"`
+	Created string   `json:"created"`
+	Size    int64    `json:"size"`
 }
 
 type catalogResp struct {
@@ -394,10 +558,39 @@ func (c *Client) getImage(ctx context.Context, repo, ref string) (Image, error) 
 		if isIndex(cm.MediaType, cResp.Header.Get("Content-Type"), cm.Manifests) {
 			return Image{}, errf(http.StatusBadGateway, "BadGateway", "registry manifest index: nested image index not supported")
 		}
-		return Image{Digest: digest, Size: manifestSize(cm), Layers: len(cm.Layers)}, nil
+		return Image{Digest: digest, Size: manifestSize(cm), Layers: len(cm.Layers),
+			Created: c.configCreated(ctx, repo, cm.Config.Digest)}, nil
 	}
 
-	return Image{Digest: digest, Size: manifestSize(m), Layers: len(m.Layers)}, nil
+	return Image{Digest: digest, Size: manifestSize(m), Layers: len(m.Layers),
+		Created: c.configCreated(ctx, repo, m.Config.Digest)}, nil
+}
+
+// configCreated fetches the OCI image config blob and returns its "created"
+// timestamp. Best-effort: any error, invalid digest, or missing field yields "".
+func (c *Client) configCreated(ctx context.Context, repo, configDigest string) string {
+	if !validDigest(configDigest) {
+		return ""
+	}
+	u := c.base + "/v2/" + pathEscapeRepo(repo) + "/blobs/" + url.PathEscape(configDigest)
+	resp, err := c.do(ctx, http.MethodGet, u, "")
+	if err != nil {
+		return ""
+	}
+	body, err := readAll(resp)
+	if err != nil {
+		return ""
+	}
+	var cfg struct {
+		Created string `json:"created"`
+	}
+	if json.Unmarshal(body, &cfg) != nil {
+		return ""
+	}
+	if _, err := time.Parse(time.RFC3339Nano, cfg.Created); err != nil {
+		return ""
+	}
+	return cfg.Created
 }
 
 func (c *Client) deleteByDigest(ctx context.Context, repo, digest string) error {

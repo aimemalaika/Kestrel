@@ -77,6 +77,36 @@ kestrel --kubeconfig ~/.kube/config \
 `--helm-repo` is repeatable and also accepts comma-separated `name=url` pairs in
 one value.
 
+### The Vite dev loop (`make dev`) and the Registry / Results modules
+
+For UI work there are HMR dev loops that run Vite at <http://localhost:5173>:
+
+| command | backend | frontend client | Registry / Run History show… |
+|---|---|---|---|
+| `make dev-ui` | none | **mock** (`VITE_CLIENT=mock`) | **mock data** — quickest preview, no cluster |
+| `make dev` | real cluster (your kubeconfig) | live (hits the backend) | real data **only if the backend has a registry/results URL** (else "not configured") |
+| `make dev-mock` | `--mock` | live (hits the backend) | "not configured" (the `--mock` backend stubs k8s, not these HTTP modules) |
+
+So to just **see** the Registry build-history album or the Run History view with
+sample data, run `make dev-ui`.
+
+To use the **real** Registry / Results in `make dev`, point the backend at them —
+both flags read an env var, which `make dev` passes through to `go run`:
+
+```sh
+# the in-cluster registry/results aren't reachable from your laptop directly,
+# so port-forward them first (only needed for LOCAL dev):
+kubectl port-forward -n kube-system svc/registry 5000:5000 &
+
+KESTREL_REGISTRY_URL=http://localhost:5000 \
+KESTREL_RESULTS_URL=http://localhost:8081 \
+make dev
+```
+
+**In-cluster (Helm) you do _not_ port-forward** — the pod reaches
+`registry.kube-system.svc:5000` over cluster DNS; just set the registry/results
+URL in the chart values (`--registry-url` / `--results-url`).
+
 ## 3. Try real OIDC login locally (GitHub / username+password)
 
 To see the actual login screen and flow on your machine — without a real IdP or

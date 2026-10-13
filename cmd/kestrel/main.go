@@ -64,7 +64,7 @@ func main() {
 
 	// Registry module (OCI Distribution v2 proxy). Empty --registry-url disables
 	// it: /api/registry/* returns 503 "registry not configured".
-	registryURL := flag.String("registry-url", "", "OCI registry base URL incl. scheme (e.g. https://registry.example.com); empty disables the registry module")
+	registryURL := flag.String("registry-url", "", "OCI registry base URL incl. scheme (e.g. https://registry.example.com); empty disables the registry module. Falls back to $KESTREL_REGISTRY_URL")
 	resultsURL := flag.String("results-url", "", "Tekton Results API base URL; empty disables the Results/run-history module. Falls back to $KESTREL_RESULTS_URL")
 	registryUser := flag.String("registry-username", "", "registry basic-auth username (optional)")
 	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional; falls back to $KESTREL_REGISTRY_PASSWORD when empty)")
@@ -99,6 +99,7 @@ func main() {
 	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
 	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
 	resultsURLVal := flagOrEnv(*resultsURL, "KESTREL_RESULTS_URL")
+	registryURLVal := flagOrEnv(*registryURL, "KESTREL_REGISTRY_URL")
 	// OIDC + login-method config is env-sourceable too (config-free; flag wins when
 	// set). The issuer being non-empty is what switches on OIDC mode.
 	oidcIssuerVal := flagOrEnv(*oidcIssuer, "KESTREL_OIDC_ISSUER")
@@ -122,17 +123,17 @@ func main() {
 	deps.PortForwardTimeout = *pfTimeout
 	deps.ClusterName = flagOrEnv(*clusterName, "KESTREL_CLUSTER_NAME")
 	deps.Registry = registry.NewHandler(registry.Config{
-		URL:                *registryURL,
+		URL:                registryURLVal,
 		Username:           *registryUser,
 		Password:           registryPassVal,
 		InsecureSkipVerify: *registryInsecure,
 		AllowDelete:        *registryAllowDelete,
 		AllowedGroups:      splitNonEmpty(*registryGroups),
 	})
-	if *registryURL == "" {
+	if registryURLVal == "" {
 		slog.Warn("registry module disabled: --registry-url not set; /api/registry returns 503")
 	} else {
-		slog.Info("registry module enabled", slog.String("url", *registryURL), slog.Bool("deletes", *registryAllowDelete))
+		slog.Info("registry module enabled", slog.String("url", registryURLVal), slog.Bool("deletes", *registryAllowDelete))
 	}
 	deps.Results = results.NewHandler(results.Config{URL: resultsURLVal})
 	if resultsURLVal == "" {

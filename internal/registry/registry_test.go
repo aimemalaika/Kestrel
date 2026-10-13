@@ -22,6 +22,7 @@ type fakeRegistry struct {
 	catalog        []string
 	tags           map[string][]string
 	manifests      map[string]manifestFixture // keyed by repo+":"+ref
+	blobs          map[string][]byte          // keyed by repo+":"+digest (config blobs)
 	requireBearer  bool                       // emit a 401 Bearer challenge first
 	requireBasic   string                     // "user:pass" required on requests (Authorization: Basic)
 	tokenEndpoint  string                     // realm URL for the challenge
@@ -71,6 +72,17 @@ func (f *fakeRegistry) handler() http.Handler {
 		case strings.HasSuffix(r.URL.Path, "/tags/list"):
 			repo := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v2/"), "/tags/list")
 			writeJSON(w, 200, tagsResp{Tags: f.tags[repo]})
+		case strings.Contains(r.URL.Path, "/blobs/"):
+			idx := strings.Index(r.URL.Path, "/blobs/")
+			repo := strings.TrimPrefix(r.URL.Path[:idx], "/v2/")
+			dg, _ := url.PathUnescape(r.URL.Path[idx+len("/blobs/"):])
+			b, ok := f.blobs[key(repo, dg)]
+			if !ok {
+				http.Error(w, "no such blob", http.StatusNotFound)
+				return
+			}
+			w.WriteHeader(200)
+			_, _ = w.Write(b)
 		case strings.Contains(r.URL.Path, "/manifests/"):
 			idx := strings.Index(r.URL.Path, "/manifests/")
 			repo := strings.TrimPrefix(r.URL.Path[:idx], "/v2/")
@@ -685,5 +697,184 @@ func TestCatalogPaginationFollowsLink(t *testing.T) {
 	}
 	if len(got.Repos) != 2 || got.Repos[0] != "a/one" || got.Repos[1] != "b/two" {
 		t.Fatalf("pagination should aggregate both pages, got %v", got.Repos)
+	}
+}
+
+// historyFixture registers a tag whose manifest points at a config blob.
+func (f *fakeRegistry) addTag(t *testing.T, repo, tag, cfgDigest, blob string, layerSize int64) {
+	t.Helper()
+	if f.manifests == nil {
+		f.manifests = map[string]manifestFixture{}
+	}
+	if f.blobs == nil {
+		f.blobs = map[string][]byte{}
+	}
+	m := manifest{MediaType: mtOCIManifest, Config: descriptor{Digest: cfgDigest, Size: 10}, Layers: []descriptor{{Size: layerSize}}}
+	f.manifests[key(repo, tag)] = manifestFixture{contentType: mtOCIManifest, digest: "sha256:m" + tag, body: mustJSON(t, m)}
+	if blob != "" {
+		f.blobs[key(repo, cfgDigest)] = []byte(blob)
+	}
+}
+
+func TestGetImageCreated(t *testing.T) {
+	f := &fakeRegistry{}
+	f.addTag(t, "team/web", "v1", "sha256:aa01", `{"created":"2026-01-02T03:04:05Z"}`, 90)
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	h := newHandler(t, srv.URL, nil)
+
+	res, body := doReq(t, h, http.MethodGet, "/api/registry/image?repo=team/web&tag=v1")
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d: %s", res.StatusCode, body)
+	}
+	var img Image
+	_ = json.Unmarshal(body, &img)
+	if img.Created != "2026-01-02T03:04:05Z" {
+		t.Fatalf("created = %q", img.Created)
+	}
+}
+
+func TestGetImageCreatedBestEffort(t *testing.T) {
+	f := &fakeRegistry{}
+	f.addTag(t, "team/web", "noblob", "sha256:bb01", "", 90)                // blob 404
+	f.addTag(t, "team/web", "nofield", "sha256:bb02", `{"os":"linux"}`, 90) // no created
+	f.addTag(t, "team/web", "badjson", "sha256:bb03", `not json`, 90)
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	h := newHandler(t, srv.URL, nil)
+
+	for _, tag := range []string{"noblob", "nofield", "badjson"} {
+		res, body := doReq(t, h, http.MethodGet, "/api/registry/image?repo=team/web&tag="+tag)
+		if res.StatusCode != 200 {
+			t.Fatalf("%s: status %d: %s", tag, res.StatusCode, body)
+		}
+		var img Image
+		_ = json.Unmarshal(body, &img)
+		if img.Created != "" || img.Size != 100 {
+			t.Fatalf("%s: created=%q size=%d", tag, img.Created, img.Size)
+		}
+	}
+}
+
+func TestHistorySortedNewestFirst(t *testing.T) {
+	f := &fakeRegistry{tags: map[string][]string{"team/web": {"v1", "v3", "v2", "none", "alpha"}}}
+	f.addTag(t, "team/web", "v1", "sha256:c1", `{"created":"2026-01-01T00:00:00Z"}`, 100)
+	f.addTag(t, "team/web", "v2", "sha256:c2", `{"created":"2026-02-01T00:00:00Z"}`, 200)
+	f.addTag(t, "team/web", "v3", "sha256:c3", `{"created":"2026-03-01T00:00:00Z"}`, 300)
+	f.addTag(t, "team/web", "none", "sha256:c4", "", 50)
+	f.addTag(t, "team/web", "alpha", "sha256:c5", `{}`, 50)
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	h := newHandler(t, srv.URL, nil)
+
+	res, body := doReq(t, h, http.MethodGet, "/api/registry/history?repo=team/web")
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d: %s", res.StatusCode, body)
+	}
+	var out struct {
+		Tags []TagHistory `json:"tags"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, th := range out.Tags {
+		order = append(order, th.Tag)
+	}
+	if got := strings.Join(order, ","); got != "v3,v2,v1,none,alpha" {
+		t.Fatalf("order = %s", got)
+	}
+	if out.Tags[0].Digest != "sha256:mv3" || out.Tags[0].Size != 310 || out.Tags[0].Layers != 1 ||
+		out.Tags[0].Created != "2026-03-01T00:00:00Z" {
+		t.Fatalf("row0 = %+v", out.Tags[0])
+	}
+	if out.Tags[3].Created != "" {
+		t.Fatalf("none created = %q", out.Tags[3].Created)
+	}
+}
+
+func TestHistoryUnconfigured503(t *testing.T) {
+	h := NewHandler(Config{})
+	res, _ := doReq(t, h, http.MethodGet, "/api/registry/history?repo=team/web")
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+}
+
+func TestHistoryBadRepo400(t *testing.T) {
+	f := &fakeRegistry{}
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	h := newHandler(t, srv.URL, nil)
+	for _, q := range []string{"", "?repo=", "?repo=../x", "?repo=a//b"} {
+		res, body := doReq(t, h, http.MethodGet, "/api/registry/history"+q)
+		if res.StatusCode != http.StatusBadRequest {
+			t.Fatalf("%q: status %d: %s", q, res.StatusCode, body)
+		}
+	}
+	res, _ := doReq(t, h, http.MethodPost, "/api/registry/history?repo=team/web")
+	if res.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d", res.StatusCode)
+	}
+}
+
+func TestSummary(t *testing.T) {
+	f := &fakeRegistry{
+		catalog: []string{"team/web", "team/api", "team/broken"},
+		tags: map[string][]string{
+			"team/web":    {"v1", "latest"},
+			"team/api":    {"v9"},
+			"team/broken": {"v1"},
+		},
+	}
+	f.addTag(t, "team/web", "v1", "sha256:d1", `{"created":"2026-01-01T00:00:00Z"}`, 100)
+	f.addTag(t, "team/web", "latest", "sha256:d2", `{"created":"2026-05-01T00:00:00Z"}`, 200)
+	f.addTag(t, "team/api", "v9", "sha256:d3", `{"created":"2026-02-01T00:00:00Z"}`, 50)
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	h := newHandler(t, srv.URL, nil)
+
+	res, body := doReq(t, h, http.MethodGet, "/api/registry/summary")
+	if res.StatusCode != 200 {
+		t.Fatalf("status %d: %s", res.StatusCode, body)
+	}
+	var out struct {
+		Repos []RepoSummary `json:"repos"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Repos) != 3 {
+		t.Fatalf("repos = %+v", out.Repos)
+	}
+	by := map[string]RepoSummary{}
+	for _, r := range out.Repos {
+		by[r.Repo] = r
+	}
+	web := by["team/web"]
+	if len(web.Tags) != 2 || web.Digest != "sha256:mlatest" || web.Created != "2026-05-01T00:00:00Z" || web.Size != 210 {
+		t.Fatalf("web = %+v", web)
+	}
+	api := by["team/api"]
+	if api.Digest != "sha256:mv9" || api.Created != "2026-02-01T00:00:00Z" {
+		t.Fatalf("api (tags[0] fallback) = %+v", api)
+	}
+	br := by["team/broken"]
+	if br.Digest != "" || br.Created != "" || br.Size != 0 || len(br.Tags) != 1 {
+		t.Fatalf("broken = %+v", br)
+	}
+}
+
+func TestSummaryUnconfigured503AndMethod(t *testing.T) {
+	res, _ := doReq(t, NewHandler(Config{}), http.MethodGet, "/api/registry/summary")
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	f := &fakeRegistry{}
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	res, _ = doReq(t, newHandler(t, srv.URL, nil), http.MethodPost, "/api/registry/summary")
+	if res.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d", res.StatusCode)
 	}
 }

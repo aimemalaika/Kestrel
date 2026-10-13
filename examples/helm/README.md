@@ -127,5 +127,19 @@ HTTPS):
   and expanded into the flags.
 - Set `config.trustedProxy: true` whenever an Ingress/proxy fronts Kestrel.
 
+## Image build history
+
+Point the backend at the in-cluster registry to get per-repo build history:
+
+```
+--registry-url=http://registry.kube-system.svc:5000
+```
+
+This is anonymous HTTP; add `--registry-allow-delete` only if you want image
+deletion enabled. The Registry view then lists each repository's tags over time
+(digest, created, size, newest first) and badges the tag a Deployment or
+StatefulSet is currently running — the ImageStream replacement. Correlation is
+best-effort and matches on `repo:tag`.
+
 See `deploy/chart/kestrel/values.yaml` and its `README.md` for the full set of
 keys and defaults. Only keys that exist there are used in these examples.

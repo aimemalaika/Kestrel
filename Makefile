@@ -10,6 +10,12 @@
 # `make dev` / `make dev-mock` run both processes and tear both down on Ctrl-C.
 # Vite proxies /api (incl. SSE and exec/port-forward WebSockets) to the backend;
 # override the backend origin with KESTREL_BACKEND if you change BACKEND_ADDR.
+#
+# Registry / Run History in dev: `make dev`/`dev-mock` use the LIVE frontend, so
+# those modules show "not configured" unless the backend has a URL. To preview
+# them with mock data, use `make dev-ui`. To use the real ones in `make dev`,
+# pass KESTREL_REGISTRY_URL / KESTREL_RESULTS_URL (go run inherits the env).
+# See examples/local/README.md ("The Vite dev loop").
 
 BACKEND_ADDR ?= :8080
 # Health URL to poll before starting Vite. Works for the default ":8080"
