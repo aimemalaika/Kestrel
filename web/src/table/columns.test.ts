@@ -379,3 +379,37 @@ describe('Tekton core columns', () => {
     expect(durationString(run('TaskRun'))).toBeUndefined()
   })
 })
+
+describe('Tekton Triggers columns', () => {
+  const el = (conds: unknown[]): K8sObject => ({
+    apiVersion: 'triggers.tekton.dev/v1beta1',
+    kind: 'EventListener',
+    metadata: { name: 'l' },
+    status: { address: { url: 'http://el.ns.svc:8080' }, conditions: conds },
+  })
+  const specs = (k: string) => columnSpecs(k, { namespaceSelected: true })
+
+  it('EventListener shows Address and a Ready-derived status', () => {
+    const cols = specs('EventListener')
+    expect(cols.map((c) => c.header)).toContain('Address')
+    expect(cols.find((c) => c.header === 'Address')!.value(el([]))).toBe('http://el.ns.svc:8080')
+    const st = cols.find((c) => c.id === 'status')!
+    expect(st.value(el([{ type: 'Ready', status: 'True' }]))).toBe('Ready')
+    expect(st.value(el([{ type: 'Ready', status: 'False' }]))).toBe('NotReady')
+    expect(st.value(el([{ type: 'Ready', status: 'Unknown' }]))).toBe('Pending')
+    expect(st.value(el([]))).toBe('—')
+  })
+
+  it('config kinds have no Status column', () => {
+    for (const k of [
+      'Trigger',
+      'TriggerBinding',
+      'TriggerTemplate',
+      'ClusterTriggerBinding',
+      'Interceptor',
+      'ClusterInterceptor',
+    ]) {
+      expect(specs(k).some((c) => c.id === 'status')).toBe(false)
+    }
+  })
+})

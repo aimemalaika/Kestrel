@@ -170,6 +170,12 @@ const NO_STATUS_KINDS = new Set([
   'Pipeline',
   'Task',
   'StepAction',
+  'Trigger',
+  'TriggerBinding',
+  'TriggerTemplate',
+  'ClusterTriggerBinding',
+  'Interceptor',
+  'ClusterInterceptor',
 ])
 
 /** Kinds whose Status column sits right after Name/Namespace. */
@@ -204,6 +210,7 @@ const BINDING_HINTS: ColumnHint[] = [
 ]
 
 export const COLUMN_HINTS: Record<string, ColumnHint[]> = {
+  EventListener: [{ header: 'Address', path: 'status.address.url', cell: 'mono' }],
   Pod: [
     { header: 'Ready', path: 'ready', numeric: true, derive: podReady },
     { header: 'Restarts', path: 'restarts', numeric: true, cell: 'restarts', derive: podRestarts },
@@ -380,6 +387,15 @@ function tektonRunStatus(o: K8sObject): string | undefined {
   return /cancel/i.test(reason) ? 'Cancelled' : 'Running' // Unknown
 }
 
+/** Derive Ready/NotReady/Pending from an EventListener's Ready condition. */
+function readyStatus(o: K8sObject): string | undefined {
+  const c = arr(getPath(o, 'status.conditions')).find((x) => x.type === 'Ready')
+  if (!c) return undefined
+  if (c.status === 'True') return 'Ready'
+  if (c.status === 'False') return 'NotReady'
+  return 'Pending'
+}
+
 /** Relative "started N ago" for a run's status.startTime (reuses ageString). */
 function startedString(o: K8sObject): string | undefined {
   const t = getPath(o, 'status.startTime')
@@ -445,7 +461,9 @@ export function columnSpecs(kind: string, opts: { namespaceSelected: boolean }):
       str(
         TEKTON_RUN_KINDS.has(kind)
           ? tektonRunStatus(o)
-          : (getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
+          : kind === 'EventListener'
+            ? readyStatus(o)
+            : (getPath(o, 'status.phase') ?? (kind === 'Route' ? routeStatus(o) : undefined)),
       ),
   }
   const pushHint = (h: ColumnHint) =>

@@ -243,6 +243,62 @@ const CATALOG: CatalogEntry[] = [
     verbs: ['get', 'list', 'watch'],
   },
   {
+    group: 'triggers.tekton.dev',
+    version: 'v1beta1',
+    resource: 'eventlisteners',
+    kind: 'EventListener',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'triggers.tekton.dev',
+    version: 'v1beta1',
+    resource: 'triggers',
+    kind: 'Trigger',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'triggers.tekton.dev',
+    version: 'v1beta1',
+    resource: 'triggerbindings',
+    kind: 'TriggerBinding',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'triggers.tekton.dev',
+    version: 'v1beta1',
+    resource: 'triggertemplates',
+    kind: 'TriggerTemplate',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'triggers.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'interceptors',
+    kind: 'Interceptor',
+    namespaced: true,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'triggers.tekton.dev',
+    version: 'v1beta1',
+    resource: 'clustertriggerbindings',
+    kind: 'ClusterTriggerBinding',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
+    group: 'triggers.tekton.dev',
+    version: 'v1alpha1',
+    resource: 'clusterinterceptors',
+    kind: 'ClusterInterceptor',
+    namespaced: false,
+    verbs: ['get', 'list', 'watch'],
+  },
+  {
     group: 'rbac.authorization.k8s.io',
     version: 'v1',
     resource: 'clusterroles',
@@ -1265,6 +1321,124 @@ function clusterSeeds(): K8sObject[] {
   ]
 }
 
+function triggersSeeds(): K8sObject[] {
+  const trg = 'triggers.tekton.dev/v1beta1'
+  const trgA = 'triggers.tekton.dev/v1alpha1'
+  const el = (name: string, ns: string, ready: boolean, tname: string, bname: string) =>
+    gen(trg, 'EventListener', name, ns, {
+      spec: {
+        serviceAccountName: 'tekton-triggers',
+        triggers: [
+          {
+            name: tname,
+            bindings: [{ ref: bname }],
+            template: { ref: 'build-and-push-template' },
+            interceptors: [{ ref: { name: 'github' } }],
+          },
+        ],
+      },
+      status: {
+        address: { url: `http://el-${name}.${ns}.svc.cluster.local:8080` },
+        conditions: ready
+          ? [{ type: 'Ready', status: 'True', reason: 'MinimumReplicasAvailable' }]
+          : [{ type: 'Ready', status: 'False', reason: 'MinimumReplicasUnavailable' }],
+      },
+    })
+  const params = (...p: [string, string][]) => ({
+    spec: { params: p.map(([name, value]) => ({ name, value })) },
+  })
+  return [
+    el('github-listener', 'shop', true, 'github-push', 'github-push-binding'),
+    el('gitlab-listener', 'default', false, 'gitlab-push', 'gitlab-push-binding'),
+    gen(trg, 'TriggerBinding', 'github-push-binding', 'shop', params(
+      ['gitrevision', '$(body.head_commit.id)'],
+      ['gitrepositoryurl', '$(body.repository.clone_url)'],
+    )), // prettier-ignore
+    gen(trg, 'TriggerBinding', 'gitlab-push-binding', 'default', params(
+      ['gitrevision', '$(body.checkout_sha)'],
+      ['gitrepositoryurl', '$(body.project.git_http_url)'],
+    )), // prettier-ignore
+    gen(trg, 'ClusterTriggerBinding', 'github-base', undefined, params(
+      ['gitrevision', '$(body.head_commit.id)'],
+    )), // prettier-ignore
+    gen(trg, 'ClusterTriggerBinding', 'generic-webhook', undefined, params(
+      ['payload', '$(body)'],
+    )), // prettier-ignore
+    gen(trg, 'TriggerTemplate', 'build-and-push-template', 'shop', {
+      spec: {
+        params: [{ name: 'gitrevision' }, { name: 'gitrepositoryurl' }],
+        resourcetemplates: [
+          {
+            apiVersion: 'tekton.dev/v1',
+            kind: 'PipelineRun',
+            metadata: { generateName: 'build-and-push-' },
+            spec: { pipelineRef: { name: 'build-and-push' } },
+          },
+        ],
+      },
+    }),
+    gen(trg, 'TriggerTemplate', 'deploy-template', 'default', {
+      spec: {
+        params: [{ name: 'gitrevision' }],
+        resourcetemplates: [
+          {
+            apiVersion: 'tekton.dev/v1',
+            kind: 'PipelineRun',
+            metadata: { generateName: 'deploy-' },
+            spec: { pipelineRef: { name: 'deploy' } },
+          },
+        ],
+      },
+    }),
+    gen(trg, 'Trigger', 'github-push', 'shop', {
+      spec: {
+        bindings: [{ ref: 'github-push-binding' }],
+        template: { ref: 'build-and-push-template' },
+      },
+    }),
+    gen(trg, 'Trigger', 'gitlab-push', 'default', {
+      spec: {
+        bindings: [{ ref: 'gitlab-push-binding' }],
+        template: { ref: 'deploy-template' },
+      },
+    }),
+    gen(trgA, 'Interceptor', 'github', 'shop', {
+      spec: {
+        clientConfig: { service: { name: 'github-interceptor', namespace: 'shop', port: 8443 } },
+      },
+    }),
+    gen(trgA, 'Interceptor', 'cel-filter', 'default', {
+      spec: {
+        clientConfig: { service: { name: 'cel-interceptor', namespace: 'default', port: 8443 } },
+      },
+    }),
+    gen(trgA, 'ClusterInterceptor', 'github', undefined, {
+      spec: {
+        clientConfig: {
+          service: {
+            name: 'tekton-triggers-core-interceptors',
+            namespace: 'tekton-pipelines',
+            path: '/github',
+            port: 8443,
+          },
+        },
+      },
+    }),
+    gen(trgA, 'ClusterInterceptor', 'cel', undefined, {
+      spec: {
+        clientConfig: {
+          service: {
+            name: 'tekton-triggers-core-interceptors',
+            namespace: 'tekton-pipelines',
+            path: '/cel',
+            port: 8443,
+          },
+        },
+      },
+    }),
+  ]
+}
+
 function moreSeeds(): K8sObject[] {
   const ts = (n: number) => new Date(Date.UTC(2026, 8, 15, 0, 0, 0) + n * 3600_000).toISOString()
   const cond = (type: string, status = 'True') => ({ type, status })
@@ -1460,6 +1634,7 @@ function moreSeeds(): K8sObject[] {
       status: { phase: 'Provisioning' },
     }),
     ...machineBuildSeeds(),
+    ...triggersSeeds(),
     gen('image.openshift.io/v1', 'ImageStream', 'shop-web', 'shop', {
       status: {
         dockerImageRepository: 'registry.example.com/shop/shop-web',

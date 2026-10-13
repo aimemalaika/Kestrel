@@ -86,6 +86,18 @@ export const ADMIN_NAV: NavSection[] = [
     ],
   },
   {
+    section: 'Triggers',
+    items: [
+      { label: 'EventListeners', icon: 'run', target: res('eventlisteners') },
+      { label: 'Triggers', icon: 'task', target: res('triggers') },
+      { label: 'TriggerBindings', icon: 'task', target: res('triggerbindings') },
+      { label: 'TriggerTemplates', icon: 'task', target: res('triggertemplates') },
+      { label: 'ClusterTriggerBindings', icon: 'task', target: res('clustertriggerbindings') },
+      { label: 'Interceptors', icon: 'task', target: res('interceptors') },
+      { label: 'ClusterInterceptors', icon: 'task', target: res('clusterinterceptors') },
+    ],
+  },
+  {
     section: 'Observe',
     items: [
       { label: 'Dashboards', icon: 'chart', target: route('/dashboards') },

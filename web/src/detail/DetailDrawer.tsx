@@ -10,6 +10,7 @@ import { PortForwardButton } from '../sessions/PortForwardButton'
 import { DeleteButton } from '../write/DeleteButton'
 import { useCanI } from '../write/useCanI'
 import { TektonRunDetail } from '../modules/tekton/TektonRunDetail'
+import { EventListenerDetail } from '../modules/tekton/EventListenerDetail'
 import { TaskRunDetail } from '../modules/tekton/TaskRunDetail'
 import { ArgoRichView } from '../modules/argo/ArgoRichView'
 import type { ResourceRef } from '../client/Client'
@@ -19,7 +20,8 @@ import { ErrorBoundary } from '../shell/ErrorBoundary'
 const YamlEditor = lazy(() => import('../write/YamlEditor'))
 const Terminal = lazy(() => import('../streaming/Terminal'))
 
-type Tab = 'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run' | 'app' | 'relations'
+type Tab =
+  'detail' | 'yaml' | 'events' | 'logs' | 'terminal' | 'run' | 'listener' | 'app' | 'relations'
 
 export function DetailDrawer() {
   const { namespace, group, version, resource, name } = useParams()
@@ -38,6 +40,7 @@ export function DetailDrawer() {
   const canDelete = useCanI(objRef ? { verb: 'delete', ...objRef } : undefined)
   const isPipelineRun = object?.kind === 'PipelineRun'
   const isTaskRun = object?.kind === 'TaskRun'
+  const isEventListener = object?.kind === 'EventListener'
   const isApplication = object?.kind === 'Application'
   const tabs: Tab[] = isPod
     ? ['detail', 'yaml', 'events', 'relations', 'logs', 'terminal']
@@ -45,7 +48,9 @@ export function DetailDrawer() {
       ? ['detail', 'yaml', 'events', 'relations', 'run']
       : isApplication
         ? ['detail', 'yaml', 'events', 'relations', 'app']
-        : ['detail', 'yaml', 'events', 'relations']
+        : isEventListener
+          ? ['detail', 'yaml', 'events', 'relations', 'listener']
+          : ['detail', 'yaml', 'events', 'relations']
   // If the selected tab isn't available for the current object (e.g. after
   // navigating from a Pod/PipelineRun to another kind), fall back to detail so
   // the body never renders blank.
@@ -136,6 +141,7 @@ export function DetailDrawer() {
               {tab === 'relations' && <RelationsView object={object} />}
               {tab === 'run' && isPipelineRun && <TektonRunDetail object={object} />}
               {tab === 'run' && isTaskRun && <TaskRunDetail object={object} />}
+              {tab === 'listener' && isEventListener && <EventListenerDetail object={object} />}
               {tab === 'app' && isApplication && <ArgoRichView object={object} />}
               {tab === 'logs' && isPod && podRef && <LogViewer pod={podRef} />}
               {tab === 'terminal' && isPod && podRef ? (
