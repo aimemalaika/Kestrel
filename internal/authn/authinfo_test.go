@@ -53,3 +53,22 @@ func TestAuthInfoHandler_OIDC_Authenticated(t *testing.T) {
 		t.Fatalf("expected authenticated user, got %+v", got)
 	}
 }
+
+func TestAuthInfoHandler_AdminGroups(t *testing.T) {
+	for _, want := range [][]string{{"ops", "platform"}, nil} {
+		rec := httptest.NewRecorder()
+		AuthInfoHandler(AuthInfo{Mode: "oidc", AdminGroups: want}, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/authinfo", nil))
+		var got AuthInfo
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if len(got.AdminGroups) != len(want) {
+			t.Fatalf("AdminGroups = %v, want %v", got.AdminGroups, want)
+		}
+		for i := range want {
+			if got.AdminGroups[i] != want[i] {
+				t.Fatalf("AdminGroups = %v, want %v", got.AdminGroups, want)
+			}
+		}
+	}
+}

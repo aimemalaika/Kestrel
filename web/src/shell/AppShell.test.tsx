@@ -144,4 +144,46 @@ describe('AppShell', () => {
       expect(trigger).toHaveFocus()
     })
   })
+
+  describe('perspective gating by admin groups', () => {
+    beforeEach(() => {
+      localStorage.setItem('kestrel.defaultPerspective', 'admin')
+    })
+    afterEach(() => localStorage.clear())
+
+    it('non-member lands in developer with no admin toggle', async () => {
+      authInfoValue = {
+        mode: 'oidc',
+        user: { name: 'alice@corp.com', groups: ['devs'] },
+        options: [],
+        adminGroups: ['ops'],
+      }
+      renderShell()
+      await screen.findByTestId('sidebar')
+      expect(screen.queryByRole('group', { name: 'Perspective' })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Operators/ })).toBeNull()
+      expect(screen.getByRole('link', { name: 'Helm Releases' })).toBeInTheDocument()
+    })
+
+    it('member can be admin', async () => {
+      authInfoValue = {
+        mode: 'oidc',
+        user: { name: 'bob@corp.com', groups: ['ops'] },
+        options: [],
+        adminGroups: ['ops'],
+      }
+      renderShell()
+      await screen.findByTestId('sidebar')
+      const toggle = within(screen.getByRole('group', { name: 'Perspective' }))
+      expect(toggle.getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('single-operator is admin even with adminGroups set', async () => {
+      authInfoValue = { ...SINGLE_OPERATOR, adminGroups: ['ops'] }
+      renderShell()
+      await screen.findByTestId('sidebar')
+      const toggle = within(screen.getByRole('group', { name: 'Perspective' }))
+      expect(toggle.getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-pressed', 'true')
+    })
+  })
 })

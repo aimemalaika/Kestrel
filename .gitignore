@@ -27,3 +27,5 @@ CLAUDE.md
 # keep a tracked placeholder so the embed pattern always matches.
 /web/dist/*
 !/web/dist/.gitkeep
+config.bat
+node_modules

@@ -14,6 +14,7 @@ interface AuthValue {
   mode: Mode
   identity: Identity | null
   options: AuthOption[]
+  adminGroups: string[]
   signOut: () => void
 }
 
@@ -24,6 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<Mode>('oidc')
   const [identity, setLocalIdentity] = useState<Identity | null>(null)
   const [options, setOptions] = useState<AuthOption[]>([])
+  const [adminGroups, setAdminGroups] = useState<string[]>([])
 
   useEffect(() => {
     let live = true
@@ -38,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             : null
         setMode(info.mode)
         setOptions(info.options ?? [])
+        setAdminGroups(info.adminGroups ?? [])
         setLocalIdentity(id)
         setIdentity(id) // sync the module store (useCanI / mock canI observe it)
         setStatus(id ? 'authed' : 'needs-login')
@@ -58,8 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [mode])
 
   const value = useMemo<AuthValue>(
-    () => ({ status, mode, identity, options, signOut }),
-    [status, mode, identity, options, signOut],
+    () => ({ status, mode, identity, options, adminGroups, signOut }),
+    [status, mode, identity, options, adminGroups, signOut],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
