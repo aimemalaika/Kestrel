@@ -76,6 +76,7 @@ func main() {
 	registryPass := flag.String("registry-password", "", "registry basic-auth password (optional; falls back to $KESTREL_REGISTRY_PASSWORD when empty)")
 	registryInsecure := flag.Bool("registry-insecure-skip-verify", false, "skip TLS verification of the registry (do not use in production)")
 	registryAllowDelete := flag.Bool("registry-allow-delete", false, "enable DELETE by digest on the registry (deletesEnabled)")
+	adminGroups := flag.String("admin-groups", "", "comma-separated OIDC groups whose members get the Administrator perspective; empty disables group-based perspective gating. Falls back to $KESTREL_ADMIN_GROUPS")
 	registryGroups := flag.String("registry-allowed-groups", "", "comma-separated OIDC groups allowed to use the registry module (empty = any authenticated user; not enforced in single-operator mode)")
 	pfTimeout := flag.Duration("port-forward-idle-timeout", 0, "max lifetime of a port-forward session before it is torn down (0 = unbounded; abandoned forwards already close within ~60s via keepalive)")
 
@@ -104,6 +105,7 @@ func main() {
 	sessionKeyVal := flagOrEnv(*sessionKey, "KESTREL_SESSION_KEY")
 	oidcClientSecretVal := flagOrEnv(*oidcClientSecret, "KESTREL_OIDC_CLIENT_SECRET")
 	registryPassVal := flagOrEnv(*registryPass, "KESTREL_REGISTRY_PASSWORD")
+	adminGroupsVal := splitNonEmpty(flagOrEnv(*adminGroups, "KESTREL_ADMIN_GROUPS"))
 	resultsURLVal := flagOrEnv(*resultsURL, "KESTREL_RESULTS_URL")
 	prometheusURLVal := flagOrEnv(*prometheusURL, "KESTREL_PROMETHEUS_URL")
 	alertmanagerURLVal := flagOrEnv(*alertmanagerURL, "KESTREL_ALERTMANAGER_URL")
@@ -277,7 +279,8 @@ func main() {
 		// the current user (best-effort, when a session is present). Options are
 		// built purely from flags — the operator must enable at least one method.
 		mux.Handle("/authinfo", authn.AuthInfoHandler(authn.AuthInfo{
-			Mode: "oidc",
+			Mode:        "oidc",
+			AdminGroups: adminGroupsVal,
 			Options: authn.BuildOptions(authn.OptionsConfig{
 				GitHubConnector:   oidcGitHubConnectorVal,
 				PasswordConnector: oidcPasswordConnectorVal,
@@ -293,7 +296,7 @@ func main() {
 		// Single-operator: no login, so /authinfo advertises no options and reports
 		// the operator identity the SPA enters as directly.
 		mux.Handle("/authinfo", authn.AuthInfoHandler(
-			authn.AuthInfo{Mode: "single-operator", User: &authn.AuthUser{Name: auth.Operator}},
+			authn.AuthInfo{Mode: "single-operator", User: &authn.AuthUser{Name: auth.Operator}, AdminGroups: adminGroupsVal},
 			nil,
 		))
 		slog.Warn("OIDC disabled: --oidc-issuer not set; running as single operator, all /api uses Kestrel's own ServiceAccount credentials and no login is required",

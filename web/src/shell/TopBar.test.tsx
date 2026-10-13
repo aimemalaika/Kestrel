@@ -23,6 +23,7 @@ function renderAt(
     terminalOpen?: boolean
     onToggleTerminal?: () => void
     onPerspectiveChange?: (p: 'admin' | 'developer') => void
+    canAdmin?: boolean
   } = {},
 ) {
   return render(
@@ -30,6 +31,7 @@ function renderAt(
       <MemoryRouter initialEntries={[path]}>
         <TopBar
           perspective="admin"
+          canAdmin={props.canAdmin ?? true}
           onPerspectiveChange={props.onPerspectiveChange ?? (() => {})}
           terminalOpen={props.terminalOpen ?? false}
           onToggleTerminal={props.onToggleTerminal ?? (() => {})}
@@ -68,6 +70,25 @@ describe('TopBar user preferences', () => {
     expect(onPerspectiveChange).toHaveBeenCalledWith('developer')
     const { loadDefaultPerspective } = await import('./perspectivePref')
     expect(loadDefaultPerspective()).toBe('developer')
+  })
+})
+
+describe('TopBar perspective gating', () => {
+  it('shows the toggle and Administrator option to admins', async () => {
+    renderAt('/overview')
+    expect(screen.getByRole('group', { name: 'Perspective' })).toBeInTheDocument()
+  })
+
+  it('hides the toggle and Administrator option from non-admins and never stores admin', async () => {
+    localStorage.setItem('kestrel.defaultPerspective', 'admin')
+    renderAt('/overview', { canAdmin: false })
+    expect(screen.queryByRole('group', { name: 'Perspective' })).toBeNull()
+    fireEvent.click(await screen.findByRole('button', { name: 'User menu' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /user preferences/i }))
+    const dialog = screen.getByRole('dialog', { name: /user preferences/i })
+    const select = within(dialog).getByRole('combobox', { name: /default perspective/i })
+    expect(within(select).queryByRole('option', { name: 'Administrator' })).toBeNull()
+    expect((select as HTMLSelectElement).value).toBe('developer')
   })
 })
 
